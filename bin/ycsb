@@ -90,8 +90,9 @@ DATABASES = {
     "s3"           : "com.yahoo.ycsb.db.S3Client",
     "solr"         : "com.yahoo.ycsb.db.solr.SolrClient",
     "solr6"        : "com.yahoo.ycsb.db.solr6.SolrClient",
+    "syncgateway"  : "com.yahoo.ycsb.db.syncgateway.SyncGatewayClient",
     "tarantool"    : "com.yahoo.ycsb.db.TarantoolClient",
-    "voldemort"    : "com.yahoo.ycsb.db.VoldemortClient"
+    "voldemort"    : "com.yahoo.ycsb.db.VoldemortClient",
 }
 
 OPTIONS = {
