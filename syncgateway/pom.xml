@@ -13,6 +13,12 @@
   <artifactId>syncgateway-binding</artifactId>
   <name>Sync Gateway</name>
   <packaging>jar</packaging>
+  <properties>
+
+    <tomcat.version>8.0.28</tomcat.version>
+    <httpclient.version>4.5.1</httpclient.version>
+    <httpcore.version>4.4.4</httpcore.version>
+  </properties>
 
   <dependencies>
     <dependency>
@@ -20,6 +26,16 @@
       <artifactId>core</artifactId>
       <version>${project.version}</version>
       <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.httpcomponents</groupId>
+      <artifactId>httpclient</artifactId>
+      <version>${httpclient.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.httpcomponents</groupId>
+      <artifactId>httpcore</artifactId>
+      <version>${httpcore.version}</version>
     </dependency>
   </dependencies>
 
