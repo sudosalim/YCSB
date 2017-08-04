@@ -18,23 +18,24 @@
 package com.yahoo.ycsb.db.syncgateway;
 
 
-import com.yahoo.ycsb.ByteIterator;
-import com.yahoo.ycsb.DB;
-import com.yahoo.ycsb.DBException;
-import com.yahoo.ycsb.Status;
+import com.yahoo.ycsb.*;
 import com.yahoo.ycsb.generator.CounterGenerator;
 import org.apache.http.HttpEntity;
-import org.apache.http.client.ClientProtocolException;
+//import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpEntityEnclosingRequestBase;
 import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.methods.HttpGet;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.InputStreamEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
-
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+//import com.fasterxml.jackson.databind.node.ArrayNode;
+//import com.fasterxml.jackson.databind.node.TextNode;
 
 import java.io.*;
 import java.util.*;
@@ -73,9 +74,6 @@ public class SyncGatewayClient extends DB {
   private static final String SG_CREATEUSERS = "syncgateway.createusers";
 
   private static final String USERNAME_PREFIX = "sg-user-";
-  private static final String REQUEST_BODY_CREATE_USER =
-      "{ \"name\": \"%s\", \"password\": \"password\", " +
-          "\"admin_channels\": [\"%s\"], " + "\"all_channels\":[\"%s\"]}";
 
   // Sync Gateway parameters
   private String host;
@@ -95,7 +93,8 @@ public class SyncGatewayClient extends DB {
   private int execTimeout = 10000;
 
   private String urlEndpointPrefix;
-  private String createUserEndPoint;
+  private String createUserEndpoint;
+  private String documentEndpoint;
 
   @Override
   public void init() throws DBException {
@@ -111,7 +110,7 @@ public class SyncGatewayClient extends DB {
     conTimeout = Integer.valueOf(props.getProperty(CON_TIMEOUT, "10")) * 1000;
     readTimeout = Integer.valueOf(props.getProperty(READ_TIMEOUT, "10")) * 1000;
     execTimeout = Integer.valueOf(props.getProperty(EXEC_TIMEOUT, "10")) * 1000;
-    headers = props.getProperty(HEADERS, "Accept */* Content-Type application/xml user-agent Mozilla/5.0 ").
+    headers = props.getProperty(HEADERS, "Accept */* Content-Type application/json user-agent Mozilla/5.0 ").
         trim().split(" ");
 
     setupClient();
@@ -120,19 +119,38 @@ public class SyncGatewayClient extends DB {
     }
 
     urlEndpointPrefix = "http://" + host + ":";
-    createUserEndPoint = "/" + db + "/_user/";
+    createUserEndpoint = "/" + db + "/_user/";
+    documentEndpoint =  "/" + db + "/";
 
   }
 
   @Override
   public Status read(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result) {
-    return Status.OK;
+
+
+    HttpPost httpGetRequest;
+    String fullUrl;
+
+    if (useAuth) {
+      fullUrl = urlEndpointPrefix + portPublic + documentEndpoint + key;
+    } else {
+      fullUrl = urlEndpointPrefix + portAdmin + documentEndpoint + key;
+    }
+
+    int responseCode;
+    try {
+      responseCode = httpGet(fullUrl, result);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "GET");
+    }
+
+    return getStatus(responseCode);
   }
 
   @Override
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
                      Vector<HashMap<String, ByteIterator>> result) {
-    return Status.OK;
+    return Status.NOT_IMPLEMENTED;
   }
 
   @Override
@@ -142,12 +160,13 @@ public class SyncGatewayClient extends DB {
 
   @Override
   public Status insert(String table, String key, HashMap<String, ByteIterator> values) {
+    Status status;
     if (createUsers) {
-      insertUser(table, key, values);
+      status = insertUser(table, key, values);
     } else {
-      insertDocument(table, key, values);
+      status = insertDocument(table, key, values);
     }
-    return Status.OK;
+    return status;
   }
 
   @Override
@@ -160,16 +179,15 @@ public class SyncGatewayClient extends DB {
     String username = USERNAME_PREFIX + sgUserInsertCounter.nextValue();
     String channelName = username + "-channel";
 
-    //{ "name": "<name>", "password": "password", "admin_channels": ["<channel>"], "all_channels":["<channel>"]}
-    String requestBody = String.format(REQUEST_BODY_CREATE_USER, username, channelName, channelName);
+    String requestBody = buildUser(username, channelName, channelName);
     HttpPost httpPostRequest;
     String fullUrl;
 
     if (useAuth) {
-      fullUrl = urlEndpointPrefix + portPublic + createUserEndPoint;
+      fullUrl = urlEndpointPrefix + portPublic + createUserEndpoint;
       httpPostRequest = new HttpPost(fullUrl);
     } else {
-      fullUrl = urlEndpointPrefix + portAdmin + createUserEndPoint;
+      fullUrl = urlEndpointPrefix + portAdmin + createUserEndpoint;
       httpPostRequest = new HttpPost(fullUrl);
     }
 
@@ -184,7 +202,26 @@ public class SyncGatewayClient extends DB {
   }
 
   private Status insertDocument(String table, String key, HashMap<String, ByteIterator> values) {
-    return Status.OK;
+    String requestBody = buildDocumentFromMap(key, values);
+    HttpPost httpPostRequest;
+    String fullUrl;
+
+    if (useAuth) {
+      fullUrl = urlEndpointPrefix + portPublic + documentEndpoint;
+      httpPostRequest = new HttpPost(fullUrl);
+    } else {
+      fullUrl = urlEndpointPrefix + portAdmin + documentEndpoint;
+      httpPostRequest = new HttpPost(fullUrl);
+    }
+
+
+    int responseCode;
+    try {
+      responseCode = httpExecute(httpPostRequest, requestBody);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "POST");
+    }
+    return getStatus(responseCode);
   }
 
 
@@ -236,6 +273,50 @@ public class SyncGatewayClient extends DB {
     restClient.close();
     return responseCode;
   }
+
+
+  // Connection is automatically released back in case of an exception.
+  private int httpGet(String endpoint, HashMap<String, ByteIterator> result) throws IOException {
+    requestTimedout.setIsSatisfied(false);
+    Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
+    timer.start();
+    int responseCode = 200;
+    HttpGet request = new HttpGet(endpoint);
+    for (int i = 0; i < headers.length; i = i + 2) {
+      request.setHeader(headers[i], headers[i + 1]);
+    }
+    CloseableHttpResponse response = restClient.execute(request);
+    responseCode = response.getStatusLine().getStatusCode();
+    HttpEntity responseEntity = response.getEntity();
+    // If null entity don't bother about connection release.
+    if (responseEntity != null) {
+      InputStream stream = responseEntity.getContent();
+      BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+      StringBuffer responseContent = new StringBuffer();
+      String line = "";
+      while ((line = reader.readLine()) != null) {
+        if (requestTimedout.isSatisfied()) {
+          // Must avoid memory leak.
+          reader.close();
+          stream.close();
+          EntityUtils.consumeQuietly(responseEntity);
+          response.close();
+          restClient.close();
+          throw new TimeoutException();
+        }
+        responseContent.append(line);
+      }
+      timer.interrupt();
+      result.put("response", new StringByteIterator(responseContent.toString()));
+      // Closing the input stream will trigger connection release.
+      stream.close();
+    }
+    EntityUtils.consumeQuietly(responseEntity);
+    response.close();
+    restClient.close();
+    return responseCode;
+  }
+
 
   /**
    * Marks the input {@link Criteria} as satisfied when the input time has elapsed.
@@ -302,10 +383,6 @@ public class SyncGatewayClient extends DB {
     System.err.println(new StringBuilder(method).append(" Request: ").append(url).append(" | ")
         .append(e.getClass().getName()).append(" occured | Error message: ")
         .append(e.getMessage()).toString());
-
-    if (e instanceof ClientProtocolException) {
-      return 400;
-    }
     return 500;
   }
 
@@ -335,6 +412,26 @@ public class SyncGatewayClient extends DB {
     requestBuilder = requestBuilder.setSocketTimeout(readTimeout);
     HttpClientBuilder clientBuilder = HttpClientBuilder.create().setDefaultRequestConfig(requestBuilder.build());
     this.restClient = clientBuilder.setConnectionManagerShared(true).build();
+  }
+
+  private String buildUser(String name, String adminChannel, String channel) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    root.put("name", name);
+    root.put("password", "password");
+    root.putArray("admin_channels").add(adminChannel);
+    root.putArray("all_channels").add(channel);
+    return root.toString();
+  }
+
+  private String buildDocumentFromMap(String key, HashMap<String, ByteIterator> values) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    root.put("_id", key);
+    values.forEach((k, v)-> {
+        root.put(k, v.toString());
+      });
+    return root.toString();
   }
 
 }

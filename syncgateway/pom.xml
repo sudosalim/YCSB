@@ -12,12 +12,25 @@
 
   <artifactId>syncgateway-binding</artifactId>
   <name>Sync Gateway</name>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <source>1.8</source>
+          <target>1.8</target>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
   <packaging>jar</packaging>
   <properties>
 
     <tomcat.version>8.0.28</tomcat.version>
     <httpclient.version>4.5.1</httpclient.version>
     <httpcore.version>4.4.4</httpcore.version>
+    <jackson.api.version>2.5.3</jackson.api.version>
   </properties>
 
   <dependencies>
@@ -36,6 +49,11 @@
       <groupId>org.apache.httpcomponents</groupId>
       <artifactId>httpcore</artifactId>
       <version>${httpcore.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.api.version}</version>
     </dependency>
   </dependencies>
 
