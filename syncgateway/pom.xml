@@ -31,9 +31,15 @@
     <httpclient.version>4.5.1</httpclient.version>
     <httpcore.version>4.4.4</httpcore.version>
     <jackson.api.version>2.5.3</jackson.api.version>
+    <memcached.api.version>2.11.7</memcached.api.version>
   </properties>
 
   <dependencies>
+    <dependency>
+      <groupId>net.spy</groupId>
+      <artifactId>spymemcached</artifactId>
+      <version>${memcached.api.version}</version>
+    </dependency>
     <dependency>
       <groupId>com.yahoo.ycsb</groupId>
       <artifactId>core</artifactId>

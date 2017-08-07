@@ -20,6 +20,8 @@ package com.yahoo.ycsb.db.syncgateway;
 
 import com.yahoo.ycsb.*;
 import com.yahoo.ycsb.generator.CounterGenerator;
+import net.spy.memcached.FailureMode;
+import net.spy.memcached.MemcachedClient;
 import org.apache.http.HttpEntity;
 //import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.config.RequestConfig;
@@ -27,6 +29,7 @@ import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpEntityEnclosingRequestBase;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPut;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.InputStreamEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -34,15 +37,20 @@ import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 //import com.fasterxml.jackson.databind.node.ArrayNode;
 //import com.fasterxml.jackson.databind.node.TextNode;
+
 
 import java.io.*;
 import java.util.*;
 
 
 /**
-TODO: Summary
+ TODO: Summary
 
  * <p> The following options can be passed when using this database restClient to override the defaults.
  *
@@ -61,10 +69,10 @@ TODO: Summary
 public class SyncGatewayClient extends DB {
   private static CounterGenerator sgUserInsertCounter = new CounterGenerator(0);
   private static CounterGenerator sgUsersPool = new CounterGenerator(0);
-  private static final String CON_TIMEOUT = "rest.timeout.con";
-  private static final String READ_TIMEOUT = "rest.timeout.read";
-  private static final String EXEC_TIMEOUT = "rest.timeout.exec";
-  private static final String HEADERS = "headers";
+  private static final String HTTP_CON_TIMEOUT = "rest.timeout.con";
+  private static final String HTTP_READ_TIMEOUT = "rest.timeout.read";
+  private static final String HTTP_EXEC_TIMEOUT = "rest.timeout.exec";
+  private static final String HTTP_HEADERS = "headers";
 
   private static final String SG_HOST = "syncgateway.host";
   private static final String SG_DB = "syncgateway.db";
@@ -72,6 +80,12 @@ public class SyncGatewayClient extends DB {
   private static final String SG_PORT_PUBLIC = "syncgateway.port.public";
   private static final String SG_AUTH = "syncgateway.auth";
   private static final String SG_CREATEUSERS = "syncgateway.createusers";
+  private static final String SG_STORE_REVISIONS = "syncgateway.storerevs";
+
+  private static final String MEMCACHED_HOST = "memcached.host";
+  private static final String MEMCACHED_PORT = "memcached.port";
+
+
 
   private static final String USERNAME_PREFIX = "sg-user-";
 
@@ -83,18 +97,26 @@ public class SyncGatewayClient extends DB {
   private boolean useAuth;
   private boolean createUsers;
   private String currentUser = null;
+  private boolean storeRevisions;
 
   // http parameters
   private volatile Criteria requestTimedout = new Criteria(false);
   private String[] headers;
-  private CloseableHttpClient restClient;
   private int conTimeout = 10000;
   private int readTimeout = 10000;
   private int execTimeout = 10000;
+  private CloseableHttpClient restClient;
+
+  //memcached parameters
+  private String memcachedHost;
+  private String memcachedPort;
+  private MemcachedClient memcachedClient;
 
   private String urlEndpointPrefix;
   private String createUserEndpoint;
   private String documentEndpoint;
+
+
 
   @Override
   public void init() throws DBException {
@@ -106,28 +128,40 @@ public class SyncGatewayClient extends DB {
     portPublic = props.getProperty(SG_PORT_PUBLIC, "4984");
     useAuth = props.getProperty(SG_AUTH, "false").equals("true");
     createUsers = props.getProperty(SG_CREATEUSERS, "false").equals("true");
+    storeRevisions = props.getProperty(SG_STORE_REVISIONS, "true").equals("true");
 
-    conTimeout = Integer.valueOf(props.getProperty(CON_TIMEOUT, "10")) * 1000;
-    readTimeout = Integer.valueOf(props.getProperty(READ_TIMEOUT, "10")) * 1000;
-    execTimeout = Integer.valueOf(props.getProperty(EXEC_TIMEOUT, "10")) * 1000;
-    headers = props.getProperty(HEADERS, "Accept */* Content-Type application/json user-agent Mozilla/5.0 ").
+    conTimeout = Integer.valueOf(props.getProperty(HTTP_CON_TIMEOUT, "10")) * 1000;
+    readTimeout = Integer.valueOf(props.getProperty(HTTP_READ_TIMEOUT, "10")) * 1000;
+    execTimeout = Integer.valueOf(props.getProperty(HTTP_EXEC_TIMEOUT, "10")) * 1000;
+    headers = props.getProperty(HTTP_HEADERS, "Accept */* Content-Type application/json user-agent Mozilla/5.0 ").
         trim().split(" ");
 
-    setupClient();
-    if (useAuth) {
-      assignUserName();
-    }
+    memcachedHost = props.getProperty(MEMCACHED_HOST, "localhost");
+    memcachedPort = props.getProperty(MEMCACHED_PORT, "8000");
 
     urlEndpointPrefix = "http://" + host + ":";
     createUserEndpoint = "/" + db + "/_user/";
     documentEndpoint =  "/" + db + "/";
 
+    restClient = createRestClient();
+
+    if (storeRevisions) {
+      try {
+        memcachedClient = createMemcachedClient(memcachedHost, Integer.parseInt(memcachedPort));
+      } catch (Exception e) {
+        System.err.println("Memcached init error" + e.getMessage());
+        System.exit(1);
+      }
+    }
+
+    if (useAuth) {
+      assignUserName();
+    }
+
   }
 
   @Override
   public Status read(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result) {
-
-
     HttpPost httpGetRequest;
     String fullUrl;
 
@@ -155,7 +189,31 @@ public class SyncGatewayClient extends DB {
 
   @Override
   public Status update(String table, String key, HashMap<String, ByteIterator> values) {
-    return Status.OK;
+    String requestBody = buildDocumentFromMap(key, values);
+    String docRevision = getRevision(key);
+    if (docRevision == null) {
+      System.err.println("Revision for document " + key + " not found in local");
+      return Status.UNEXPECTED_STATE;
+    }
+    HttpPut httpPutRequest;
+    String fullUrl;
+
+    if (useAuth) {
+      fullUrl = urlEndpointPrefix + portPublic + documentEndpoint + key + "?rev=" + docRevision;
+      httpPutRequest = new HttpPut(fullUrl);
+    } else {
+      fullUrl = urlEndpointPrefix + portAdmin + documentEndpoint + key + "?rev=" + docRevision;
+      httpPutRequest = new HttpPut(fullUrl);
+    }
+
+    int responseCode;
+
+    try {
+      responseCode = httpExecute(httpPutRequest, requestBody, storeRevisions);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "PUT");
+    }
+    return getStatus(responseCode);
   }
 
   @Override
@@ -193,7 +251,7 @@ public class SyncGatewayClient extends DB {
 
     int responseCode;
     try {
-      responseCode = httpExecute(httpPostRequest, requestBody);
+      responseCode = httpExecute(httpPostRequest, requestBody, false);
     } catch (Exception e) {
       responseCode = handleExceptions(e, fullUrl, "POST");
     }
@@ -202,6 +260,7 @@ public class SyncGatewayClient extends DB {
   }
 
   private Status insertDocument(String table, String key, HashMap<String, ByteIterator> values) {
+
     String requestBody = buildDocumentFromMap(key, values);
     HttpPost httpPostRequest;
     String fullUrl;
@@ -217,7 +276,7 @@ public class SyncGatewayClient extends DB {
 
     int responseCode;
     try {
-      responseCode = httpExecute(httpPostRequest, requestBody);
+      responseCode = httpExecute(httpPostRequest, requestBody, storeRevisions);
     } catch (Exception e) {
       responseCode = handleExceptions(e, fullUrl, "POST");
     }
@@ -230,8 +289,9 @@ public class SyncGatewayClient extends DB {
   }
 
 
-  private int httpExecute(HttpEntityEnclosingRequestBase request, String data) throws IOException {
+  private int httpExecute(HttpEntityEnclosingRequestBase request, String data, boolean storeRev) throws IOException {
     requestTimedout.setIsSatisfied(false);
+    boolean responseValidationOK = true;
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
     int responseCode = 200;
@@ -253,6 +313,12 @@ public class SyncGatewayClient extends DB {
       StringBuffer responseContent = new StringBuffer();
       String line = "";
       while ((line = reader.readLine()) != null) {
+        if (storeRev) {
+          responseValidationOK = false;
+          if (storeRevision(line)) {
+            responseValidationOK = true;
+          }
+        }
         if (requestTimedout.isSatisfied()) {
           // Must avoid memory leak.
           reader.close();
@@ -271,6 +337,9 @@ public class SyncGatewayClient extends DB {
     EntityUtils.consumeQuietly(responseEntity);
     response.close();
     restClient.close();
+    if (!responseValidationOK) {
+      return 500;
+    }
     return responseCode;
   }
 
@@ -405,14 +474,6 @@ public class SyncGatewayClient extends DB {
     return Status.OK;
   }
 
-  private void setupClient() {
-    RequestConfig.Builder requestBuilder = RequestConfig.custom();
-    requestBuilder = requestBuilder.setConnectTimeout(conTimeout);
-    requestBuilder = requestBuilder.setConnectionRequestTimeout(readTimeout);
-    requestBuilder = requestBuilder.setSocketTimeout(readTimeout);
-    HttpClientBuilder clientBuilder = HttpClientBuilder.create().setDefaultRequestConfig(requestBuilder.build());
-    this.restClient = clientBuilder.setConnectionManagerShared(true).build();
-  }
 
   private String buildUser(String name, String adminChannel, String channel) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
@@ -432,6 +493,43 @@ public class SyncGatewayClient extends DB {
         root.put(k, v.toString());
       });
     return root.toString();
+  }
+
+  private CloseableHttpClient createRestClient() {
+    RequestConfig.Builder requestBuilder = RequestConfig.custom();
+    requestBuilder = requestBuilder.setConnectTimeout(conTimeout);
+    requestBuilder = requestBuilder.setConnectionRequestTimeout(readTimeout);
+    requestBuilder = requestBuilder.setSocketTimeout(readTimeout);
+    HttpClientBuilder clientBuilder = HttpClientBuilder.create().setDefaultRequestConfig(requestBuilder.build());
+    return clientBuilder.setConnectionManagerShared(true).build();
+  }
+
+  private net.spy.memcached.MemcachedClient createMemcachedClient(String memHost, int memPort)
+      throws Exception {
+    String address = memHost + ":" + memPort;
+    return new net.spy.memcached.MemcachedClient(
+        new net.spy.memcached.ConnectionFactoryBuilder().setDaemon(true).setFailureMode(FailureMode.Retry).build(),
+        net.spy.memcached.AddrUtil.getAddresses(address));
+  }
+
+  private boolean storeRevision(String responseWithRevision) {
+    Pattern pattern = Pattern.compile("\\\"id\\\".\\\"([^\\\"]*).*\\\"rev\\\".\\\"([^\\\"]*)");
+    Matcher matcher = pattern.matcher(responseWithRevision);
+    if (matcher.find()) {
+      memcachedClient.set(matcher.group(1), 0, matcher.group(2));
+      return true;
+    } else {
+      System.err.println("Failed to get document revision. Full response: " + responseWithRevision);
+    }
+    return false;
+  }
+
+  private String getRevision(String key){
+    Object respose = memcachedClient.get(key);
+    if (respose != null) {
+      return memcachedClient.get(key).toString();
+    }
+    return null;
   }
 
 }
