@@ -35,22 +35,11 @@ import org.apache.http.entity.InputStreamEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
-//import org.apache.http.impl.cookie.BasicClientCookie;
-//import org.apache.http.impl.client.BasicCookieStore;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-//import java.net.CookieStore;
-//import org.apache.http.protocol.BasicHttpContext;
-//import org.apache.http.protocol.HttpContext;
-//import org.apache.http.client.*;
-
-
-//import com.fasterxml.jackson.databind.node.ArrayNode;
-//import com.fasterxml.jackson.databind.node.TextNode;
 
 
 import java.io.*;
@@ -89,13 +78,15 @@ public class SyncGatewayClient extends DB {
   private static final String SG_AUTH = "syncgateway.auth";
   private static final String SG_CREATEUSERS = "syncgateway.createusers";
   private static final String SG_STORE_REVISIONS = "syncgateway.storerevs";
+  private static final String SG_CHANNELS_ENABLED = "syncgateway.enablechannels";
 
   private static final String MEMCACHED_HOST = "memcached.host";
   private static final String MEMCACHED_PORT = "memcached.port";
 
 
+  private static final String DEFAULT_USERNAME_PREFIX = "sg-user-";
+  private static final String DEFAULT_USER_PASSWORD = "password";
 
-  private static final String USERNAME_PREFIX = "sg-user-";
 
   // Sync Gateway parameters
   private String host;
@@ -104,9 +95,11 @@ public class SyncGatewayClient extends DB {
   private String portPublic;
   private boolean useAuth;
   private boolean createUsers;
-  private String currentUser = null;
+  //private String currentUser = null;
   private String currentSessionCookie;
   private boolean storeRevisions = false;
+  private boolean channelsEnabled = false;
+
 
   // http parameters
   private volatile Criteria requestTimedout = new Criteria(false);
@@ -139,7 +132,8 @@ public class SyncGatewayClient extends DB {
     portPublic = props.getProperty(SG_PORT_PUBLIC, "4984");
     useAuth = props.getProperty(SG_AUTH, "false").equals("true");
     createUsers = props.getProperty(SG_CREATEUSERS, "false").equals("true");
-    storeRevisions = props.getProperty(SG_STORE_REVISIONS, "true").equals("true");
+    storeRevisions = props.getProperty(SG_STORE_REVISIONS, "false").equals("true");
+    channelsEnabled = props.getProperty(SG_CHANNELS_ENABLED, "false").equals("true");
 
     conTimeout = Integer.valueOf(props.getProperty(HTTP_CON_TIMEOUT, "10")) * 1000;
     readTimeout = Integer.valueOf(props.getProperty(HTTP_READ_TIMEOUT, "10")) * 1000;
@@ -167,23 +161,14 @@ public class SyncGatewayClient extends DB {
     }
 
     if (useAuth) {
-      assignUserName();
       authentificate();
-
     }
-
   }
 
   @Override
   public Status read(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result) {
-    HttpPost httpGetRequest;
-    String fullUrl;
-
-    if (useAuth) {
-      fullUrl = urlEndpointPrefix + portPublic + documentEndpoint + key;
-    } else {
-      fullUrl = urlEndpointPrefix + portAdmin + documentEndpoint + key;
-    }
+    String port = (useAuth) ? portPublic : portAdmin;
+    String fullUrl = urlEndpointPrefix + port + documentEndpoint + key;
 
     int responseCode;
     try {
@@ -203,24 +188,21 @@ public class SyncGatewayClient extends DB {
 
   @Override
   public Status update(String table, String key, HashMap<String, ByteIterator> values) {
+
     String requestBody = buildDocumentFromMap(key, values);
     String docRevision = getRevision(key);
+
     if (docRevision == null) {
       System.err.println("Revision for document " + key + " not found in local");
       return Status.UNEXPECTED_STATE;
     }
-    HttpPut httpPutRequest;
+
+    String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl;
-
-    if (useAuth) {
-      fullUrl = urlEndpointPrefix + portPublic + documentEndpoint + key + "?rev=" + docRevision;
-      httpPutRequest = new HttpPut(fullUrl);
-    } else {
-      fullUrl = urlEndpointPrefix + portAdmin + documentEndpoint + key + "?rev=" + docRevision;
-      httpPutRequest = new HttpPut(fullUrl);
-    }
-
     int responseCode;
+
+    fullUrl = urlEndpointPrefix + port + documentEndpoint + key + "?rev=" + docRevision;
+    HttpPut httpPutRequest = new HttpPut(fullUrl);
 
     try {
       responseCode = httpExecute(httpPutRequest, requestBody, storeRevisions, false);
@@ -243,25 +225,15 @@ public class SyncGatewayClient extends DB {
 
   @Override
   public Status delete(String table, String key) {
-    return Status.OK;
+    return Status.NOT_IMPLEMENTED;
   }
 
   private Status insertUser(String table, String key, HashMap<String, ByteIterator> values) {
 
-    String username = USERNAME_PREFIX + sgUserInsertCounter.nextValue();
-    String channelName = username + "-channel";
-
-    String requestBody = buildUser(username, channelName, channelName);
-    HttpPost httpPostRequest;
-    String fullUrl;
-
-    if (useAuth) {
-      fullUrl = urlEndpointPrefix + portPublic + createUserEndpoint;
-      httpPostRequest = new HttpPost(fullUrl);
-    } else {
-      fullUrl = urlEndpointPrefix + portAdmin + createUserEndpoint;
-      httpPostRequest = new HttpPost(fullUrl);
-    }
+    String port = (useAuth) ? portPublic : portAdmin;
+    String requestBody = buildUserDef();
+    String fullUrl = urlEndpointPrefix + port + createUserEndpoint;
+    HttpPost httpPostRequest = new HttpPost(fullUrl);
 
     int responseCode;
     try {
@@ -269,24 +241,15 @@ public class SyncGatewayClient extends DB {
     } catch (Exception e) {
       responseCode = handleExceptions(e, fullUrl, "POST");
     }
-
     return getStatus(responseCode);
   }
 
   private Status insertDocument(String table, String key, HashMap<String, ByteIterator> values) {
 
+    String port = (useAuth) ? portPublic : portAdmin;
     String requestBody = buildDocumentFromMap(key, values);
-    HttpPost httpPostRequest;
-    String fullUrl;
-
-    if (useAuth) {
-      fullUrl = urlEndpointPrefix + portPublic + documentEndpoint;
-      httpPostRequest = new HttpPost(fullUrl);
-    } else {
-      fullUrl = urlEndpointPrefix + portAdmin + documentEndpoint;
-      httpPostRequest = new HttpPost(fullUrl);
-    }
-
+    String fullUrl = urlEndpointPrefix + port + documentEndpoint;
+    HttpPost httpPostRequest = new HttpPost(fullUrl);
 
     int responseCode;
     try {
@@ -298,15 +261,18 @@ public class SyncGatewayClient extends DB {
   }
 
 
-  private void assignUserName() {
-    currentUser =  USERNAME_PREFIX + sgUsersPool.nextValue();
-  }
-
-
   private int httpExecute(HttpEntityEnclosingRequestBase request, String data, boolean storeRev, boolean storeSession)
       throws IOException {
+    if (storeRev && storeSession) {
+      System.err.println("Unexpected http request flags combination!");
+      return 500;
+    }
+
+    if (useAuth) {
+      request.setHeader("Cookie", "SyncGatewaySession=" + currentSessionCookie);
+    }
+
     requestTimedout.setIsSatisfied(false);
-    boolean responseValidationOK = true;
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
     int responseCode = 200;
@@ -329,13 +295,16 @@ public class SyncGatewayClient extends DB {
       String line = "";
       while ((line = reader.readLine()) != null) {
         if (storeRev) {
-          responseValidationOK = false;
-          if (storeRevision(line)) {
-            responseValidationOK = true;
+          if (!storeRevision(line)) {
+            System.err.println("Failed to get doc revision our from insert/update request. Full response: " + line);
+            return 500;
           }
         }
         if (storeSession){
-          storeSessionCookie(line);
+          if (!storeSessionCookie(line)) {
+            System.err.println("Failed to get session cookie out from authorization request. Full response: " + line);
+            return 500;
+          }
         }
 
         if (requestTimedout.isSatisfied()) {
@@ -356,9 +325,6 @@ public class SyncGatewayClient extends DB {
     EntityUtils.consumeQuietly(responseEntity);
     response.close();
     restClient.close();
-    if (!responseValidationOK) {
-      return 500;
-    }
     return responseCode;
   }
 
@@ -374,7 +340,9 @@ public class SyncGatewayClient extends DB {
       request.setHeader(headers[i], headers[i + 1]);
     }
 
-    request.setHeader("Cookie", "SyncGatewaySession="+ currentSessionCookie);
+    if (useAuth) {
+      request.setHeader("Cookie", "SyncGatewaySession=" + currentSessionCookie);
+    }
 
     CloseableHttpResponse response = restClient.execute(request);
     responseCode = response.getStatusLine().getStatusCode();
@@ -386,7 +354,6 @@ public class SyncGatewayClient extends DB {
       StringBuffer responseContent = new StringBuffer();
       String line = "";
       while ((line = reader.readLine()) != null) {
-        System.out.println(line);
         if (requestTimedout.isSatisfied()) {
           // Must avoid memory leak.
           reader.close();
@@ -409,6 +376,135 @@ public class SyncGatewayClient extends DB {
     return responseCode;
   }
 
+
+
+  private int handleExceptions(Exception e, String url, String method) {
+    System.err.println(new StringBuilder(method).append(" Request: ").append(url).append(" | ")
+        .append(e.getClass().getName()).append(" occured | Error message: ")
+        .append(e.getMessage()).toString());
+    return 500;
+  }
+
+  // Maps HTTP status codes to YCSB status codes.
+  private Status getStatus(int responseCode) {
+    int rc = responseCode / 100;
+    if (responseCode == 400) {
+      return Status.BAD_REQUEST;
+    } else if (responseCode == 403) {
+      return Status.FORBIDDEN;
+    } else if (responseCode == 404) {
+      return Status.NOT_FOUND;
+    } else if (responseCode == 501) {
+      return Status.NOT_IMPLEMENTED;
+    } else if (responseCode == 503) {
+      return Status.SERVICE_UNAVAILABLE;
+    } else if (rc == 5) {
+      return Status.ERROR;
+    }
+    return Status.OK;
+  }
+
+
+  private String buildUserDef() {
+    String userName = DEFAULT_USERNAME_PREFIX + sgUserInsertCounter.nextValue();
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    root.put("name", userName);
+    root.put("password", DEFAULT_USER_PASSWORD);
+
+    if (channelsEnabled) {
+      root.putArray("admin_channels").add("ycsb");
+    } else {
+      root.putArray("admin_channels").add("*");
+    }
+    return root.toString();
+  }
+
+  private String buildDocumentFromMap(String key, HashMap<String, ByteIterator> values) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    root.put("_id", key);
+    if (channelsEnabled) {
+      root.putArray("channels").add("ycsb");
+    }
+    values.forEach((k, v)-> {
+        root.put(k, v.toString());
+      });
+    return root.toString();
+  }
+
+  private CloseableHttpClient createRestClient() {
+    RequestConfig.Builder requestBuilder = RequestConfig.custom();
+    requestBuilder = requestBuilder.setConnectTimeout(conTimeout);
+    requestBuilder = requestBuilder.setConnectionRequestTimeout(readTimeout);
+    requestBuilder = requestBuilder.setSocketTimeout(readTimeout);
+    HttpClientBuilder clientBuilder = HttpClientBuilder.create().setDefaultRequestConfig(requestBuilder.build());
+    return clientBuilder.setConnectionManagerShared(true).build();
+  }
+
+  private net.spy.memcached.MemcachedClient createMemcachedClient(String memHost, int memPort)
+      throws Exception {
+    String address = memHost + ":" + memPort;
+    return new net.spy.memcached.MemcachedClient(
+        new net.spy.memcached.ConnectionFactoryBuilder().setDaemon(true).setFailureMode(FailureMode.Retry).build(),
+        net.spy.memcached.AddrUtil.getAddresses(address));
+  }
+
+  private boolean storeRevision(String responseWithRevision) {
+    Pattern pattern = Pattern.compile("\\\"id\\\".\\\"([^\\\"]*).*\\\"rev\\\".\\\"([^\\\"]*)");
+    Matcher matcher = pattern.matcher(responseWithRevision);
+    if (matcher.find()) {
+      memcachedClient.set(matcher.group(1), 0, matcher.group(2));
+      return true;
+    }
+    return false;
+  }
+
+  private boolean storeSessionCookie(String responseWithSession) {
+    Pattern pattern = Pattern.compile("\\\"session_id\\\".\\\"([^\\\"]*)");
+    Matcher matcher = pattern.matcher(responseWithSession);
+    if (matcher.find()) {
+      currentSessionCookie = matcher.group(1);
+      return true;
+    }
+    return false;
+  }
+
+  private String getRevision(String key){
+    Object respose = memcachedClient.get(key);
+    if (respose != null) {
+      return memcachedClient.get(key).toString();
+    }
+    return null;
+  }
+
+  private String buildAutorizationBody(String name) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    root.put("name", name);
+    root.put("password", DEFAULT_USER_PASSWORD);
+    return root.toString();
+  }
+
+  private void authentificate(){
+    String userName = DEFAULT_USERNAME_PREFIX + sgUsersPool.nextValue();
+    String requestBody = buildAutorizationBody(userName);
+    String fullUrl = urlEndpointPrefix + portAdmin + createSessionEndpoint;
+    HttpPost httpPostRequest = new HttpPost(fullUrl);
+
+    int responseCode;
+    try {
+      responseCode = httpExecute(httpPostRequest, requestBody, false, true);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "POST");
+    }
+
+    if (getStatus(responseCode) != Status.OK) {
+      System.err.println("Autorization failure!");
+      System.exit(1);
+    }
+
+  }
 
   /**
    * Marks the input {@link Criteria} as satisfied when the input time has elapsed.
@@ -469,120 +565,5 @@ public class SyncGatewayClient extends DB {
       super("HTTP Request exceeded execution time limit.");
     }
 
-  }
-
-  private int handleExceptions(Exception e, String url, String method) {
-    System.err.println(new StringBuilder(method).append(" Request: ").append(url).append(" | ")
-        .append(e.getClass().getName()).append(" occured | Error message: ")
-        .append(e.getMessage()).toString());
-    return 500;
-  }
-
-  // Maps HTTP status codes to YCSB status codes.
-  private Status getStatus(int responseCode) {
-    int rc = responseCode / 100;
-    if (responseCode == 400) {
-      return Status.BAD_REQUEST;
-    } else if (responseCode == 403) {
-      return Status.FORBIDDEN;
-    } else if (responseCode == 404) {
-      return Status.NOT_FOUND;
-    } else if (responseCode == 501) {
-      return Status.NOT_IMPLEMENTED;
-    } else if (responseCode == 503) {
-      return Status.SERVICE_UNAVAILABLE;
-    } else if (rc == 5) {
-      return Status.ERROR;
-    }
-    return Status.OK;
-  }
-
-
-  private String buildUser(String name, String adminChannel, String channel) {
-    JsonNodeFactory factory = JsonNodeFactory.instance;
-    ObjectNode root = factory.objectNode();
-    root.put("name", name);
-    root.put("password", "password");
-    root.putArray("admin_channels").add(adminChannel);
-    root.putArray("all_channels").add(channel);
-    return root.toString();
-  }
-
-  private String buildAutorizationBody(String name) {
-    JsonNodeFactory factory = JsonNodeFactory.instance;
-    ObjectNode root = factory.objectNode();
-    root.put("name", name);
-    root.put("password", "password");
-    return root.toString();
-  }
-
-
-
-  private String buildDocumentFromMap(String key, HashMap<String, ByteIterator> values) {
-    JsonNodeFactory factory = JsonNodeFactory.instance;
-    ObjectNode root = factory.objectNode();
-    root.put("_id", key);
-    values.forEach((k, v)-> {
-        root.put(k, v.toString());
-      });
-    return root.toString();
-  }
-
-  private CloseableHttpClient createRestClient() {
-    RequestConfig.Builder requestBuilder = RequestConfig.custom();
-    requestBuilder = requestBuilder.setConnectTimeout(conTimeout);
-    requestBuilder = requestBuilder.setConnectionRequestTimeout(readTimeout);
-    requestBuilder = requestBuilder.setSocketTimeout(readTimeout);
-    HttpClientBuilder clientBuilder = HttpClientBuilder.create().setDefaultRequestConfig(requestBuilder.build());
-    return clientBuilder.setConnectionManagerShared(true).build();
-  }
-
-  private net.spy.memcached.MemcachedClient createMemcachedClient(String memHost, int memPort)
-      throws Exception {
-    String address = memHost + ":" + memPort;
-    return new net.spy.memcached.MemcachedClient(
-        new net.spy.memcached.ConnectionFactoryBuilder().setDaemon(true).setFailureMode(FailureMode.Retry).build(),
-        net.spy.memcached.AddrUtil.getAddresses(address));
-  }
-
-  private boolean storeRevision(String responseWithRevision) {
-    Pattern pattern = Pattern.compile("\\\"id\\\".\\\"([^\\\"]*).*\\\"rev\\\".\\\"([^\\\"]*)");
-    Matcher matcher = pattern.matcher(responseWithRevision);
-    if (matcher.find()) {
-      memcachedClient.set(matcher.group(1), 0, matcher.group(2));
-      return true;
-    } else {
-      System.err.println("Failed to get document revision. Full response: " + responseWithRevision);
-    }
-    return false;
-  }
-
-  private void storeSessionCookie(String responseWithSession) {
-    Pattern pattern = Pattern.compile("\\\"session_id\\\".\\\"([^\\\"]*)");
-    Matcher matcher = pattern.matcher(responseWithSession);
-    if (matcher.find()) {
-      currentSessionCookie = matcher.group(1);
-    }
-  }
-
-  private String getRevision(String key){
-    Object respose = memcachedClient.get(key);
-    if (respose != null) {
-      return memcachedClient.get(key).toString();
-    }
-    return null;
-  }
-
-  private void authentificate(){
-    String fullUrl = urlEndpointPrefix + portAdmin + createSessionEndpoint;
-    HttpPost httpPostRequest = new HttpPost(fullUrl);
-    String requestBody = buildAutorizationBody(currentUser);
-
-    int responseCode;
-    try {
-      responseCode = httpExecute(httpPostRequest, requestBody, false, true);
-    } catch (Exception e) {
-      responseCode = handleExceptions(e, fullUrl, "POST");
-    }
   }
 }
