@@ -35,11 +35,19 @@ import org.apache.http.entity.InputStreamEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
+//import org.apache.http.impl.cookie.BasicClientCookie;
+//import org.apache.http.impl.client.BasicCookieStore;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+//import java.net.CookieStore;
+//import org.apache.http.protocol.BasicHttpContext;
+//import org.apache.http.protocol.HttpContext;
+//import org.apache.http.client.*;
+
 
 //import com.fasterxml.jackson.databind.node.ArrayNode;
 //import com.fasterxml.jackson.databind.node.TextNode;
@@ -97,7 +105,8 @@ public class SyncGatewayClient extends DB {
   private boolean useAuth;
   private boolean createUsers;
   private String currentUser = null;
-  private boolean storeRevisions;
+  private String currentSessionCookie;
+  private boolean storeRevisions = false;
 
   // http parameters
   private volatile Criteria requestTimedout = new Criteria(false);
@@ -106,6 +115,7 @@ public class SyncGatewayClient extends DB {
   private int readTimeout = 10000;
   private int execTimeout = 10000;
   private CloseableHttpClient restClient;
+  private String httpSessionId;
 
   //memcached parameters
   private String memcachedHost;
@@ -115,6 +125,7 @@ public class SyncGatewayClient extends DB {
   private String urlEndpointPrefix;
   private String createUserEndpoint;
   private String documentEndpoint;
+  private String createSessionEndpoint;
 
 
 
@@ -142,6 +153,7 @@ public class SyncGatewayClient extends DB {
     urlEndpointPrefix = "http://" + host + ":";
     createUserEndpoint = "/" + db + "/_user/";
     documentEndpoint =  "/" + db + "/";
+    createSessionEndpoint = "/" + db + "/_session";
 
     restClient = createRestClient();
 
@@ -156,6 +168,8 @@ public class SyncGatewayClient extends DB {
 
     if (useAuth) {
       assignUserName();
+      authentificate();
+
     }
 
   }
@@ -209,7 +223,7 @@ public class SyncGatewayClient extends DB {
     int responseCode;
 
     try {
-      responseCode = httpExecute(httpPutRequest, requestBody, storeRevisions);
+      responseCode = httpExecute(httpPutRequest, requestBody, storeRevisions, false);
     } catch (Exception e) {
       responseCode = handleExceptions(e, fullUrl, "PUT");
     }
@@ -251,7 +265,7 @@ public class SyncGatewayClient extends DB {
 
     int responseCode;
     try {
-      responseCode = httpExecute(httpPostRequest, requestBody, false);
+      responseCode = httpExecute(httpPostRequest, requestBody, false, false);
     } catch (Exception e) {
       responseCode = handleExceptions(e, fullUrl, "POST");
     }
@@ -276,7 +290,7 @@ public class SyncGatewayClient extends DB {
 
     int responseCode;
     try {
-      responseCode = httpExecute(httpPostRequest, requestBody, storeRevisions);
+      responseCode = httpExecute(httpPostRequest, requestBody, storeRevisions, false);
     } catch (Exception e) {
       responseCode = handleExceptions(e, fullUrl, "POST");
     }
@@ -289,7 +303,8 @@ public class SyncGatewayClient extends DB {
   }
 
 
-  private int httpExecute(HttpEntityEnclosingRequestBase request, String data, boolean storeRev) throws IOException {
+  private int httpExecute(HttpEntityEnclosingRequestBase request, String data, boolean storeRev, boolean storeSession)
+      throws IOException {
     requestTimedout.setIsSatisfied(false);
     boolean responseValidationOK = true;
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
@@ -319,6 +334,10 @@ public class SyncGatewayClient extends DB {
             responseValidationOK = true;
           }
         }
+        if (storeSession){
+          storeSessionCookie(line);
+        }
+
         if (requestTimedout.isSatisfied()) {
           // Must avoid memory leak.
           reader.close();
@@ -354,6 +373,9 @@ public class SyncGatewayClient extends DB {
     for (int i = 0; i < headers.length; i = i + 2) {
       request.setHeader(headers[i], headers[i + 1]);
     }
+
+    request.setHeader("Cookie", "SyncGatewaySession="+ currentSessionCookie);
+
     CloseableHttpResponse response = restClient.execute(request);
     responseCode = response.getStatusLine().getStatusCode();
     HttpEntity responseEntity = response.getEntity();
@@ -364,6 +386,7 @@ public class SyncGatewayClient extends DB {
       StringBuffer responseContent = new StringBuffer();
       String line = "";
       while ((line = reader.readLine()) != null) {
+        System.out.println(line);
         if (requestTimedout.isSatisfied()) {
           // Must avoid memory leak.
           reader.close();
@@ -485,6 +508,16 @@ public class SyncGatewayClient extends DB {
     return root.toString();
   }
 
+  private String buildAutorizationBody(String name) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    root.put("name", name);
+    root.put("password", "password");
+    return root.toString();
+  }
+
+
+
   private String buildDocumentFromMap(String key, HashMap<String, ByteIterator> values) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
@@ -524,6 +557,14 @@ public class SyncGatewayClient extends DB {
     return false;
   }
 
+  private void storeSessionCookie(String responseWithSession) {
+    Pattern pattern = Pattern.compile("\\\"session_id\\\".\\\"([^\\\"]*)");
+    Matcher matcher = pattern.matcher(responseWithSession);
+    if (matcher.find()) {
+      currentSessionCookie = matcher.group(1);
+    }
+  }
+
   private String getRevision(String key){
     Object respose = memcachedClient.get(key);
     if (respose != null) {
@@ -532,4 +573,16 @@ public class SyncGatewayClient extends DB {
     return null;
   }
 
+  private void authentificate(){
+    String fullUrl = urlEndpointPrefix + portAdmin + createSessionEndpoint;
+    HttpPost httpPostRequest = new HttpPost(fullUrl);
+    String requestBody = buildAutorizationBody(currentUser);
+
+    int responseCode;
+    try {
+      responseCode = httpExecute(httpPostRequest, requestBody, false, true);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "POST");
+    }
+  }
 }
