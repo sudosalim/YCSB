@@ -98,7 +98,6 @@ public class SyncGatewayClient extends DB {
   private String portPublic;
   private boolean useAuth;
   private boolean createUsers;
-  //private String currentUser = null;
   private String currentSessionCookie;
   private boolean storeRevisions = false;
   private boolean channelsEnabled = false;
@@ -348,7 +347,6 @@ public class SyncGatewayClient extends DB {
     CloseableHttpResponse response = restClient.execute(request);
     responseCode = response.getStatusLine().getStatusCode();
     HttpEntity responseEntity = response.getEntity();
-    // If null entity don't bother about connection release.
     if (responseEntity != null) {
       InputStream stream = responseEntity.getContent();
       BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
@@ -356,6 +354,10 @@ public class SyncGatewayClient extends DB {
       String line = "";
       while ((line = reader.readLine()) != null) {
         if (storeRev) {
+          if (bulkEnabled) {
+            System.err.println("Store revision for bulk requests not supported... yet");
+            return 500;
+          }
           if (!storeRevision(line)) {
             System.err.println("Failed to get doc revision our from insert/update request. Full response: " + line);
             return 500;
@@ -369,7 +371,6 @@ public class SyncGatewayClient extends DB {
         }
 
         if (requestTimedout.isSatisfied()) {
-          // Must avoid memory leak.
           reader.close();
           stream.close();
           EntityUtils.consumeQuietly(responseEntity);
@@ -380,7 +381,6 @@ public class SyncGatewayClient extends DB {
         responseContent.append(line);
       }
       timer.interrupt();
-      // Closing the input stream will trigger connection release.
       stream.close();
     }
     EntityUtils.consumeQuietly(responseEntity);
@@ -526,7 +526,7 @@ public class SyncGatewayClient extends DB {
     ArrayNode docsNode = factory.arrayNode();
 
     for (int i = 0; i<bulkSize; i++) {
-      docsNode.add(factory.objectNode().put("_id", key + "_bulk" + i));
+      docsNode.add(factory.objectNode().put("id", key + "_bulk" + i));
     }
 
     root.set("docs", docsNode);
