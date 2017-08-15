@@ -18,12 +18,12 @@
 package com.yahoo.ycsb.db.syncgateway;
 
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.yahoo.ycsb.*;
 import com.yahoo.ycsb.generator.CounterGenerator;
 import net.spy.memcached.FailureMode;
 import net.spy.memcached.MemcachedClient;
 import org.apache.http.HttpEntity;
-//import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpEntityEnclosingRequestBase;
@@ -79,6 +79,9 @@ public class SyncGatewayClient extends DB {
   private static final String SG_CREATEUSERS = "syncgateway.createusers";
   private static final String SG_STORE_REVISIONS = "syncgateway.storerevs";
   private static final String SG_CHANNELS_ENABLED = "syncgateway.enablechannels";
+  private static final String SG_BULK_ENABLED = "syncgateway.bulkrequests";
+  private static final String SG_BULK_SIZE = "syncgateway.bulksize";
+
 
   private static final String MEMCACHED_HOST = "memcached.host";
   private static final String MEMCACHED_PORT = "memcached.port";
@@ -99,6 +102,9 @@ public class SyncGatewayClient extends DB {
   private String currentSessionCookie;
   private boolean storeRevisions = false;
   private boolean channelsEnabled = false;
+  private boolean bulkEnabled = false;
+  private int bulkSize = 10;
+
 
 
   // http parameters
@@ -119,7 +125,8 @@ public class SyncGatewayClient extends DB {
   private String createUserEndpoint;
   private String documentEndpoint;
   private String createSessionEndpoint;
-
+  private String bulkPostEndpoint;
+  private String bulkGetEndpoint;
 
 
   @Override
@@ -134,6 +141,8 @@ public class SyncGatewayClient extends DB {
     createUsers = props.getProperty(SG_CREATEUSERS, "false").equals("true");
     storeRevisions = props.getProperty(SG_STORE_REVISIONS, "false").equals("true");
     channelsEnabled = props.getProperty(SG_CHANNELS_ENABLED, "false").equals("true");
+    bulkEnabled = props.getProperty(SG_BULK_ENABLED, "false").equals("true");
+    bulkSize = Integer.valueOf(props.getProperty(SG_BULK_SIZE, "10"));
 
     conTimeout = Integer.valueOf(props.getProperty(HTTP_CON_TIMEOUT, "10")) * 1000;
     readTimeout = Integer.valueOf(props.getProperty(HTTP_READ_TIMEOUT, "10")) * 1000;
@@ -148,6 +157,8 @@ public class SyncGatewayClient extends DB {
     createUserEndpoint = "/" + db + "/_user/";
     documentEndpoint =  "/" + db + "/";
     createSessionEndpoint = "/" + db + "/_session";
+    bulkPostEndpoint = documentEndpoint + "_bulk_docs";
+    bulkGetEndpoint = documentEndpoint + "_bulk_get";
 
     restClient = createRestClient();
 
@@ -167,6 +178,13 @@ public class SyncGatewayClient extends DB {
 
   @Override
   public Status read(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result) {
+    if (bulkEnabled) {
+      return readBulk(table, key, fields, result);
+    }
+    return readSingle(table, key, fields, result);
+  }
+
+  private Status readSingle(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result) {
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl = urlEndpointPrefix + port + documentEndpoint + key;
 
@@ -180,6 +198,24 @@ public class SyncGatewayClient extends DB {
     return getStatus(responseCode);
   }
 
+  private Status readBulk(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result) {
+
+    String port = (useAuth) ? portPublic : portAdmin;
+    String requestBody = buildDocumentFromReadBulk(key);
+    String fullUrl = urlEndpointPrefix + port + bulkGetEndpoint;
+    HttpPost httpPostRequest = new HttpPost(fullUrl);
+
+    int responseCode;
+    try {
+      responseCode = httpExecute(httpPostRequest, requestBody, storeRevisions, false);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "POST");
+    }
+    return getStatus(responseCode);
+
+  }
+
+
   @Override
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
                      Vector<HashMap<String, ByteIterator>> result) {
@@ -188,6 +224,10 @@ public class SyncGatewayClient extends DB {
 
   @Override
   public Status update(String table, String key, HashMap<String, ByteIterator> values) {
+
+    if (bulkEnabled) {
+      return Status.NOT_IMPLEMENTED;
+    }
 
     String requestBody = buildDocumentFromMap(key, values);
     String docRevision = getRevision(key);
@@ -218,7 +258,11 @@ public class SyncGatewayClient extends DB {
     if (createUsers) {
       status = insertUser(table, key, values);
     } else {
-      status = insertDocument(table, key, values);
+      if (bulkEnabled) {
+        status = insertDocumentBulk(table, key, values);
+      } else {
+        status = insertDocumentSinge(table, key, values);
+      }
     }
     return status;
   }
@@ -244,7 +288,7 @@ public class SyncGatewayClient extends DB {
     return getStatus(responseCode);
   }
 
-  private Status insertDocument(String table, String key, HashMap<String, ByteIterator> values) {
+  private Status insertDocumentSinge(String table, String key, HashMap<String, ByteIterator> values) {
 
     String port = (useAuth) ? portPublic : portAdmin;
     String requestBody = buildDocumentFromMap(key, values);
@@ -258,6 +302,23 @@ public class SyncGatewayClient extends DB {
       responseCode = handleExceptions(e, fullUrl, "POST");
     }
     return getStatus(responseCode);
+  }
+
+  private Status insertDocumentBulk(String table, String key, HashMap<String, ByteIterator> values) {
+
+    String port = (useAuth) ? portPublic : portAdmin;
+    String requestBody = buildDocumentFromMapBulk(key, values);
+    String fullUrl = urlEndpointPrefix + port + bulkPostEndpoint;
+    HttpPost httpPostRequest = new HttpPost(fullUrl);
+
+    int responseCode;
+    try {
+      responseCode = httpExecute(httpPostRequest, requestBody, storeRevisions, false);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "POST");
+    }
+    return getStatus(responseCode);
+
   }
 
 
@@ -432,6 +493,46 @@ public class SyncGatewayClient extends DB {
       });
     return root.toString();
   }
+
+  private String buildDocumentFromMapBulk(String key, HashMap<String, ByteIterator> values) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    ArrayNode docsNode = factory.arrayNode();
+    ObjectNode docStaticFields = factory.objectNode();
+
+    values.forEach((k, v)-> {
+        docStaticFields.put(k, v.toString());
+      });
+
+    for (int i = 0; i<bulkSize; i++) {
+      ObjectNode docInstance = docStaticFields.deepCopy();
+      docInstance.put("_id", key + "_bulk" + i);
+      if (channelsEnabled) {
+        docInstance.putArray("channels").add("ycsb");
+      }
+      docsNode.add(docInstance);
+    }
+
+    root.set("docs", docsNode);
+    root.put("new_edits", true);
+
+    return root.toString();
+  }
+
+
+  private String buildDocumentFromReadBulk(String key) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    ArrayNode docsNode = factory.arrayNode();
+
+    for (int i = 0; i<bulkSize; i++) {
+      docsNode.add(factory.objectNode().put("_id", key + "_bulk" + i));
+    }
+
+    root.set("docs", docsNode);
+    return root.toString();
+  }
+
 
   private CloseableHttpClient createRestClient() {
     RequestConfig.Builder requestBuilder = RequestConfig.custom();
