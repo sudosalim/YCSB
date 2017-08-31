@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.Vector;
+import com.yahoo.ycsb.generator.soe.PredicateGenerator;
 
 /**
  * A layer for accessing a database to be benchmarked. Each thread in the client
@@ -132,4 +133,70 @@ public abstract class DB {
    * @return The result of the operation.
    */
   public abstract Status delete(String table, String key);
+
+
+
+  /**
+   *
+   *  SOE operations.
+   *
+   */
+
+
+  public Status soeInsert(String table, HashMap<String, ByteIterator> result, PredicateGenerator gen)  {
+    return Status.NOT_IMPLEMENTED;
+  }
+
+  public Status soeUpdate(String table, HashMap<String, ByteIterator> result, PredicateGenerator gen)  {
+    return Status.NOT_IMPLEMENTED;
+  }
+
+  public Status soeRead(String table, HashMap<String, ByteIterator> result, PredicateGenerator gen)  {
+    return Status.NOT_IMPLEMENTED;
+  }
+
+  public Status soeScan(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
+    return Status.NOT_IMPLEMENTED;
+  }
+
+  public Status soePage(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
+    return Status.NOT_IMPLEMENTED;
+  }
+
+  public Status soeSearch(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
+    return Status.NOT_IMPLEMENTED;
+  }
+
+  public Status soePage2(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
+    return Status.NOT_IMPLEMENTED;
+  }
+
+  public Status soeSearch2(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
+    return Status.NOT_IMPLEMENTED;
+  }
+
+  public Status soeNestScan(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
+    return Status.NOT_IMPLEMENTED;
+  }
+
+  public Status soeArrayScan(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
+    return Status.NOT_IMPLEMENTED;
+  }
+
+  public Status soeArrayDeepScan(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
+    return Status.NOT_IMPLEMENTED;
+  }
+
+  public Status soeReport(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
+    return Status.NOT_IMPLEMENTED;
+  }
+
+  public Status soeReport2(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
+    return Status.NOT_IMPLEMENTED;
+  }
+
+  public Status soeSync(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
+    return Status.NOT_IMPLEMENTED;
+  }
+
 }
