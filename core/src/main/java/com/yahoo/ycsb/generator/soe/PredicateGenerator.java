@@ -1,5 +1,6 @@
 package com.yahoo.ycsb.generator.soe;
 
+import com.yahoo.ycsb.generator.CounterGenerator;
 import com.yahoo.ycsb.generator.UniformLongGenerator;
 
 import java.util.Random;
@@ -9,21 +10,26 @@ import java.util.Random;
  */
 public class PredicateGenerator  {
 
-  private UniformLongGenerator uniformDocIDgen;
+  private UniformLongGenerator uniformDocIdGen;
   private Random rnd = new Random();
+  private CounterGenerator sequentialDocIdGen;
 
-
-  public PredicateGenerator(long totalDocs, String dataPath){
+  public PredicateGenerator(long totalDocs, long insertstart, String dataPath){
     ValuesContainer.init(dataPath);
-    uniformDocIDgen = new UniformLongGenerator(0, totalDocs);
+    uniformDocIdGen = new UniformLongGenerator(0, totalDocs - 1);
+    sequentialDocIdGen = new CounterGenerator(insertstart + 1);
   }
 
-  public String getDocid(){
-    return ValuesContainer.DEFAULTS_CUSTOMERDOCNAME_PREFIX + uniformDocIDgen.nextValue();
+  public String getRandomDocId(){
+    return ValuesContainer.DEFAULTS_CUSTOMERDOCNAME_PREFIX + uniformDocIdGen.nextValue();
   }
 
   public String getRandomDocument(){
     return pick(ValuesContainer.getData().get(ValuesContainer.DOCUMENT));
+  }
+
+  public String getSequentialDocId(){
+    return ValuesContainer.DEFAULTS_CUSTOMERDOCNAME_PREFIX + sequentialDocIdGen.nextValue();
   }
 
   public PredicateSequence getPagePredicateSequence(){
@@ -121,6 +127,10 @@ public class PredicateGenerator  {
   }
 
   private String pick(String[] source) {
+    if (source.length == 0) {
+      System.err.println("SOE dataset is empty. Cannot run the query.");
+      System.exit(1);
+    }
     return source[rnd.nextInt(source.length)];
   }
 

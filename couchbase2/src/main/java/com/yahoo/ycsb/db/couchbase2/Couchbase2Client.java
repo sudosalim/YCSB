@@ -138,6 +138,12 @@ public class Couchbase2Client extends DB {
   private String soeInsertN1qlQuery;
   private String soeReadN1qlQuery;
   private int documentExpiry;
+
+  private int soeLimitMin;
+  private int soeLimitMax;
+  private int soeOffsetMin;
+  private int soeOffsetMax;
+  private Random rnd = new Random();
   
   @Override
   public void init() throws DBException {
@@ -161,6 +167,23 @@ public class Couchbase2Client extends DB {
     networkMetricsInterval = Integer.parseInt(props.getProperty("couchbase.networkMetricsInterval", "0"));
     runtimeMetricsInterval = Integer.parseInt(props.getProperty("couchbase.runtimeMetricsInterval", "0"));
     documentExpiry = Integer.parseInt(props.getProperty("couchbase.documentExpiry", "0"));
+    soeLimitMin = Integer.parseInt(props.getProperty("soe_querylimit_min", "0"));
+    soeLimitMax = Integer.parseInt(props.getProperty("soe_querylimit_max", "100"));
+    soeOffsetMin = Integer.parseInt(props.getProperty("soe_offset_min", "0"));
+    soeOffsetMax = Integer.parseInt(props.getProperty("soe_offset_max", "100"));
+
+    if (soeLimitMin > soeLimitMax) {
+      int tmp = soeLimitMin;
+      soeLimitMin = soeLimitMax;
+      soeLimitMax = tmp;
+    }
+
+    if (soeOffsetMin > soeOffsetMax) {
+      int tmp = soeOffsetMin;
+      soeOffsetMin = soeOffsetMax;
+      soeOffsetMax = tmp;
+    }
+
     scanAllQuery =  "SELECT RAW meta().id FROM `" + bucketName +
       "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
 
@@ -172,7 +195,6 @@ public class Couchbase2Client extends DB {
         "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
     soeScanKVQuery =  soeQuerySelectIDClause + " `" + bucketName +
         "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
-
 
     try {
       synchronized (INIT_COORDINATOR) {
@@ -919,22 +941,95 @@ public class Couchbase2Client extends DB {
   // ******************************************************************************************************************
 
 
+  // *********************  SOE Insert ********************************
 
-  /*
-
-  function shuffleArray(array) {
-    for (var i = array.length - 1; i > 0; i--) {
-      var j = Math.floor(Math.random() * (i + 1));
-      var temp = array[i];
-      array[i] = array[j];
-      array[j] = temp;
+  @Override
+  public Status soeInsert(String table, HashMap<String, ByteIterator> result, PredicateGenerator gen)  {
+    try {
+      if (kv) {
+        return soeInsertKv(gen);
+      } else {
+        return soeInsertN1ql(gen);
+      }
+    } catch (Exception ex) {
+      ex.printStackTrace();
+      return Status.ERROR;
     }
-    return array;
   }
-  */
+
+  private Status soeInsertKv(PredicateGenerator gen) {
+    int tries = 60; // roughly 60 seconds with the 1 second sleep, not 100% accurate.
+    String docId = gen.getSequentialDocId();
+    String docRawBody = gen.getRandomDocument();
+
+    for(int i = 0; i < tries; i++) {
+      try {
+        waitForMutationResponse(bucket.async().insert(
+            RawJsonDocument.create(docId, documentExpiry, docRawBody), persistTo, replicateTo));
+        return Status.OK;
+      } catch (TemporaryFailureException ex) {
+        try {
+          Thread.sleep(1000);
+        } catch (InterruptedException e) {
+          throw new RuntimeException("Interrupted while sleeping on TMPFAIL backoff.", ex);
+        }
+      }
+    }
+    throw new RuntimeException("Still receiving TMPFAIL from the server after trying " + tries + " times. " +
+        "Check your server.");
+  }
+
+  private Status soeInsertN1ql(PredicateGenerator gen)
+      throws Exception {
+    String docId = gen.getSequentialDocId();
+    String docRawBody = gen.getRandomDocument();
+    N1qlQueryResult queryResult = bucket.query(N1qlQuery.parameterized(soeInsertN1qlQuery,
+        JsonArray.from(docId, JsonObject.fromJson(docRawBody)),
+        N1qlParams.build().adhoc(adhoc).maxParallelism(maxParallelism)
+    ));
+
+    if (!queryResult.parseSuccess() || !queryResult.finalSuccess()) {
+      throw new DBException("Error while parsing N1QL Result. Query: " + soeInsertN1qlQuery
+          + ", Errors: " + queryResult.errors());
+    }
+    return Status.OK;
+  }
 
 
-                             // ********************* Page ****************************
+
+  // *********************  SOE Update ********************************
+
+  @Override
+  public Status soeUpdate(String table, HashMap<String, ByteIterator> result, PredicateGenerator gen)  {
+    try {
+      if (kv) {
+        return soeUpdateKv(gen);
+      } else {
+        return soeUpdateN1ql(gen);
+      }
+    } catch (Exception ex) {
+      ex.printStackTrace();
+      return Status.ERROR;
+    }
+  }
+
+  private Status soeUpdateKv(PredicateGenerator gen)  {
+    String docId = gen.getRandomDocId();
+    String docBody = gen.getRandomDocument();
+    waitForMutationResponse(bucket.async().replace(
+        RawJsonDocument.create(docId, documentExpiry, docBody), persistTo, replicateTo));
+    return Status.OK;
+  }
+
+  private Status soeUpdateN1ql(PredicateGenerator gen)
+      throws Exception {
+
+    return Status.NOT_IMPLEMENTED;
+  }
+
+
+
+  // ********************* Page ****************************
 
   @Override
   public Status soePage(String table, final Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen) {
@@ -1587,14 +1682,20 @@ public class Couchbase2Client extends DB {
     return Status.OK;
   }
 
-
-
   private int getSoeLimit() {
-    return 10;
+    int diff = soeLimitMax - soeLimitMin;
+    if (diff != 0) {
+      return rnd.nextInt(diff) + soeLimitMin;
+    }
+    return soeLimitMin;
   }
 
   private int getSoeOffset() {
-    return 1;
+    int diff = soeOffsetMax - soeOffsetMin;
+    if (diff !=0) {
+      return rnd.nextInt(diff) + soeOffsetMin;
+    }
+    return soeOffsetMin;
   }
 
   /**

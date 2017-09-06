@@ -51,11 +51,8 @@ public class SoeWorkload extends CoreWorkload {
   public static final String SOE_REPORT2_PROPORTION_PROPERTY = "soe_report2";
   public static final String SOE_REPORT2_PROPORTION_PROPERTY_DEFAULT = "0.00";
 
-  public static final String SOE_SYNC_PROPORTION_PROPERTY = "soe_sync";
-  public static final String SOE_SYNC_PROPORTION_PROPERTY_DEFAULT = "0.00";
-
   public static final String SOE_DATASETPATH_PROPORTION_PROPERTY = "soe_dataset";
-  public static final String SOE_DATASETPATH_PROPORTION_PROPERTY_DEFAULT = "/workloads/soe/data";
+  public static final String SOE_DATASETPATH_PROPORTION_PROPERTY_DEFAULT = "workloads/soe/data";
 
   private PredicateGenerator predicateGenerator;
 
@@ -63,8 +60,10 @@ public class SoeWorkload extends CoreWorkload {
   public void init(Properties p) throws WorkloadException {
     super.init(p);
     operationchooser = createOperationGenerator(p);
-    predicateGenerator = new PredicateGenerator(recordcount, p.getProperty(SOE_DATASETPATH_PROPORTION_PROPERTY,
-        SOE_DATASETPATH_PROPORTION_PROPERTY_DEFAULT));
+    long insertstart =
+        Long.parseLong(p.getProperty(INSERT_START_PROPERTY, INSERT_START_PROPERTY_DEFAULT));
+    predicateGenerator = new PredicateGenerator(recordcount, insertstart,
+        p.getProperty(SOE_DATASETPATH_PROPORTION_PROPERTY, SOE_DATASETPATH_PROPORTION_PROPERTY_DEFAULT));
   }
 
   @Override
@@ -115,15 +114,6 @@ public class SoeWorkload extends CoreWorkload {
       break;
     case "SOE_REPORT2":
       doTransactionSoeReport2(db, predicateGenerator);
-      break;
-    case "SOE_SYNC":
-      doTransactionSoeSync(db, predicateGenerator);
-      break;
-    case "SOE_PAGE2":
-      doTransactionSoePage2(db, predicateGenerator);
-      break;
-    case "SOE_SEARCH2":
-      doTransactionSoeSearch2(db, predicateGenerator);
       break;
     default:
       doTransactionReadModifyWrite(db);
@@ -190,24 +180,6 @@ public class SoeWorkload extends CoreWorkload {
     }
   }
 
-  public void doTransactionSoePage2(DB db, PredicateGenerator generator) {
-    try {
-      db.soePage2(table, new Vector<HashMap<String, ByteIterator>>(), generator);
-    } catch (Exception ex) {
-      ex.printStackTrace();
-      ex.printStackTrace(System.out);
-    }
-  }
-
-  public void doTransactionSoeSearch2(DB db, PredicateGenerator generator) {
-    try {
-      db.soeSearch2(table, new Vector<HashMap<String, ByteIterator>>(), generator);
-    } catch (Exception ex) {
-      ex.printStackTrace();
-      ex.printStackTrace(System.out);
-    }
-  }
-
   public void doTransactionSoeNestScan(DB db, PredicateGenerator generator) {
     try {
       db.soeNestScan(table, new Vector<HashMap<String, ByteIterator>>(), generator);
@@ -253,14 +225,6 @@ public class SoeWorkload extends CoreWorkload {
     }
   }
 
-  public void doTransactionSoeSync(DB db, PredicateGenerator generator) {
-    try {
-      db.soeSync(table, new Vector<HashMap<String, ByteIterator>>(), generator);
-    } catch (Exception ex) {
-      ex.printStackTrace();
-      ex.printStackTrace(System.out);
-    }
-  }
 
   /**
    * Creates a weighted discrete values with database operations for a workload to perform.
@@ -310,8 +274,7 @@ public class SoeWorkload extends CoreWorkload {
         p.getProperty(SOE_REPORT_PROPORTION_PROPERTY, SOE_REPORT_PROPORTION_PROPERTY_DEFAULT));
     final double soeReport2 = Double.parseDouble(
         p.getProperty(SOE_REPORT2_PROPORTION_PROPERTY, SOE_REPORT2_PROPORTION_PROPERTY_DEFAULT));
-    final double soeSync = Double.parseDouble(
-        p.getProperty(SOE_SYNC_PROPORTION_PROPERTY, SOE_SYNC_PROPORTION_PROPERTY_DEFAULT));
+
 
     final DiscreteGenerator operationchooser = new DiscreteGenerator();
     if (readproportion > 0) {
@@ -377,11 +340,6 @@ public class SoeWorkload extends CoreWorkload {
     if (soeReport2 > 0) {
       operationchooser.addValue(soeReport2, "SOE_REPORT2");
     }
-
-    if (soeSync > 0) {
-      operationchooser.addValue(soeSync, "SOE_SYNC");
-    }
-
 
     return operationchooser;
   }

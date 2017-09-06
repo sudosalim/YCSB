@@ -167,14 +167,6 @@ public abstract class DB {
     return Status.NOT_IMPLEMENTED;
   }
 
-  public Status soePage2(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
-    return Status.NOT_IMPLEMENTED;
-  }
-
-  public Status soeSearch2(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
-    return Status.NOT_IMPLEMENTED;
-  }
-
   public Status soeNestScan(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
     return Status.NOT_IMPLEMENTED;
   }
@@ -195,8 +187,5 @@ public abstract class DB {
     return Status.NOT_IMPLEMENTED;
   }
 
-  public Status soeSync(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen)  {
-    return Status.NOT_IMPLEMENTED;
-  }
 
 }

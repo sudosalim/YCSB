@@ -313,18 +313,6 @@ public class DBWrapper extends DB {
     }
   }
 
-  public Status soePage2(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator generator) {
-    try (final TraceScope span = tracer.newScope(scopeStringRead)) {
-      long ist = measurements.getIntendedtartTimeNs();
-      long st = System.nanoTime();
-      Status res = db.soePage(table, result, generator);
-      long en = System.nanoTime();
-      measure("SOE_PAGE2", res, ist, st, en);
-      measurements.reportStatus("SOE_PAGE2", res);
-      return res;
-    }
-  }
-
   public Status soeSearch(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator generator) {
     try (final TraceScope span = tracer.newScope(scopeStringRead)) {
       long ist = measurements.getIntendedtartTimeNs();
@@ -336,19 +324,6 @@ public class DBWrapper extends DB {
       return res;
     }
   }
-
-  public Status soeSearch2(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator generator) {
-    try (final TraceScope span = tracer.newScope(scopeStringRead)) {
-      long ist = measurements.getIntendedtartTimeNs();
-      long st = System.nanoTime();
-      Status res = db.soeSearch(table, result, generator);
-      long en = System.nanoTime();
-      measure("SOE_SEARCH2", res, ist, st, en);
-      measurements.reportStatus("SOE_SEARCH2", res);
-      return res;
-    }
-  }
-
 
   public Status soeNestScan(String table, Vector<HashMap<String, ByteIterator>> result, PredicateGenerator generator){
     try (final TraceScope span = tracer.newScope(scopeStringRead)) {

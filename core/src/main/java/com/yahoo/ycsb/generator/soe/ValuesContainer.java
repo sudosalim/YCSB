@@ -1,14 +1,19 @@
 package com.yahoo.ycsb.generator.soe;
 
 import java.util.HashMap;
-
+import java.io.File;
+import java.io.FilenameFilter;
+import java.util.ArrayList;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Created by oleksandr.gyryk on 8/31/17.
  */
 public final class ValuesContainer {
 
-  public static final String DEFAULTS_CUSTOMERDOCNAME_PREFIX = "custoner:::";
+  public static final String DEFAULTS_CUSTOMERDOCNAME_PREFIX = "customer:::";
   public static final String DOCUMENT = "soedocument";
   public static final String OBJ_ADDRES_FLD_ZIP = "address.zip";
   public static final String OBJ_ADDRES_FLD_COUNTRY = "address.country";
@@ -25,9 +30,7 @@ public final class ValuesContainer {
   public static HashMap<String, String[]> getData() {
     return data;
   }
-
   private static HashMap<String, String[]> data = new HashMap<>();
-
 
   public static void init(String path) {
     data.put(DOCUMENT, importDocuments(path));
@@ -42,11 +45,28 @@ public final class ValuesContainer {
     data.put(FLD_ORDERMONTH, importOrderMonth());
   }
 
-
   private ValuesContainer() {};
 
   private static String[] importDocuments(String path) {
-    return new String[]{"json1", "json2"};
+    ArrayList<String> jsonStrings = new ArrayList<>();
+
+    File[] files = new File(path).listFiles(new FilenameFilter() {
+      @Override public boolean accept(File dir, String name) {
+        return name.endsWith(".json");
+      }
+    });
+
+    try {
+      for (File file : files) {
+        byte[] encoded = Files.readAllBytes(Paths.get(path + "/" + file.getName()));
+        jsonStrings.add(new String(encoded, StandardCharsets.UTF_8));
+      }
+    } catch (Exception e) {
+      System.err.println("Error reading document  in " + path);
+      System.exit(1);
+    }
+
+    return jsonStrings.toArray(new String[jsonStrings.size()]);
   }
 
   private static  String[] importZips() {
