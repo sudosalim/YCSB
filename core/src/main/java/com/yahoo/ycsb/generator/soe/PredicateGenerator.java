@@ -34,8 +34,8 @@ public class PredicateGenerator  {
 
   public PredicateSequence getPagePredicateSequence(){
     PredicateSequence predicateSequense = new PredicateSequence();
-    predicateSequense.setName(ValuesContainer.OBJ_ADDRES_FLD_ZIP);
-    predicateSequense.setValueA(pick(ValuesContainer.getData().get(ValuesContainer.OBJ_ADDRES_FLD_ZIP)));
+    predicateSequense.setName(ValuesContainer.OBJ_ADDRES_FLD_COUNTRY);
+    predicateSequense.setValueA(pick(ValuesContainer.getData().get(ValuesContainer.OBJ_ADDRES_FLD_COUNTRY)));
     return predicateSequense;
   }
 
@@ -61,9 +61,9 @@ public class PredicateGenerator  {
 
   public PredicateSequence getNestScanPredicateSequence(){
     PredicateSequence predicateSequense = new PredicateSequence();
-    predicateSequense.setName(ValuesContainer.OBJ_ADDRESS_OBJ_PREVADDRES_FLD_ZIP);
+    predicateSequense.setName(ValuesContainer.OBJ_ADDRESS_OBJ_PREVADDRES_FLD_COUNTRY);
     predicateSequense.setValueA(pick(
-        ValuesContainer.getData().get(ValuesContainer.OBJ_ADDRESS_OBJ_PREVADDRES_FLD_ZIP)));
+        ValuesContainer.getData().get(ValuesContainer.OBJ_ADDRESS_OBJ_PREVADDRES_FLD_COUNTRY)));
     return predicateSequense;
   }
 
@@ -76,25 +76,25 @@ public class PredicateGenerator  {
 
   public PredicateSequence getArrayDeepScanPredicateSequence(){
     PredicateSequence objVisitedplacesFldCountry = new PredicateSequence();
-    PredicateSequence objVisitedplacesFldCity = new PredicateSequence();
+    PredicateSequence objVisitedplacesFldActivity = new PredicateSequence();
 
     objVisitedplacesFldCountry.setName(ValuesContainer.OBJ_VISITEDPLACES_FLD_COUNTRY);
     objVisitedplacesFldCountry.setValueA(pick(
         ValuesContainer.getData().get(ValuesContainer.OBJ_VISITEDPLACES_FLD_COUNTRY)));
 
-    objVisitedplacesFldCity.setName(ValuesContainer.OBJ_VISITEDPLACES_FLD_CITIES);
-    objVisitedplacesFldCity.setValueA(pick(
-        ValuesContainer.getData().get(ValuesContainer.OBJ_VISITEDPLACES_FLD_CITIES)));
+    objVisitedplacesFldActivity.setName(ValuesContainer.OBJ_VISITEDPLACES_FLD_ACTIVITIES);
+    objVisitedplacesFldActivity.setValueA(pick(
+        ValuesContainer.getData().get(ValuesContainer.OBJ_VISITEDPLACES_FLD_ACTIVITIES)));
 
-    objVisitedplacesFldCountry.setNestedPredicate(objVisitedplacesFldCity);
+    objVisitedplacesFldCountry.setNestedPredicate(objVisitedplacesFldActivity);
 
     return objVisitedplacesFldCountry;
   }
 
   public PredicateSequence getReport1PrediateSequence(){
     PredicateSequence predicateSequense = new PredicateSequence();
-    predicateSequense.setName(ValuesContainer.OBJ_ADDRES_FLD_ZIP);
-    predicateSequense.setValueA(pick(ValuesContainer.getData().get(ValuesContainer.OBJ_ADDRES_FLD_ZIP)));
+    predicateSequense.setName(ValuesContainer.OBJ_ADDRES_FLD_COUNTRY);
+    predicateSequense.setValueA(pick(ValuesContainer.getData().get(ValuesContainer.OBJ_ADDRES_FLD_COUNTRY)));
 
     PredicateSequence orderList = new PredicateSequence();
     orderList.setName(ValuesContainer.FLD_ORDERLIST);
@@ -105,13 +105,13 @@ public class PredicateGenerator  {
 
   public PredicateSequence getReport2PrediateSequence(){
 
-    PredicateSequence objAddressFldZip = new PredicateSequence();
+    PredicateSequence objAddressFldCountry = new PredicateSequence();
     PredicateSequence fldOrderMonth = new PredicateSequence();
     PredicateSequence fldOrderSaleprice = new PredicateSequence();
     PredicateSequence orderList = new PredicateSequence();
 
-    objAddressFldZip.setName(ValuesContainer.OBJ_ADDRES_FLD_ZIP);
-    objAddressFldZip.setValueA(pick(ValuesContainer.getData().get(ValuesContainer.OBJ_ADDRES_FLD_ZIP)));
+    objAddressFldCountry.setName(ValuesContainer.OBJ_ADDRES_FLD_COUNTRY);
+    objAddressFldCountry.setValueA(pick(ValuesContainer.getData().get(ValuesContainer.OBJ_ADDRES_FLD_COUNTRY)));
 
     fldOrderMonth.setName(ValuesContainer.FLD_ORDERMONTH);
     fldOrderMonth.setValueA(pick(ValuesContainer.getData().get(ValuesContainer.FLD_ORDERMONTH)));
@@ -121,9 +121,9 @@ public class PredicateGenerator  {
 
     fldOrderSaleprice.setNestedPredicate(orderList);
     fldOrderMonth.setNestedPredicate(fldOrderSaleprice);
-    objAddressFldZip.setNestedPredicate(fldOrderMonth);
+    objAddressFldCountry.setNestedPredicate(fldOrderMonth);
 
-    return objAddressFldZip;
+    return objAddressFldCountry;
   }
 
   private String pick(String[] source) {
