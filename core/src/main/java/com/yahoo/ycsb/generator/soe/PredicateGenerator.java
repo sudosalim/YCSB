@@ -17,7 +17,7 @@ public class PredicateGenerator  {
   public PredicateGenerator(long totalDocs, long insertstart, String dataPath){
     ValuesContainer.init(dataPath);
     uniformDocIdGen = new UniformLongGenerator(0, totalDocs - 1);
-    sequentialDocIdGen = new CounterGenerator(insertstart + 1);
+    sequentialDocIdGen = new CounterGenerator(totalDocs + insertstart + 1);
   }
 
   public String getRandomDocId(){
