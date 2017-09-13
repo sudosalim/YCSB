@@ -35,4 +35,4 @@ soe_querylimit_min = 1
 soe_querylimit_max = 50
 
 soe_offset_min = 1
-soe_offset_max = 10000
+soe_offset_max = 1000
