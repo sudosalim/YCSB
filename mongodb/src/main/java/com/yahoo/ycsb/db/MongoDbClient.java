@@ -24,10 +24,7 @@
  */
 package com.yahoo.ycsb.db;
 
-import com.mongodb.MongoClient;
-import com.mongodb.MongoClientURI;
-import com.mongodb.ReadPreference;
-import com.mongodb.WriteConcern;
+import com.mongodb.*;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
@@ -37,22 +34,17 @@ import com.mongodb.client.model.UpdateOneModel;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
-import com.yahoo.ycsb.ByteArrayByteIterator;
-import com.yahoo.ycsb.ByteIterator;
-import com.yahoo.ycsb.DB;
-import com.yahoo.ycsb.DBException;
-import com.yahoo.ycsb.Status;
+import com.mongodb.util.JSON;
+import com.yahoo.ycsb.*;
 
+import com.yahoo.ycsb.DB;
+import com.yahoo.ycsb.generator.soe.PredicateGenerator;
+import com.yahoo.ycsb.generator.soe.PredicateSequence;
 import org.bson.Document;
 import org.bson.types.Binary;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
-import java.util.Vector;
+import java.text.SimpleDateFormat;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -67,6 +59,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  *      driver</a>
  */
 public class MongoDbClient extends DB {
+
+
+  private int soeLimitMin;
+  private int soeLimitMax;
+  private int soeOffsetMin;
+  private int soeOffsetMax;
+  private Random rnd = new Random();
 
   /** Used to include a field in a response. */
   private static final Integer INCLUDE = Integer.valueOf(1);
@@ -181,6 +180,25 @@ public class MongoDbClient extends DB {
       // Set is inserts are done as upserts. Defaults to false.
       useUpsert = Boolean.parseBoolean(
           props.getProperty("mongodb.upsert", "false"));
+
+
+      soeLimitMin = Integer.parseInt(props.getProperty("soe_querylimit_min", "0"));
+      soeLimitMax = Integer.parseInt(props.getProperty("soe_querylimit_max", "100"));
+      soeOffsetMin = Integer.parseInt(props.getProperty("soe_offset_min", "0"));
+      soeOffsetMax = Integer.parseInt(props.getProperty("soe_offset_max", "100"));
+
+      if (soeLimitMin > soeLimitMax) {
+        int tmp = soeLimitMin;
+        soeLimitMin = soeLimitMax;
+        soeLimitMax = tmp;
+      }
+
+      if (soeOffsetMin > soeOffsetMax) {
+        int tmp = soeOffsetMin;
+        soeOffsetMin = soeOffsetMax;
+        soeOffsetMax = tmp;
+      }
+
 
       // Just use the standard connection format URL
       // http://docs.mongodb.org/manual/reference/connection-string/
@@ -451,6 +469,478 @@ public class MongoDbClient extends DB {
     }
   }
 
+
+  // *********************  SOE Insert ********************************
+
+  @Override
+  public Status soeInsert(String table, HashMap<String, ByteIterator> result, PredicateGenerator gen)  {
+
+    try {
+      MongoCollection<Document> collection = database.getCollection(table);
+      String docId = gen.getSequentialDocId();
+      String docRawBody = gen.getRandomDocument();
+      Document toInsert = new Document("_id", docId);
+      DBObject body = (DBObject) JSON.parse(docRawBody);
+      toInsert.put(docId, body);
+      collection.insertOne(toInsert);
+      return Status.OK;
+    } catch (Exception e) {
+      System.err.println("Exception while trying bulk insert with "
+          + bulkInserts.size());
+      e.printStackTrace();
+      return Status.ERROR;
+    }
+  }
+
+  // *********************  SOE Update ********************************
+
+  @Override
+  public Status soeUpdate(String table, HashMap<String, ByteIterator> result, PredicateGenerator gen) {
+    try {
+      MongoCollection<Document> collection = database.getCollection(table);
+      String docId = gen.getRandomDocId();
+
+      PredicateSequence predicateSequence = gen.getSearchPredicateSequnce();
+      String addrCountry = predicateSequence.getName();
+      String addrCountryValue = predicateSequence.getValueA();
+
+      Document query = new Document("_id", docId);
+      Document fieldsToSet = new Document();
+
+      fieldsToSet.put(addrCountry, addrCountryValue);
+      Document update = new Document("$set", fieldsToSet);
+
+      UpdateResult res = collection.updateOne(query, update);
+      if (res.wasAcknowledged() && res.getMatchedCount() == 0) {
+        System.err.println("Nothing updated for key " + docId);
+        return Status.NOT_FOUND;
+      }
+      return Status.OK;
+    } catch (Exception e) {
+      System.err.println(e.toString());
+      return Status.ERROR;
+    }
+  }
+
+  // *********************  SOE Scan ********************************
+  @Override
+  public Status soeScan(String table, final Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen) {
+    int limit = getSoeLimit();
+    int offset = getSoeOffset();
+    String key = gen.getRandomDocId();
+    MongoCursor<Document> cursor = null;
+    try {
+      MongoCollection<Document> collection = database.getCollection(table);
+
+      Document scanRange = new Document("$gte", key);
+      Document query = new Document("_id", scanRange);
+      Document sort = new Document("_id", INCLUDE);
+
+      FindIterable<Document> findIterable =
+          collection.find(query).sort(sort).limit(limit).skip(offset);
+
+      Document projection = new Document();
+      for (String field : gen.getAllFieldsProjection()) {
+        projection.put(field, INCLUDE);
+      }
+      findIterable.projection(projection);
+
+      cursor = findIterable.iterator();
+
+      if (!cursor.hasNext()) {
+        System.err.println("Nothing found in scan for key " + key);
+        return Status.ERROR;
+      }
+
+      result.ensureCapacity(limit);
+
+      while (cursor.hasNext()) {
+        HashMap<String, ByteIterator> resultMap =
+            new HashMap<String, ByteIterator>();
+
+        Document obj = cursor.next();
+        soeFillMap(resultMap, obj);
+        result.add(resultMap);
+      }
+      return Status.OK;
+    } catch (Exception e) {
+      System.err.println(e.toString());
+      return Status.ERROR;
+    } finally {
+      if (cursor != null) {
+        cursor.close();
+      }
+    }
+  }
+
+  // *********************  SOE Page ********************************
+
+  @Override
+  public Status soePage(String table, final Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen) {
+
+    PredicateSequence predicateSequence = gen.getPagePredicateSequence();
+    int limit = getSoeLimit();
+    int offset = getSoeOffset();
+    String addrContry = predicateSequence.getName();
+    String addrCounryValue = predicateSequence.getValueA();
+
+    MongoCursor<Document> cursor = null;
+    try {
+      MongoCollection<Document> collection = database.getCollection(table);
+
+      Document query = new Document(addrContry, addrCounryValue);
+
+      FindIterable<Document> findIterable =
+          collection.find(query).limit(limit).skip(offset);
+
+      Document projection = new Document();
+      for (String field : gen.getAllFieldsProjection()) {
+        projection.put(field, INCLUDE);
+      }
+      findIterable.projection(projection);
+
+      cursor = findIterable.iterator();
+
+      if (!cursor.hasNext()) {
+        return Status.NOT_FOUND;
+      }
+
+      result.ensureCapacity(limit);
+
+      while (cursor.hasNext()) {
+        HashMap<String, ByteIterator> resultMap =
+            new HashMap<String, ByteIterator>();
+        Document obj = cursor.next();
+        soeFillMap(resultMap, obj);
+        result.add(resultMap);
+      }
+      return Status.OK;
+    } catch (Exception e) {
+      System.err.println(e.toString());
+      return Status.ERROR;
+    } finally {
+      if (cursor != null) {
+        cursor.close();
+      }
+    }
+  }
+
+// *********************  SOE search ********************************
+
+  @Override
+  public Status soeSearch(String table, final Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen) {
+
+    MongoCursor<Document> cursor = null;
+    try {
+      int recordcount = getSoeLimit();
+      int offset = getSoeOffset();
+
+      PredicateSequence predicateSequence = gen.getSearchPredicateSequnce();
+      String addrCountry = predicateSequence.getName();
+      String addrCountryValue = predicateSequence.getValueA();
+      String agegroup = predicateSequence.getNestedPredicate().getName();
+      String agegroupValue = predicateSequence.getNestedPredicate().getValueA();
+      String dobyear = predicateSequence.getNestedPredicate().getNestedPredicate().getName();
+      String dobyearValue = predicateSequence.getNestedPredicate().getNestedPredicate().getValueA();
+
+
+      MongoCollection<Document> collection = database.getCollection(table);
+
+      DBObject clause1 = new BasicDBObject(addrCountry, addrCountryValue);
+      DBObject clause2 = new BasicDBObject(agegroup, agegroupValue);
+      DBObject clause3Range =
+          new BasicDBObject("$gte", new SimpleDateFormat("yyyy-MM-dd").parse(dobyearValue + "-1-1"));
+      DBObject clause3 = new BasicDBObject(dobyear, clause3Range);
+      DBObject clause4Range =
+          new BasicDBObject("$lte", new SimpleDateFormat("yyyy-MM-dd").parse(dobyearValue+ "-12-31"));
+      DBObject clause4 = new BasicDBObject(dobyear, clause4Range);
+
+      BasicDBList and = new BasicDBList();
+      and.add(clause1);
+      and.add(clause2);
+      and.add(clause3);
+      and.add(clause4);
+
+      Document query = new Document("$and", and);
+
+      FindIterable<Document> findIterable =
+          collection.find(query).sort(new BasicDBObject(addrCountry, 1).
+              append(agegroup, 1).append(dobyear, 1)).limit(recordcount).skip(offset);
+
+      Document projection = new Document();
+      for (String field : gen.getAllFieldsProjection()) {
+        projection.put(field, INCLUDE);
+      }
+      findIterable.projection(projection);
+
+      cursor = findIterable.iterator();
+
+      if (!cursor.hasNext()) {
+        return Status.NOT_FOUND;
+      }
+      result.ensureCapacity(recordcount);
+
+      while (cursor.hasNext()) {
+        HashMap<String, ByteIterator> resultMap =
+            new HashMap<String, ByteIterator>();
+
+        Document obj = cursor.next();
+        soeFillMap(resultMap, obj);
+        result.add(resultMap);
+      }
+      return Status.OK;
+
+    } catch (Exception e) {
+      System.out.println(e.getMessage().toString());
+      return Status.ERROR;
+    } finally {
+      if (cursor != null) {
+        cursor.close();
+      }
+    }
+  }
+
+
+  // *********************  SOE NestScan ********************************
+
+  @Override
+  public Status soeNestScan(String table, final Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen) {
+
+    int recordcount = getSoeLimit();
+    int offset = getSoeOffset();
+    PredicateSequence predicateSequence = gen.getNestScanPredicateSequence();
+
+
+    MongoCursor<Document> cursor = null;
+    try {
+      MongoCollection<Document> collection = database.getCollection(table);
+
+      Document query = new Document(predicateSequence.getName(), predicateSequence.getValueA());
+
+      FindIterable<Document> findIterable =
+          collection.find(query).limit(recordcount).skip(offset);
+
+      Document projection = new Document();
+      for (String field : gen.getAllFieldsProjection()) {
+        projection.put(field, INCLUDE);
+      }
+      findIterable.projection(projection);
+
+      cursor = findIterable.iterator();
+
+      if (!cursor.hasNext()) {
+        return Status.NOT_FOUND;
+      }
+
+      result.ensureCapacity(recordcount);
+
+      while (cursor.hasNext()) {
+        HashMap<String, ByteIterator> resultMap =
+            new HashMap<String, ByteIterator>();
+
+        Document obj = cursor.next();
+        soeFillMap(resultMap, obj);
+        result.add(resultMap);
+      }
+      return Status.OK;
+    } catch (Exception e) {
+      System.err.println(e.toString());
+      return Status.ERROR;
+    } finally {
+      if (cursor != null) {
+        cursor.close();
+      }
+    }
+  }
+
+  // *********************  SOE ArrayScan ********************************
+
+  @Override
+  public Status soeArrayScan(String table, final Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen) {
+    int recordcount = getSoeLimit();
+    int offset = getSoeOffset();
+    PredicateSequence predicateSequence = gen.getArrayScanPredicateSequence();
+
+    Document sort = new Document("_id", INCLUDE);
+
+    MongoCursor<Document> cursor = null;
+    try {
+      MongoCollection<Document> collection = database.getCollection(table);
+
+      BasicDBObject   query = new BasicDBObject();
+      query.put(predicateSequence.getName(), predicateSequence.getValueA());
+
+      FindIterable<Document> findIterable = collection.find(query).sort(sort).limit(recordcount).skip(offset);
+      Document projection = new Document();
+      for (String field : gen.getAllFieldsProjection()) {
+        projection.put(field, INCLUDE);
+      }
+      findIterable.projection(projection);
+      cursor = findIterable.iterator();
+      if (!cursor.hasNext()) {
+        return Status.NOT_FOUND;
+      }
+      result.ensureCapacity(recordcount);
+
+      while (cursor.hasNext()) {
+        HashMap<String, ByteIterator> resultMap =
+            new HashMap<String, ByteIterator>();
+
+        Document obj = cursor.next();
+        soeFillMap(resultMap, obj);
+        result.add(resultMap);
+      }
+      return Status.OK;
+    } catch (Exception e) {
+      System.err.println(e.toString());
+      return Status.ERROR;
+    } finally {
+      if (cursor != null) {
+        cursor.close();
+      }
+    }
+  }
+
+// *********************  SOE ArrayDeepScan ********************************
+
+  @Override
+  public Status soeArrayDeepScan(String table, final Vector<HashMap<String, ByteIterator>> result,
+                                 PredicateGenerator gen) {
+    int recordcount = getSoeLimit();
+    int offset = getSoeOffset();
+    PredicateSequence predicateSequence = gen.getArrayDeepScanPredicateSequence();
+    String visitedPlacesCountry = predicateSequence.getName();
+    String visitedPlacesCountryValue = predicateSequence.getValueA();
+    String visitedPlacesActivity = predicateSequence.getNestedPredicate().getName();
+    String visitedPlacesActivityValue = predicateSequence.getNestedPredicate().getValueA();
+
+    Document sort = new Document("_id", INCLUDE);
+
+    MongoCursor<Document> cursor = null;
+    try {
+      MongoCollection<Document> collection = database.getCollection(table);
+
+      DBObject clause1 = new BasicDBObject(visitedPlacesCountry, visitedPlacesCountryValue);
+      DBObject clause2 = new BasicDBObject(visitedPlacesActivity, visitedPlacesActivityValue);
+
+      BasicDBList and = new BasicDBList();
+      and.add(clause1);
+      and.add(clause2);
+      Document query = new Document("$and", and);
+
+      FindIterable<Document> findIterable = collection.find(query).sort(sort).limit(recordcount).skip(offset);
+
+      Document projection = new Document();
+      for (String field : gen.getAllFieldsProjection()) {
+        projection.put(field, INCLUDE);
+      }
+      findIterable.projection(projection);
+      cursor = findIterable.iterator();
+      if (!cursor.hasNext()) {
+        return Status.NOT_FOUND;
+      }
+      result.ensureCapacity(recordcount);
+
+      while (cursor.hasNext()) {
+        HashMap<String, ByteIterator> resultMap =
+            new HashMap<String, ByteIterator>();
+
+        Document obj = cursor.next();
+        soeFillMap(resultMap, obj);
+        result.add(resultMap);
+      }
+      return Status.OK;
+    } catch (Exception e) {
+      System.err.println(e.toString());
+      return Status.ERROR;
+    } finally {
+      if (cursor != null) {
+        cursor.close();
+      }
+    }
+  }
+
+
+  // *********************  SOE Report ********************************
+
+  @Override
+  public Status soeReport(String table, final Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen) {
+    int recordcount = getSoeLimit();
+    int offset = getSoeOffset();
+    PredicateSequence predicateSequence = gen.getReport1PrediateSequence();
+    String addrCountry = predicateSequence.getName();
+    String addrCountryValue = predicateSequence.getValueA();
+    String orderlist = predicateSequence.getNestedPredicate().getName();
+
+    MongoCursor<Document> cursor = null;
+    try {
+
+      MongoCollection<Document> collection = database.getCollection(table);
+      Document query = new Document(addrCountry, addrCountryValue);
+      FindIterable<Document> findIterable = collection.find(query).limit(offset);
+      Document projection = new Document();
+      for (String field : gen.getAllFieldsProjection()) {
+        projection.put(field, INCLUDE);
+      }
+      findIterable.projection(projection);
+      cursor = findIterable.iterator();
+      if (!cursor.hasNext()) {
+        return Status.NOT_FOUND;
+      }
+      result.ensureCapacity(recordcount);
+
+      while (cursor.hasNext()) {
+        HashMap<String, ByteIterator> resultMap = new HashMap<String, ByteIterator>();
+        Document obj = cursor.next();
+        if (obj.get(orderlist) != null) {
+          BasicDBObject subq  = new BasicDBObject();
+          subq.put("_id", new BasicDBObject("$in", obj.get(orderlist)));
+          FindIterable<Document> findSubIterable = collection.find(subq);
+          Document orderDoc = findSubIterable.first();
+          obj.put(orderlist, orderDoc);
+        }
+        soeFillMap(resultMap, obj);
+        result.add(resultMap);
+      }
+      return Status.OK;
+    } catch (Exception e) {
+      System.err.println(e.toString());
+      return Status.ERROR;
+    } finally {
+      if (cursor != null) {
+        cursor.close();
+      }
+    }
+  }
+
+
+  private int getSoeLimit() {
+    int diff = soeLimitMax - soeLimitMin;
+    if (diff != 0) {
+      return rnd.nextInt(diff) + soeLimitMin;
+    }
+    return soeLimitMin;
+  }
+
+  private int getSoeOffset() {
+    int diff = soeOffsetMax - soeOffsetMin;
+    if (diff !=0) {
+      return rnd.nextInt(diff) + soeOffsetMin;
+    }
+    return soeOffsetMin;
+  }
+
+  protected void soeFillMap(Map<String, ByteIterator> resultMap, Document obj) {
+    for (Map.Entry<String, Object> entry : obj.entrySet()) {
+      String value = "null";
+      if (entry.getValue() != null) {
+        value = entry.getValue().toString();
+      }
+      resultMap.put(entry.getKey(), new StringByteIterator(value));
+    }
+  }
+
+
   /**
    * Fills the map with the values from the DBObject.
    * 
@@ -466,5 +956,6 @@ public class MongoDbClient extends DB {
             new ByteArrayByteIterator(((Binary) entry.getValue()).getData()));
       }
     }
+
   }
 }

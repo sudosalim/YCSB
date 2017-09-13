@@ -126,6 +126,10 @@ public class PredicateGenerator  {
     return objAddressFldCountry;
   }
 
+  public String[] getAllFieldsProjection() {
+    return ValuesContainer.getData().get(ValuesContainer.ALLCUSTOMERFIELDS);
+  }
+
   private String pick(String[] source) {
     if (source.length == 0) {
       System.err.println("SOE dataset is empty. Cannot run the query.");

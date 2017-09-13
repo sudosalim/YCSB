@@ -27,6 +27,9 @@ public final class ValuesContainer {
   public static final String FLD_ORDERSALEPRICE = "sale_price";
   public static final String FLD_ORDERLIST = "order_list";
 
+  public static final String ALLCUSTOMERFIELDS = "allfields";
+
+
   public static HashMap<String, String[]> getData() {
     return data;
   }
@@ -42,6 +45,7 @@ public final class ValuesContainer {
     data.put(OBJ_VISITEDPLACES_FLD_COUNTRY, importCountries());
     data.put(OBJ_VISITEDPLACES_FLD_ACTIVITIES, importActivities());
     data.put(FLD_ORDERMONTH, importOrderMonth());
+    data.put(ALLCUSTOMERFIELDS, listAllCustomerFields());
   }
 
   private ValuesContainer() {};
@@ -106,6 +110,13 @@ public final class ValuesContainer {
   private static  String[] importOrderMonth() {
     return new String[]{"January", "February", "March", "April", "May", "June",
                         "July", "August", "September", "October", "November", "December"};
+  }
+
+  private static String[] listAllCustomerFields() {
+    return new String[]{"_id", "doc_id", "gid", "first_name", "middle_name", "last_name", "ballance_current", "dob",
+                        "email", "isActive", "linear_score", "weighted_score", "phone_country", "phone_by_country",
+                        "age_group", "age_by_group", "url_protocol", "url_site", "url_domain", "url", "devices",
+                        "linked_devices", "address", "children", "visited_places", "order_list"};
   }
 
 }
