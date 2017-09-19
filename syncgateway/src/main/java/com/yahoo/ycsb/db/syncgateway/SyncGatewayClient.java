@@ -605,7 +605,8 @@ public class SyncGatewayClient extends DB {
   }
 
   private String getRandomHost(){
-    return host;//hosts[rand.nextInt(hosts.length)];
+    //hosts[rand.nextInt(hosts.length)];
+    return host;
   }
 
   private String buildUserDef() {
