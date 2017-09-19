@@ -107,6 +107,7 @@ public class SyncGatewayClient extends DB {
   private int totalUsers;
   private int totalChannels;
   private String[] hosts;
+  private String host;
 
 
   // http parameters
@@ -138,7 +139,7 @@ public class SyncGatewayClient extends DB {
 
     String host = props.getProperty(SG_HOST, "127.0.0.1");
     hosts = host.split(",");
-
+    host = hosts[rand.nextInt(hosts.length)];
 
     String db = props.getProperty(SG_DB, "db");
     portAdmin = props.getProperty(SG_PORT_ADMIN, "4985");
@@ -604,7 +605,7 @@ public class SyncGatewayClient extends DB {
   }
 
   private String getRandomHost(){
-    return hosts[rand.nextInt(hosts.length)];
+    return host;//hosts[rand.nextInt(hosts.length)];
   }
 
   private String buildUserDef() {
