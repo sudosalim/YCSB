@@ -137,8 +137,8 @@ public class SyncGatewayClient extends DB {
   public void init() throws DBException {
     Properties props = getProperties();
 
-    String host = props.getProperty(SG_HOST, "127.0.0.1");
-    hosts = host.split(",");
+    String hostParam = props.getProperty(SG_HOST, "127.0.0.1");
+    hosts = hostParam.split(",");
     host = hosts[rand.nextInt(hosts.length)];
 
     String db = props.getProperty(SG_DB, "db");
