@@ -319,6 +319,7 @@ public class CoreWorkload extends Workload {
   protected int zeropadding;
   protected int insertionRetryLimit;
   protected int insertionRetryInterval;
+  protected int sgInserstart = 0;
 
   private Measurements measurements = Measurements.getMeasurements();
 
@@ -380,6 +381,8 @@ public class CoreWorkload extends Workload {
 
     int insertstart =
         Integer.parseInt(p.getProperty(INSERT_START_PROPERTY, INSERT_START_PROPERTY_DEFAULT));
+    sgInserstart = insertstart;
+
     int insertcount =
         Integer.parseInt(p.getProperty(INSERT_COUNT_PROPERTY, String.valueOf(recordcount - insertstart)));
     // Confirm valid values for insertstart and insertcount in relation to recordcount
@@ -444,7 +447,8 @@ public class CoreWorkload extends Workload {
       int opcount = Integer.parseInt(p.getProperty(Client.OPERATION_COUNT_PROPERTY));
       int expectednewkeys = (int) ((opcount) * insertproportion * 2.0); // 2 is fudge factor
 
-      keychooser = new ScrambledZipfianGenerator(insertstart, insertstart + insertcount + expectednewkeys);
+      //keychooser = new ScrambledZipfianGenerator(insertstart, insertstart + insertcount + expectednewkeys);
+      keychooser = new ScrambledZipfianGenerator(0, recordcount);
     } else if (requestdistrib.compareTo("latest") == 0) {
       keychooser = new SkewedLatestGenerator(transactioninsertkeysequence);
     } else if (requestdistrib.equals("hotspot")) {
@@ -757,9 +761,9 @@ public class CoreWorkload extends Workload {
   }
 
   public void doTransactionUpdate(DB db) {
+
     // choose a random key
     int keynum = nextKeynum();
-
     String keyname = buildKeyName(keynum);
 
     HashMap<String, ByteIterator> values;
@@ -776,8 +780,9 @@ public class CoreWorkload extends Workload {
   }
 
   public void doTransactionInsert(DB db) {
+
     // choose the next key
-    int keynum = transactioninsertkeysequence.nextValue();
+    int keynum = transactioninsertkeysequence.nextValue() + sgInserstart;
 
     try {
       String dbkey = buildKeyName(keynum);
