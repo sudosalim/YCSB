@@ -429,7 +429,8 @@ public class CoreWorkload extends Workload {
 
     transactioninsertkeysequence = new AcknowledgedCounterGenerator(recordcount);
     if (requestdistrib.compareTo("uniform") == 0) {
-      keychooser = new UniformIntegerGenerator(insertstart, insertstart + insertcount - 1);
+      //keychooser = new UniformIntegerGenerator(insertstart, insertstart + insertcount - 1);
+      keychooser = new UniformIntegerGenerator(0, recordcount);
     } else if (requestdistrib.compareTo("sequential") == 0) {
       keychooser = new SequentialGenerator(insertstart, insertstart + insertcount - 1);
     } else if (requestdistrib.compareTo("zipfian") == 0) {
