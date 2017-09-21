@@ -41,7 +41,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-
 import java.io.*;
 import java.util.*;
 
@@ -182,19 +181,13 @@ public class SyncGatewayClient extends DB {
       System.exit(1);
     }
 
-    try {
-      syncLocalSequenceWithSyncGateway();
-    } catch (Exception e) {
-      System.err.println("Failed to synchronize sequences" + e.getMessage());
-    }
-
+    syncronizeSequences();
 
     if ((loadMode != SG_LOAD_MODE_USERS) && (useAuth)) {
       for (int i = 0; i < totalUsers; i++) {
         authentificateNextUser();
       }
     }
-
   }
 
 
@@ -281,11 +274,10 @@ public class SyncGatewayClient extends DB {
       incrementLocalSequence();
       if (roudTripWrite) {
         try {
-          if (!waitForDocInChangeFeed(currentSequence, key)) {
-            return Status.UNEXPECTED_STATE;
-          }
+          waitForDocInChangeFeed(currentSequence, key);
         } catch (Exception e) {
-          return Status.ERROR;
+          syncronizeSequences();
+          return Status.UNEXPECTED_STATE;
         }
       }
     }
@@ -349,7 +341,6 @@ public class SyncGatewayClient extends DB {
     }
 
     String currentSequence = getLocalSequence();
-
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
     try {
@@ -359,25 +350,23 @@ public class SyncGatewayClient extends DB {
     }
 
     Status result = getStatus(responseCode);
+
     if (result == Status.OK) {
       incrementLocalSequence();
       if (roudTripWrite) {
         try {
-          if (!waitForDocInChangeFeed(currentSequence, key)) {
-            return Status.UNEXPECTED_STATE;
-          }
+          waitForDocInChangeFeed(currentSequence, key);
         } catch (Exception e) {
-          return Status.ERROR;
+          syncronizeSequences();
+          return Status.UNEXPECTED_STATE;
         }
       }
     }
-
     return result;
-
   }
 
 
-  private boolean waitForDocInChangeFeed(String sequenceSince, String key) throws IOException {
+  private void waitForDocInChangeFeed(String sequenceSince, String key) throws IOException {
 
     String changesFeedEndpoint = "_changes?since=" + sequenceSince +
         "&feed=longpoll&filter=sync_gateway/bychannel&channels=" + getChannelNameByKey(key);
@@ -393,35 +382,35 @@ public class SyncGatewayClient extends DB {
     CloseableHttpResponse response = restClient.execute(request);
     HttpEntity responseEntity = response.getEntity();
     boolean docFound = false;
-    if (responseEntity != null) {
-      InputStream stream = responseEntity.getContent();
-      BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
-      StringBuffer responseContent = new StringBuffer();
-      String line = "";
-      while ((line = reader.readLine()) != null) {
-        if (lookForDocID(line, key)) {
-          docFound = true;
+    while (!docFound) {
+      if (responseEntity != null) {
+        InputStream stream = responseEntity.getContent();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+        StringBuffer responseContent = new StringBuffer();
+        String line = "";
+        while ((line = reader.readLine()) != null) {
+          if (lookForDocID(line, key)) {
+            docFound = true;
+          }
+          if (requestTimedout.isSatisfied()) {
+            // Must avoid memory leak.
+            reader.close();
+            stream.close();
+            EntityUtils.consumeQuietly(responseEntity);
+            response.close();
+            restClient.close();
+            throw new TimeoutException();
+          }
+          responseContent.append(line);
         }
-        if (requestTimedout.isSatisfied()) {
-          // Must avoid memory leak.
-          reader.close();
-          stream.close();
-          EntityUtils.consumeQuietly(responseEntity);
-          response.close();
-          restClient.close();
-          throw new TimeoutException();
-        }
-        responseContent.append(line);
+        timer.interrupt();
+        // Closing the input stream will trigger connection release.
+        stream.close();
       }
-      timer.interrupt();
-      // Closing the input stream will trigger connection release.
-      stream.close();
+      EntityUtils.consumeQuietly(responseEntity);
+      response.close();
     }
-    EntityUtils.consumeQuietly(responseEntity);
-    response.close();
     restClient.close();
-    return docFound;
-
   }
 
   private int httpExecute(HttpEntityEnclosingRequestBase request, String data)
@@ -754,6 +743,7 @@ public class SyncGatewayClient extends DB {
     return found;
   }
 
+
   private String getRevision(String key){
     Object respose = memcachedClient.get(key);
     if (respose != null) {
@@ -829,6 +819,15 @@ public class SyncGatewayClient extends DB {
     restClient.close();
   }
 
+
+  private void syncronizeSequences(){
+    try {
+      syncLocalSequenceWithSyncGateway();
+    } catch (Exception e) {
+      System.err.println("Failed to synchronize sequences" + e.getMessage());
+    }
+
+  }
 
   private void assignRandomUserToCurrentIteration() {
     currentIterationUser = DEFAULT_USERNAME_PREFIX + rand.nextInt(totalUsers);
