@@ -379,10 +379,10 @@ public class SyncGatewayClient extends DB {
     for (int i = 0; i < headers.length; i = i + 2) {
       request.setHeader(headers[i], headers[i + 1]);
     }
-    CloseableHttpResponse response = restClient.execute(request);
-    HttpEntity responseEntity = response.getEntity();
     boolean docFound = false;
     while (!docFound) {
+      CloseableHttpResponse response = restClient.execute(request);
+      HttpEntity responseEntity = response.getEntity();
       if (responseEntity != null) {
         InputStream stream = responseEntity.getContent();
         BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
@@ -460,6 +460,7 @@ public class SyncGatewayClient extends DB {
     EntityUtils.consumeQuietly(responseEntity);
     response.close();
     restClient.close();
+
     if (!responseGenericValidation) {
       return 500;
     }
