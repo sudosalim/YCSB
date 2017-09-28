@@ -368,6 +368,11 @@ public class SyncGatewayClient extends DB {
 
   private void waitForDocInChangeFeed(String sequenceSince, String key) throws IOException {
 
+    if ((sequenceSince == null) || (sequenceSince.equals(""))) {
+      System.err.println("Memcached failure!");
+      System.exit(1);
+    }
+
     String changesFeedEndpoint = "_changes?since=" + sequenceSince +
         "&feed=longpoll&filter=sync_gateway/bychannel&channels=" + getChannelNameByKey(key);
     String fullUrl = "http://" + getRandomHost() + ":" + portAdmin + documentEndpoint + changesFeedEndpoint;
@@ -399,6 +404,7 @@ public class SyncGatewayClient extends DB {
             EntityUtils.consumeQuietly(responseEntity);
             response.close();
             restClient.close();
+            System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! for " + changesFeedEndpoint);
             throw new TimeoutException();
           }
           responseContent.append(line);
