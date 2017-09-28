@@ -114,7 +114,7 @@ public class SyncGatewayClient extends DB {
   private String[] headers;
   private int conTimeout = 10000;
   private int readTimeout = 10000;
-  private int execTimeout = 10000;
+  private int execTimeout = 1000;
   private CloseableHttpClient restClient;
   //private String httpSessionId;
 
@@ -273,6 +273,10 @@ public class SyncGatewayClient extends DB {
     if (result == Status.OK) {
       incrementLocalSequence();
       if (roudTripWrite) {
+        if ((currentSequence == null) || (currentSequence.equals(""))) {
+          System.err.println("Memcached failure!");
+          return Status.BAD_REQUEST;
+        }
         try {
           waitForDocInChangeFeed(currentSequence, key);
         } catch (Exception e) {
@@ -354,6 +358,10 @@ public class SyncGatewayClient extends DB {
     if (result == Status.OK) {
       incrementLocalSequence();
       if (roudTripWrite) {
+        if ((currentSequence == null) || (currentSequence.equals(""))) {
+          System.err.println("Memcached failure!");
+          return Status.BAD_REQUEST;
+        }
         try {
           waitForDocInChangeFeed(currentSequence, key);
         } catch (Exception e) {
@@ -367,11 +375,6 @@ public class SyncGatewayClient extends DB {
 
 
   private void waitForDocInChangeFeed(String sequenceSince, String key) throws IOException {
-
-    if ((sequenceSince == null) || (sequenceSince.equals(""))) {
-      System.err.println("Memcached failure!");
-      System.exit(1);
-    }
 
     String changesFeedEndpoint = "_changes?since=" + sequenceSince +
         "&feed=longpoll&filter=sync_gateway/bychannel&channels=" + getChannelNameByKey(key);
