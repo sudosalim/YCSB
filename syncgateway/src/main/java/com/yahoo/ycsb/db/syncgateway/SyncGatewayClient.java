@@ -715,8 +715,11 @@ public class SyncGatewayClient extends DB {
     ArrayNode channels = factory.arrayNode();
 
     int channelsPerUser = 100;
-    if (id > 50) {
-      if (id > 80) {
+    int step = totalUsers / 100;
+    int limit1 = step * 50;
+    int limit2 = limit1 + (step*20);
+    if (id > limit1) {
+      if (id > limit2) {
         channelsPerUser = 20;
       } else {
         channelsPerUser = 50;
