@@ -199,10 +199,17 @@ public class SyncGatewayClient extends DB {
     }
 
     if ((loadMode != SG_LOAD_MODE_USERS) && (useAuth)) {
+      authentificateUsers();
+
+    }
+
+    /*
+    if ((loadMode != SG_LOAD_MODE_USERS) && (useAuth)) {
       for (int i = 0; i < totalUsers; i++) {
         authentificateNextUser();
       }
     }
+    */
   }
 
 
@@ -934,6 +941,27 @@ public class SyncGatewayClient extends DB {
     return root.toString();
   }
 
+  private void authentificateUsers() {
+    int userId = 0;
+    while (userId < totalUsers) {
+      userId = sgUsersPool.nextValue();
+      if (userId < totalUsers) {
+        String userName = DEFAULT_USERNAME_PREFIX + userId;
+        Object storedSession = memcachedClient.get(userName);
+        if (storedSession == null) {
+          String requestBody = buildAutorizationBody(userName);
+          String sessionCookie = null;
+          try {
+            sessionCookie = httpAuthWithSessionCookie(requestBody);
+            memcachedClient.set(userName, 0, sessionCookie);
+          } catch (Exception e) {
+            System.err.println("Autorization failure for user " + userName + ", exiting...");
+            System.exit(1);
+          }
+        }
+      }
+    }
+  }
 
   private void authentificateNextUser(){
     int userId = sgUsersPool.nextValue();
