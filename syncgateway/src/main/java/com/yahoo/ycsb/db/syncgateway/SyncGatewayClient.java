@@ -37,6 +37,7 @@ import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.concurrent.TimeUnit;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -332,6 +333,13 @@ public class SyncGatewayClient extends DB {
     if (loadMode == SG_LOAD_MODE_USERS) {
       return insertUser(table, key, values);
     }
+
+    try{
+      TimeUnit.SECONDS.sleep(1);
+    } catch (Exception e) {
+      System.err.println("Unexpected timer/sleep error");
+    }
+
     assignRandomUserToCurrentIteration();
     return insertDocument(table, key, values);
 
