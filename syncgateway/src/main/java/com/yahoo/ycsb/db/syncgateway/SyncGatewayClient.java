@@ -82,6 +82,8 @@ public class SyncGatewayClient extends DB {
   private static final String SG_ROUD_TRIP_WRITE = "syncgateway.roundtrip";
   private static final String SG_TOTAL_USERS = "syncgateway.totalusers";
   private static final String SG_TOTAL_CHANNELS = "syncgateway.channels";
+  private static final String SG_SEQUENCE_START = "syncgateway.sequencestart";
+  private static final String SG_INIT_USERS = "syncgateway.initusers";
 
   private static final String MEMCACHED_HOST = "memcached.host";
   private static final String MEMCACHED_PORT = "memcached.port";
@@ -101,8 +103,6 @@ public class SyncGatewayClient extends DB {
   private static final int SG_RUN_MODE_CHANGESONLY  = 2;
 
 
-
-
   // Sync Gateway parameters
   private String portAdmin;
   private String portPublic;
@@ -116,6 +116,8 @@ public class SyncGatewayClient extends DB {
   private String[] hosts;
   private String host;
   private int insertMode;
+  private String sequencestart;
+  private boolean initUsers;
 
 
   // http parameters
@@ -125,7 +127,7 @@ public class SyncGatewayClient extends DB {
   private int readTimeout = 10000;
   private int execTimeout = 1000;
   private CloseableHttpClient restClient;
-  //private String httpSessionId;
+
 
   //memcached
   private MemcachedClient memcachedClient;
@@ -172,6 +174,7 @@ public class SyncGatewayClient extends DB {
     totalChannels = Integer.valueOf(props.getProperty(SG_TOTAL_CHANNELS, "100"));
     bulkSize = Integer.valueOf(props.getProperty(SG_BULK_SIZE, "100"));
     roudTripWrite = props.getProperty(SG_ROUD_TRIP_WRITE, "false").equals("true");
+    initUsers = props.getProperty(SG_INIT_USERS, "true").equals("true");
 
     conTimeout = Integer.valueOf(props.getProperty(HTTP_CON_TIMEOUT, "10")) * 1000;
     readTimeout = Integer.valueOf(props.getProperty(HTTP_READ_TIMEOUT, "10")) * 1000;
@@ -181,6 +184,8 @@ public class SyncGatewayClient extends DB {
 
     String memcachedHost = props.getProperty(MEMCACHED_HOST, "localhost");
     String memcachedPort = props.getProperty(MEMCACHED_PORT, "8000");
+
+    sequencestart = props.getProperty(SG_SEQUENCE_START, "2000001");
 
     createUserEndpoint = "/" + db + "/_user/";
     documentEndpoint =  "/" + db + "/";
@@ -198,18 +203,11 @@ public class SyncGatewayClient extends DB {
       System.exit(1);
     }
 
-    if ((loadMode != SG_LOAD_MODE_USERS) && (useAuth)) {
-      authentificateUsers();
+    if ((loadMode != SG_LOAD_MODE_USERS) && (useAuth) && (initUsers)) {
+      initAllUsers();
 
     }
 
-    /*
-    if ((loadMode != SG_LOAD_MODE_USERS) && (useAuth)) {
-      for (int i = 0; i < totalUsers; i++) {
-        authentificateNextUser();
-      }
-    }
-    */
   }
 
 
@@ -228,12 +226,12 @@ public class SyncGatewayClient extends DB {
 
   private Status readChanges(String key) {
     try {
-      String seq = getLocalSequence();
+      String seq = getLocalSequence(currentIterationUser);
       checkForChanges(seq, getChannelNameByKey(key));
     } catch (Exception e) {
       return Status.ERROR;
     }
-    syncronizeSequences();
+    syncronizeSequences(currentIterationUser);
 
     return Status.OK;
   }
@@ -292,7 +290,7 @@ public class SyncGatewayClient extends DB {
       return Status.UNEXPECTED_STATE;
     }
 
-    String currentSequence = getLocalSequence();
+    String currentSequence = getLocalSequence(currentIterationUser);
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl;
     int responseCode;
@@ -317,7 +315,7 @@ public class SyncGatewayClient extends DB {
         try {
           waitForDocInChangeFeed(currentSequence, key);
         } catch (Exception e) {
-          syncronizeSequences();
+          syncronizeSequences(currentIterationUser);
           return Status.UNEXPECTED_STATE;
         }
       }
@@ -380,7 +378,7 @@ public class SyncGatewayClient extends DB {
       fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
     }
 
-    String currentSequence = getLocalSequence();
+    String currentSequence = getLocalSequence(currentIterationUser);
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
     //System.out.println("before INSERT: User " + currentIterationUser + " just inserted doc " + key
@@ -406,7 +404,7 @@ public class SyncGatewayClient extends DB {
         try {
           waitForDocInChangeFeed(currentSequence, key);
         } catch (Exception e) {
-          syncronizeSequences();
+          syncronizeSequences(currentIterationUser);
           return Status.UNEXPECTED_STATE;
         }
       }
@@ -835,15 +833,15 @@ public class SyncGatewayClient extends DB {
     return memcachedClient.get("_channel_" + currentIterationUser).toString();
   }
 
-  private void setLocalSequence(String seq) {
-    memcachedClient.set("_sequenceCounter_" + currentIterationUser, 0, seq);
+  private void setLocalSequence(String userName, String seq) {
+    memcachedClient.set("_sequenceCounter_" + userName, 0, seq);
   }
 
-  private String getLocalSequence() {
-    Object localSegObj = memcachedClient.get("_sequenceCounter_" + currentIterationUser);
+  private String getLocalSequence(String userName) {
+    Object localSegObj = memcachedClient.get("_sequenceCounter_" + userName);
     if (localSegObj == null) {
-      syncronizeSequences();
-      return memcachedClient.get("_sequenceCounter_" + currentIterationUser).toString();
+      syncronizeSequences(currentIterationUser);
+      return memcachedClient.get("_sequenceCounter_" + userName).toString();
     }
     return localSegObj.toString();
   }
@@ -941,7 +939,7 @@ public class SyncGatewayClient extends DB {
     return root.toString();
   }
 
-  private void authentificateUsers() {
+  private void initAllUsers() {
     int userId = 0;
     while (userId < totalUsers) {
       userId = sgUsersPool.nextValue();
@@ -959,29 +957,13 @@ public class SyncGatewayClient extends DB {
             System.exit(1);
           }
         }
+        setLocalSequence(userName, sequencestart);
       }
     }
   }
 
-  private void authentificateNextUser(){
-    int userId = sgUsersPool.nextValue();
-    if (userId<totalUsers) {
-      String userName = DEFAULT_USERNAME_PREFIX + userId;
-      String requestBody = buildAutorizationBody(userName);
-      String sessionCookie = null;
-      try {
-        sessionCookie = httpAuthWithSessionCookie(requestBody);
-        memcachedClient.set(userName, 0, sessionCookie);
-      } catch (Exception e) {
-        System.err.println("Autorization failure for user " + userName + ", exiting...");
-        System.exit(1);
-      }
-      currentIterationUser = userName;
-      syncronizeSequences();
-    }
-  }
 
-  private void syncLocalSequenceWithSyncGateway() throws IOException{
+  private void syncLocalSequenceWithSyncGateway(String userName) throws IOException{
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -1003,7 +985,7 @@ public class SyncGatewayClient extends DB {
         if (remoteSeq == null) {
           throw new IOException();
         }
-        setLocalSequence(remoteSeq);
+        setLocalSequence(userName, remoteSeq);
         if (requestTimedout.isSatisfied()) {
           // Must avoid memory leak.
           reader.close();
@@ -1024,9 +1006,9 @@ public class SyncGatewayClient extends DB {
   }
 
 
-  private void syncronizeSequences(){
+  private void syncronizeSequences(String userName){
     try {
-      syncLocalSequenceWithSyncGateway();
+      syncLocalSequenceWithSyncGateway(userName);
     } catch (Exception e) {
       System.err.println("Failed to synchronize sequences" + e.getMessage());
     }
