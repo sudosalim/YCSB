@@ -83,6 +83,8 @@ public class SyncGatewayClient extends DB {
   private static final String SG_TOTAL_USERS = "syncgateway.totalusers";
   private static final String SG_TOTAL_CHANNELS = "syncgateway.channels";
   private static final String SG_SEQUENCE_START = "syncgateway.sequencestart";
+  private static final String SG_INSERTUSERS_START = "syncgateway.insertusersstart";
+
   private static final String SG_INIT_USERS = "syncgateway.initusers";
 
   private static final String MEMCACHED_HOST = "memcached.host";
@@ -118,6 +120,7 @@ public class SyncGatewayClient extends DB {
   private int insertMode;
   private String sequencestart;
   private boolean initUsers;
+  private int insertUsersStart=0;
 
 
   // http parameters
@@ -176,6 +179,7 @@ public class SyncGatewayClient extends DB {
     roudTripWrite = props.getProperty(SG_ROUD_TRIP_WRITE, "false").equals("true");
     initUsers = props.getProperty(SG_INIT_USERS, "true").equals("true");
 
+    insertUsersStart = Integer.valueOf(props.getProperty(SG_INSERTUSERS_START, "0"));
     conTimeout = Integer.valueOf(props.getProperty(HTTP_CON_TIMEOUT, "10")) * 1000;
     readTimeout = Integer.valueOf(props.getProperty(HTTP_READ_TIMEOUT, "10")) * 1000;
     execTimeout = Integer.valueOf(props.getProperty(HTTP_EXEC_TIMEOUT, "10")) * 1000;
@@ -941,9 +945,9 @@ public class SyncGatewayClient extends DB {
 
   private void initAllUsers() {
     int userId = 0;
-    while (userId < totalUsers) {
-      userId = sgUsersPool.nextValue();
-      if (userId < totalUsers) {
+    while (userId < (totalUsers + insertUsersStart)) {
+      userId = sgUsersPool.nextValue() + insertUsersStart;
+      if (userId < (totalUsers + insertUsersStart)) {
         String userName = DEFAULT_USERNAME_PREFIX + userId;
         Object storedSession = memcachedClient.get(userName);
         if (storedSession == null) {
