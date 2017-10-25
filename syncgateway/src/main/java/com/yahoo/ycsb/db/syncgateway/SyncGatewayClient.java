@@ -37,7 +37,6 @@ import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import java.util.concurrent.TimeUnit;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
