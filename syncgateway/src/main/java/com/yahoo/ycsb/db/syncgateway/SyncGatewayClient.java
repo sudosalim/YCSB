@@ -334,12 +334,6 @@ public class SyncGatewayClient extends DB {
       return insertUser(table, key, values);
     }
 
-    try{
-      TimeUnit.SECONDS.sleep(1);
-    } catch (Exception e) {
-      System.err.println("Unexpected timer/sleep error");
-    }
-
     assignRandomUserToCurrentIteration();
     return insertDocument(table, key, values);
 
