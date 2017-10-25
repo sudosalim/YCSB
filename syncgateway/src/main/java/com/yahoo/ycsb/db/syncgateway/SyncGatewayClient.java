@@ -77,7 +77,7 @@ public class SyncGatewayClient extends DB {
   private static final String SG_PORT_PUBLIC = "syncgateway.port.public";
   private static final String SG_AUTH = "syncgateway.auth";
   private static final String SG_LOAD_MODE = "syncgateway.loadmode";
-  private static final String SG_RUN_MODE = "syncgateway.runmode";
+  private static final String SG_READ_MODE = "syncgateway.readmode";
   private static final String SG_INSERT_MODE = "syncgateway.insertmode";
   private static final String SG_BULK_SIZE = "syncgateway.bulksize";
   private static final String SG_ROUD_TRIP_WRITE = "syncgateway.roundtrip";
@@ -113,7 +113,7 @@ public class SyncGatewayClient extends DB {
   private int bulkSize = 10;
   private boolean roudTripWrite;
   private int loadMode;
-  private int runMode;
+  private int readMode;
   private int totalUsers;
   private int totalChannels;
   private String[] hosts;
@@ -165,13 +165,13 @@ public class SyncGatewayClient extends DB {
     insertMode = (props.getProperty(SG_INSERT_MODE, "bykey").equals("bykey")) ?
         SG_INSERT_MODE_BYKEY : SG_INSERT_MODE_BYUSER;
 
-    String runModeProp = props.getProperty(SG_RUN_MODE, "single");
+    String runModeProp = props.getProperty(SG_READ_MODE, "single");
     if (runModeProp.equals("single")) {
-      runMode = SG_RUN_MODE_SINGLE;
+      readMode = SG_RUN_MODE_SINGLE;
     } else if (runModeProp.equals("bulk")) {
-      runMode = SG_RUN_MODE_BULK;
+      readMode = SG_RUN_MODE_BULK;
     } else {
-      runMode = SG_RUN_MODE_CHANGESONLY;
+      readMode = SG_RUN_MODE_CHANGESONLY;
     }
 
     totalUsers = Integer.valueOf(props.getProperty(SG_TOTAL_USERS, "1000"));
@@ -221,9 +221,9 @@ public class SyncGatewayClient extends DB {
 
     assignRandomUserToCurrentIteration();
 
-    if (runMode == SG_RUN_MODE_BULK) {
+    if (readMode == SG_RUN_MODE_BULK) {
       return readBulk(table, key, fields, result);
-    } else if (runMode == SG_RUN_MODE_SINGLE) {
+    } else if (readMode == SG_RUN_MODE_SINGLE) {
       return readSingle(table, key, fields, result);
     }
     return readChanges(key);
@@ -283,7 +283,7 @@ public class SyncGatewayClient extends DB {
   @Override
   public Status update(String table, String key, HashMap<String, ByteIterator> values) {
     assignRandomUserToCurrentIteration();
-    if ((runMode == SG_RUN_MODE_BULK)) {
+    if ((readMode == SG_RUN_MODE_BULK)) {
       return Status.NOT_IMPLEMENTED;
     }
 
@@ -374,7 +374,7 @@ public class SyncGatewayClient extends DB {
   private Status insertDocument(String table, String key, HashMap<String, ByteIterator> values) {
 
 
-    if (runMode == SG_RUN_MODE_BULK && roudTripWrite) {
+    if (readMode == SG_RUN_MODE_BULK && roudTripWrite) {
       return Status.NOT_IMPLEMENTED;
     }
 
@@ -382,7 +382,7 @@ public class SyncGatewayClient extends DB {
     String requestBody;
     String fullUrl;
 
-    if (runMode == SG_RUN_MODE_BULK) {
+    if (readMode == SG_RUN_MODE_BULK) {
       requestBody = buildDocumentFromMapBulk(key, values);
       fullUrl = "http://" + getRandomHost() + ":" + port + bulkPostEndpoint;
     } else {
@@ -893,7 +893,7 @@ public class SyncGatewayClient extends DB {
   }
 
   private void storeRevisions(String responseWithRevision, String userName) {
-    if (runMode == SG_RUN_MODE_BULK) {
+    if (readMode == SG_RUN_MODE_BULK) {
       responseWithRevision = responseWithRevision.replace("},{", "}\n{");
     }
     Pattern pattern = Pattern.compile("\\\"id\\\".\\\"([^\\\"]*).*\\\"rev\\\".\\\"([^\\\"]*)");
