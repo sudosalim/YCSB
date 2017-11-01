@@ -78,12 +78,17 @@ public class SyncGatewayClient extends DB {
   private static final String SG_LOAD_MODE = "syncgateway.loadmode";
   private static final String SG_READ_MODE = "syncgateway.readmode";
   private static final String SG_INSERT_MODE = "syncgateway.insertmode";
-  private static final String SG_BULK_SIZE = "syncgateway.bulksize";
-  private static final String SG_ROUD_TRIP_WRITE = "syncgateway.roundtrip";
+  private static final String SG_ROUND_TRIP_WRITE = "syncgateway.roundtrip";
   private static final String SG_TOTAL_USERS = "syncgateway.totalusers";
   private static final String SG_TOTAL_CHANNELS = "syncgateway.channels";
+  private static final String SG_CHANNELS_PER_USER = "syncgateway.channelsperuser";
+  private static final String SG_CHANNELS_PER_DOCUMENT = "syncgateway.channelsperdocument";
+
   private static final String SG_SEQUENCE_START = "syncgateway.sequencestart";
   private static final String SG_INSERTUSERS_START = "syncgateway.insertusersstart";
+  private static final String SG_FEED_MODE = "syncgateway.feedmode";
+  private static final String SG_FEED_READING_MODE = "syncgateway.feedreadingmode";
+
 
   private static final String SG_INIT_USERS = "syncgateway.initusers";
 
@@ -100,27 +105,35 @@ public class SyncGatewayClient extends DB {
   private static final int SG_INSERT_MODE_BYKEY= 0;
   private static final int SG_INSERT_MODE_BYUSER  = 1;
 
-  private static final int SG_RUN_MODE_BULK = 0;
-  private static final int SG_RUN_MODE_SINGLE  = 1;
-  private static final int SG_RUN_MODE_CHANGESONLY  = 2;
+  private static final int SG_READ_MODE_DOCUMENTS = 0;
+  private static final int SG_READ_MODE_CHANGES  = 1;
+
+  private static final int SG_FEED_MODE_NORMAL = 0;
+  private static final int SG_FEED_MODE_LONGPOLL = 1;
+
+  private static final int SG_FEED_READ_MODE_IDSONLY = 0;
+  private static final int SG_FEED_READ_MODE_WITHDOCS = 1;
 
 
   // Sync Gateway parameters
   private String portAdmin;
   private String portPublic;
   private boolean useAuth;
-  private int bulkSize = 10;
   private boolean roudTripWrite;
   private int loadMode;
   private int readMode;
   private int totalUsers;
   private int totalChannels;
+  private int channelsPerUser;
+  private int channelsPerDocument;
   private String[] hosts;
   private String host;
   private int insertMode;
   private String sequencestart;
   private boolean initUsers;
   private int insertUsersStart=0;
+  private int feedMode;
+  private int feedReadingMode;
 
 
   // http parameters
@@ -139,8 +152,6 @@ public class SyncGatewayClient extends DB {
   private String createUserEndpoint;
   private String documentEndpoint;
   private String createSessionEndpoint;
-  private String bulkPostEndpoint;
-  private String bulkGetEndpoint;
 
   private String currentIterationUser = null;
   private Random rand = new Random();
@@ -164,20 +175,35 @@ public class SyncGatewayClient extends DB {
     insertMode = (props.getProperty(SG_INSERT_MODE, "bykey").equals("bykey")) ?
         SG_INSERT_MODE_BYKEY : SG_INSERT_MODE_BYUSER;
 
-    String runModeProp = props.getProperty(SG_READ_MODE, "single");
-    if (runModeProp.equals("single")) {
-      readMode = SG_RUN_MODE_SINGLE;
-    } else if (runModeProp.equals("bulk")) {
-      readMode = SG_RUN_MODE_BULK;
+    String runModeProp = props.getProperty(SG_READ_MODE, "documents");
+    if (runModeProp.equals("documents")) {
+      readMode = SG_READ_MODE_DOCUMENTS;
     } else {
-      readMode = SG_RUN_MODE_CHANGESONLY;
+      readMode = SG_READ_MODE_CHANGES;
     }
 
     totalUsers = Integer.valueOf(props.getProperty(SG_TOTAL_USERS, "1000"));
     totalChannels = Integer.valueOf(props.getProperty(SG_TOTAL_CHANNELS, "100"));
-    bulkSize = Integer.valueOf(props.getProperty(SG_BULK_SIZE, "100"));
-    roudTripWrite = props.getProperty(SG_ROUD_TRIP_WRITE, "false").equals("true");
+    roudTripWrite = props.getProperty(SG_ROUND_TRIP_WRITE, "false").equals("true");
     initUsers = props.getProperty(SG_INIT_USERS, "true").equals("true");
+    channelsPerUser = Integer.valueOf(props.getProperty(SG_CHANNELS_PER_USER, "10"));
+    channelsPerDocument = Integer.valueOf(props.getProperty(SG_CHANNELS_PER_DOCUMENT, "1"));
+
+    String feedModeProp = props.getProperty(SG_FEED_MODE, "normal");
+    String feedReadingModeProp = props.getProperty(SG_FEED_READING_MODE, "idsonly");
+
+    if (feedModeProp.equals("normal")) {
+      feedMode = SG_FEED_MODE_NORMAL;
+    } else {
+      feedMode = SG_FEED_MODE_LONGPOLL;
+    }
+
+    if (feedReadingModeProp.equals("idsonly")) {
+      feedReadingMode = SG_FEED_READ_MODE_IDSONLY;
+    } else {
+      feedReadingMode = SG_FEED_READ_MODE_WITHDOCS;
+    }
+
 
     insertUsersStart = Integer.valueOf(props.getProperty(SG_INSERTUSERS_START, "0"));
     conTimeout = Integer.valueOf(props.getProperty(HTTP_CON_TIMEOUT, "10")) * 1000;
@@ -194,8 +220,6 @@ public class SyncGatewayClient extends DB {
     createUserEndpoint = "/" + db + "/_user/";
     documentEndpoint =  "/" + db + "/";
     createSessionEndpoint = "/" + db + "/_session";
-    bulkPostEndpoint = documentEndpoint + "_bulk_docs";
-    bulkGetEndpoint = documentEndpoint + "_bulk_get";
 
     // Init components
     restClient = createRestClient();
@@ -220,12 +244,12 @@ public class SyncGatewayClient extends DB {
 
     assignRandomUserToCurrentIteration();
 
-    if (readMode == SG_RUN_MODE_BULK) {
-      return readBulk(table, key, fields, result);
-    } else if (readMode == SG_RUN_MODE_SINGLE) {
-      return readSingle(table, key, fields, result);
+    if (readMode == SG_READ_MODE_CHANGES) {
+      return readChanges(key);
     }
-    return readChanges(key);
+
+    return readSingle(table, key, fields, result);
+
   }
 
   private Status readChanges(String key) {
@@ -255,23 +279,6 @@ public class SyncGatewayClient extends DB {
     return getStatus(responseCode);
   }
 
-  private Status readBulk(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result) {
-
-    String port = (useAuth) ? portPublic : portAdmin;
-    String requestBody = buildDocumentFromReadBulk(key);
-    String fullUrl = "http://" + getRandomHost() + ":" + port + bulkGetEndpoint;
-    HttpPost httpPostRequest = new HttpPost(fullUrl);
-
-    int responseCode;
-    try {
-      responseCode = httpExecute(httpPostRequest, requestBody);
-    } catch (Exception e) {
-      responseCode = handleExceptions(e, fullUrl, "POST");
-    }
-    return getStatus(responseCode);
-
-  }
-
 
   @Override
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
@@ -282,9 +289,6 @@ public class SyncGatewayClient extends DB {
   @Override
   public Status update(String table, String key, HashMap<String, ByteIterator> values) {
     assignRandomUserToCurrentIteration();
-    if ((readMode == SG_RUN_MODE_BULK)) {
-      return Status.NOT_IMPLEMENTED;
-    }
 
     String requestBody = buildDocumentFromMap(key, values);
     String docRevision = getRevision(key);
@@ -367,21 +371,14 @@ public class SyncGatewayClient extends DB {
   private Status insertDocument(String table, String key, HashMap<String, ByteIterator> values) {
 
 
-    if (readMode == SG_RUN_MODE_BULK && roudTripWrite) {
-      return Status.NOT_IMPLEMENTED;
-    }
+
 
     String port = (useAuth) ? portPublic : portAdmin;
     String requestBody;
     String fullUrl;
 
-    if (readMode == SG_RUN_MODE_BULK) {
-      requestBody = buildDocumentFromMapBulk(key, values);
-      fullUrl = "http://" + getRandomHost() + ":" + port + bulkPostEndpoint;
-    } else {
-      requestBody = buildDocumentFromMap(key, values);
-      fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
-    }
+    requestBody = buildDocumentFromMap(key, values);
+    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
 
     String currentSequence = getLocalSequence(currentIterationUser);
     HttpPost httpPostRequest = new HttpPost(fullUrl);
@@ -444,7 +441,7 @@ public class SyncGatewayClient extends DB {
         StringBuffer responseContent = new StringBuffer();
         String line = "";
         //String fullResponse = "CHANGES FEED RESPONSE: " + "(user)" + currentIterationUser + ", (changes since) " +
-        //    sequenceSince + ": ";
+            //sequenceSince + ": ";
         while ((line = reader.readLine()) != null) {
           //fullResponse = fullResponse + line + "\n";
           if (requestTimedout.isSatisfied()) {
@@ -724,19 +721,7 @@ public class SyncGatewayClient extends DB {
     root.put("password", DEFAULT_USER_PASSWORD);
     ArrayNode channels = factory.arrayNode();
 
-    int channelsPerUser = 100;
-    int step = totalUsers / 100;
-    int limit1 = step * 50;
-    int limit2 = limit1 + (step*20);
-    if (id > limit1) {
-      if (id > limit2) {
-        channelsPerUser = 20;
-      } else {
-        channelsPerUser = 50;
-      }
-    }
-
-    String[] channelsSet = getSetOfRandomChannels(channelsPerUser);
+    String[] channelsSet = getSetOfRandomChannels();
     for (int i=0; i<channelsPerUser; i++){
       channels.add(channelsSet[i]);
     }
@@ -768,42 +753,14 @@ public class SyncGatewayClient extends DB {
     return root.toString();
   }
 
-  private String buildDocumentFromMapBulk(String key, HashMap<String, ByteIterator> values) {
-    JsonNodeFactory factory = JsonNodeFactory.instance;
-    ObjectNode root = factory.objectNode();
-    ArrayNode docsNode = factory.arrayNode();
-    ArrayNode channelsNode;
-    ObjectNode docStaticFields = factory.objectNode();
-
-    values.forEach((k, v)-> {
-        docStaticFields.put(k, v.toString());
-      });
-
-    for (int i = 0; i<bulkSize; i++) {
-      ObjectNode docInstance = docStaticFields.deepCopy();
-      docInstance.put("_id", key + "_bulk" + i);
-      channelsNode = factory.arrayNode();
-      channelsNode.add("ycsb");
-      channelsNode.add(getChannelNameByKey(key));
-      docInstance.set("channels", channelsNode);
-      docsNode.add(docInstance);
-    }
-
-    root.set("docs", docsNode);
-    root.put("new_edits", true);
-
-    return root.toString();
-  }
 
   private String getChannelNameByKey(String key){
     int channelId = Math.abs(key.hashCode() % totalChannels);
     return DEFAULT_CHANNEL_PREFIX + channelId;
   }
 
-  private String[] getSetOfRandomChannels(int channelsPerUser) {
-    if (channelsPerUser > totalChannels) {
-      channelsPerUser = totalChannels;
-    }
+  private String[] getSetOfRandomChannels() {
+
     String[] channels = new String[channelsPerUser];
     int[] allChannels = new int[totalChannels];
 
@@ -855,17 +812,6 @@ public class SyncGatewayClient extends DB {
     memcachedClient.incr("_sequenceCounter_" + currentIterationUser , 1);
   }
 
-  private String buildDocumentFromReadBulk(String key) {
-    JsonNodeFactory factory = JsonNodeFactory.instance;
-    ObjectNode root = factory.objectNode();
-    ArrayNode docsNode = factory.arrayNode();
-
-    for (int i = 0; i<bulkSize; i++) {
-      docsNode.add(factory.objectNode().put("id", key + "_bulk" + i));
-    }
-    root.set("docs", docsNode);
-    return root.toString();
-  }
 
   private CloseableHttpClient createRestClient() {
     RequestConfig.Builder requestBuilder = RequestConfig.custom();
@@ -886,9 +832,6 @@ public class SyncGatewayClient extends DB {
   }
 
   private void storeRevisions(String responseWithRevision, String userName) {
-    if (readMode == SG_RUN_MODE_BULK) {
-      responseWithRevision = responseWithRevision.replace("},{", "}\n{");
-    }
     Pattern pattern = Pattern.compile("\\\"id\\\".\\\"([^\\\"]*).*\\\"rev\\\".\\\"([^\\\"]*)");
     Matcher matcher = pattern.matcher(responseWithRevision);
     while (matcher.find()) {
