@@ -111,8 +111,8 @@ public class SyncGatewayClient extends DB {
   private static final int SG_FEED_MODE_NORMAL = 0;
   private static final int SG_FEED_MODE_LONGPOLL = 1;
 
-  private static final int SG_FEED_READ_MODE_IDSONLY = 0;
-  private static final int SG_FEED_READ_MODE_WITHDOCS = 1;
+  private static final String SG_FEED_READ_MODE_IDSONLY = "idsonly";
+  private static final String SG_FEED_READ_MODE_WITHDOCS = "withdocs";
 
 
   // Sync Gateway parameters
@@ -133,7 +133,7 @@ public class SyncGatewayClient extends DB {
   private boolean initUsers;
   private int insertUsersStart=0;
   private int feedMode;
-  private int feedReadingMode;
+  private boolean includeDocWhenReadingFeed;
 
 
   // http parameters
@@ -190,7 +190,7 @@ public class SyncGatewayClient extends DB {
     channelsPerDocument = Integer.valueOf(props.getProperty(SG_CHANNELS_PER_DOCUMENT, "1"));
 
     String feedModeProp = props.getProperty(SG_FEED_MODE, "normal");
-    String feedReadingModeProp = props.getProperty(SG_FEED_READING_MODE, "idsonly");
+    String feedReadingModeProp = props.getProperty(SG_FEED_READING_MODE, SG_FEED_READ_MODE_IDSONLY);
 
     if (feedModeProp.equals("normal")) {
       feedMode = SG_FEED_MODE_NORMAL;
@@ -198,12 +198,7 @@ public class SyncGatewayClient extends DB {
       feedMode = SG_FEED_MODE_LONGPOLL;
     }
 
-    if (feedReadingModeProp.equals("idsonly")) {
-      feedReadingMode = SG_FEED_READ_MODE_IDSONLY;
-    } else {
-      feedReadingMode = SG_FEED_READ_MODE_WITHDOCS;
-    }
-
+    includeDocWhenReadingFeed = feedReadingModeProp.equals(SG_FEED_READ_MODE_WITHDOCS);
 
     insertUsersStart = Integer.valueOf(props.getProperty(SG_INSERTUSERS_START, "0"));
     conTimeout = Integer.valueOf(props.getProperty(HTTP_CON_TIMEOUT, "10")) * 1000;
@@ -370,9 +365,6 @@ public class SyncGatewayClient extends DB {
 
   private Status insertDocument(String table, String key, HashMap<String, ByteIterator> values) {
 
-
-
-
     String port = (useAuth) ? portPublic : portAdmin;
     String requestBody;
     String fullUrl;
@@ -393,7 +385,7 @@ public class SyncGatewayClient extends DB {
     }
 
     //System.out.println("INSERT: User " + currentIterationUser + " just inserted doc " + key
-    //    + " SG seq before insert was " + currentSequence);
+        //+ " SG seq before insert was " + currentSequence);
 
     Status result = getStatus(responseCode);
     if (result == Status.OK) {
@@ -418,7 +410,12 @@ public class SyncGatewayClient extends DB {
 
   private void checkForChanges(String sequenceSince, String channel) throws IOException {
     String port = (useAuth) ? portPublic : portAdmin;
-    String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=normal&include_docs=true";
+    String includeDocsParam = "include_docs=false";
+    if (includeDocWhenReadingFeed) {
+      includeDocsParam = "include_docs=true";
+    }
+
+    String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=normal&" + includeDocsParam;
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
 
     requestTimedout.setIsSatisfied(false);
@@ -736,8 +733,6 @@ public class SyncGatewayClient extends DB {
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
     root.put("_id", key);
-
-    channelsNode.add("ycsb");
 
     if (insertMode == SG_INSERT_MODE_BYKEY) {
       channelsNode.add(getChannelNameByKey(key));
