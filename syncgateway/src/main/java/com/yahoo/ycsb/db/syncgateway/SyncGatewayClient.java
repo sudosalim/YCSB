@@ -249,12 +249,12 @@ public class SyncGatewayClient extends DB {
 
   private Status readChanges(String key) {
     try {
-      String seq = getLocalSequence(currentIterationUser);
+      String seq = getLocalSequenceForUser(currentIterationUser);
       checkForChanges(seq, getChannelNameByKey(key));
     } catch (Exception e) {
       return Status.ERROR;
     }
-    syncronizeSequences(currentIterationUser);
+    syncronizeSequencesForUser(currentIterationUser);
 
     return Status.OK;
   }
@@ -293,7 +293,7 @@ public class SyncGatewayClient extends DB {
       return Status.UNEXPECTED_STATE;
     }
 
-    String currentSequence = getLocalSequence(currentIterationUser);
+    String currentSequence = getLocalSequenceForUser(currentIterationUser);
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl;
     int responseCode;
@@ -309,7 +309,7 @@ public class SyncGatewayClient extends DB {
 
     Status result = getStatus(responseCode);
     if (result == Status.OK) {
-      incrementLocalSequence();
+      incrementLocalSequenceForUser();
       if (roudTripWrite) {
         if ((currentSequence == null) || (currentSequence.equals(""))) {
           System.err.println("Memcached failure!");
@@ -318,7 +318,7 @@ public class SyncGatewayClient extends DB {
         try {
           waitForDocInChangeFeed(currentSequence, key);
         } catch (Exception e) {
-          syncronizeSequences(currentIterationUser);
+          syncronizeSequencesForUser(currentIterationUser);
           return Status.UNEXPECTED_STATE;
         }
       }
@@ -356,7 +356,7 @@ public class SyncGatewayClient extends DB {
     }
     Status result = getStatus(responseCode);
     if (result == Status.OK) {
-      incrementLocalSequence();
+      incrementLocalSequenceForUser();
     }
 
     return result;
@@ -372,11 +372,11 @@ public class SyncGatewayClient extends DB {
     requestBody = buildDocumentFromMap(key, values);
     fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
 
-    String currentSequence = getLocalSequence(currentIterationUser);
+    String currentSequence = getLocalSequenceGlobal();
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
     //System.out.println("before INSERT: User " + currentIterationUser + " just inserted doc " + key
-    //    + " SG seq before insert was " + currentSequence);
+        //+ " SG seq before insert was " + currentSequence);
 
     try {
       responseCode = httpExecute(httpPostRequest, requestBody);
@@ -389,7 +389,8 @@ public class SyncGatewayClient extends DB {
 
     Status result = getStatus(responseCode);
     if (result == Status.OK) {
-      incrementLocalSequence();
+      incrementLocalSequenceForUser();
+      incrementLocalSequenceGlobal();
       if (roudTripWrite) {
         if ((currentSequence == null) || (currentSequence.equals(""))) {
           System.err.println("Memcached failure!");
@@ -398,7 +399,7 @@ public class SyncGatewayClient extends DB {
         try {
           waitForDocInChangeFeed(currentSequence, key);
         } catch (Exception e) {
-          syncronizeSequences(currentIterationUser);
+          syncronizeSequencesForUser(currentIterationUser);
           return Status.UNEXPECTED_STATE;
         }
       }
@@ -498,9 +499,11 @@ public class SyncGatewayClient extends DB {
         StringBuffer responseContent = new StringBuffer();
         String line = "";
         while ((line = reader.readLine()) != null) {
+          //System.out.println(line);
           if (lookForDocID(line, key)) {
             docFound = true;
           }
+          //docFound = true;
           if (requestTimedout.isSatisfied()) {
             // Must avoid memory leak.
             reader.close();
@@ -790,20 +793,37 @@ public class SyncGatewayClient extends DB {
     return memcachedClient.get("_channel_" + currentIterationUser).toString();
   }
 
-  private void setLocalSequence(String userName, String seq) {
+  private void setLocalSequenceForUser(String userName, String seq) {
     memcachedClient.set("_sequenceCounter_" + userName, 0, seq);
   }
 
-  private String getLocalSequence(String userName) {
+  private void setLocalSequenceGlobally(String seq) {
+    memcachedClient.set("_sequenceCounterGlobal", 0, seq);
+  }
+
+  private String getLocalSequenceGlobal() {
+    Object localSegObj = memcachedClient.get("_sequenceCounterGlobal");
+    if (localSegObj == null) {
+      setLocalSequenceGlobally(sequencestart);
+      return memcachedClient.get("_sequenceCounterGlobal").toString();
+    }
+    return localSegObj.toString();
+  }
+
+  private void incrementLocalSequenceGlobal(){
+    memcachedClient.incr("_sequenceCounterGlobal", 1);
+  }
+
+  private String getLocalSequenceForUser(String userName) {
     Object localSegObj = memcachedClient.get("_sequenceCounter_" + userName);
     if (localSegObj == null) {
-      syncronizeSequences(currentIterationUser);
+      syncronizeSequencesForUser(currentIterationUser);
       return memcachedClient.get("_sequenceCounter_" + userName).toString();
     }
     return localSegObj.toString();
   }
 
-  private void incrementLocalSequence(){
+  private void incrementLocalSequenceForUser(){
     memcachedClient.incr("_sequenceCounter_" + currentIterationUser , 1);
   }
 
@@ -900,13 +920,14 @@ public class SyncGatewayClient extends DB {
             System.exit(1);
           }
         }
-        setLocalSequence(userName, sequencestart);
+        setLocalSequenceForUser(userName, sequencestart);
       }
     }
+    setLocalSequenceGlobally(sequencestart);
   }
 
 
-  private void syncLocalSequenceWithSyncGateway(String userName) throws IOException{
+  private void syncLocalSequenceWithSyncGatewayForUserAndGlobally(String userName) throws IOException{
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -928,7 +949,8 @@ public class SyncGatewayClient extends DB {
         if (remoteSeq == null) {
           throw new IOException();
         }
-        setLocalSequence(userName, remoteSeq);
+        setLocalSequenceForUser(userName, remoteSeq);
+        setLocalSequenceGlobally(remoteSeq);
         if (requestTimedout.isSatisfied()) {
           // Must avoid memory leak.
           reader.close();
@@ -949,9 +971,9 @@ public class SyncGatewayClient extends DB {
   }
 
 
-  private void syncronizeSequences(String userName){
+  private void syncronizeSequencesForUser(String userName){
     try {
-      syncLocalSequenceWithSyncGateway(userName);
+      syncLocalSequenceWithSyncGatewayForUserAndGlobally(userName);
     } catch (Exception e) {
       System.err.println("Failed to synchronize sequences" + e.getMessage());
     }
