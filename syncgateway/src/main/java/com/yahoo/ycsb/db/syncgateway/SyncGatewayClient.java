@@ -135,8 +135,8 @@ public class SyncGatewayClient extends DB {
   // http parameters
   private volatile Criteria requestTimedout = new Criteria(false);
   private String[] headers;
-  private int conTimeout = 10000;
-  private int readTimeout = 10000;
+  private int conTimeout = 1000;
+  private int readTimeout = 1000;
   private int execTimeout = 1000;
   private CloseableHttpClient restClient;
 
@@ -384,24 +384,23 @@ public class SyncGatewayClient extends DB {
     Status result = getStatus(responseCode);
     if (result == Status.OK) {
       incrementLocalSequenceForUser();
-
       if (roudTripWrite) {
         if ((currentSequence == null) || (currentSequence.equals(""))) {
           System.err.println("Memcached failure!");
           return Status.BAD_REQUEST;
         }
         try {
-          waitForDocInChangeFeed(currentSequence, key);
+          waitForDocInChangeFeed2(currentSequence, key);
         } catch (Exception e) {
           syncronizeSequencesForUser(currentIterationUser);
           return Status.UNEXPECTED_STATE;
         }
       }
+      incrementLocalSequenceGlobal();
     }
-    incrementLocalSequenceGlobal();
+
     return result;
   }
-
 
   private void checkForChanges(String sequenceSince, String channel) throws IOException {
     String port = (useAuth) ? portPublic : portAdmin;
@@ -424,18 +423,82 @@ public class SyncGatewayClient extends DB {
       request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
     }
 
-    if (true) {
-      CloseableHttpResponse response = restClient.execute(request);
+    CloseableHttpResponse response = restClient.execute(request);
+    HttpEntity responseEntity = response.getEntity();
+    if (responseEntity != null) {
+      InputStream stream = responseEntity.getContent();
+      BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+      StringBuffer responseContent = new StringBuffer();
+      String line = "";
+      //String fullResponse = "CHANGES FEED RESPONSE: " + "(user)" + currentIterationUser + ", (changes since) " +
+          //sequenceSince + ": ";
+      while ((line = reader.readLine()) != null) {
+        //fullResponse = fullResponse + line + "\n";
+        if (requestTimedout.isSatisfied()) {
+          // Must avoid memory leak.
+          reader.close();
+          stream.close();
+          EntityUtils.consumeQuietly(responseEntity);
+          response.close();
+          restClient.close();
+          System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! for " + changesFeedEndpoint);
+          throw new TimeoutException();
+        }
+        responseContent.append(line);
+      }
+      //System.out.println(fullResponse);
+      timer.interrupt();
+      // Closing the input stream will trigger connection release.
+      stream.close();
+    }
+    EntityUtils.consumeQuietly(responseEntity);
+    response.close();
+    restClient.close();
+  }
+
+
+  private void waitForDocInChangeFeed2(String sequenceSince, String key) throws IOException {
+    String port = (useAuth) ? portPublic : portAdmin;
+    String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
+        "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
+
+    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+
+    requestTimedout.setIsSatisfied(false);
+    Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
+    timer.start();
+    HttpGet request = new HttpGet(fullUrl);
+    for (int i = 0; i < headers.length; i = i + 2) {
+      request.setHeader(headers[i], headers[i + 1]);
+    }
+    if (useAuth) {
+      request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
+    }
+
+    CloseableHttpResponse response = null;
+    boolean docFound = false;
+    while (!docFound) {
+      try {
+        response = restClient.execute(request);
+      } catch (java.net.SocketTimeoutException ex){
+        response.close();
+        restClient.close();
+        System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! for " + changesFeedEndpoint);
+        throw new TimeoutException();
+      }
+
       HttpEntity responseEntity = response.getEntity();
       if (responseEntity != null) {
         InputStream stream = responseEntity.getContent();
         BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
         StringBuffer responseContent = new StringBuffer();
         String line = "";
-        //String fullResponse = "CHANGES FEED RESPONSE: " + "(user)" + currentIterationUser + ", (changes since) " +
-            //sequenceSince + ": ";
         while ((line = reader.readLine()) != null) {
-          //fullResponse = fullResponse + line + "\n";
+          //System.out.println(line);
+          if (lookForDocID(line, key)) {
+            docFound = true;
+          }
+          //docFound = true;
           if (requestTimedout.isSatisfied()) {
             // Must avoid memory leak.
             reader.close();
@@ -443,12 +506,10 @@ public class SyncGatewayClient extends DB {
             EntityUtils.consumeQuietly(responseEntity);
             response.close();
             restClient.close();
-            System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! for " + changesFeedEndpoint);
             throw new TimeoutException();
           }
           responseContent.append(line);
         }
-        //System.out.println(fullResponse);
         timer.interrupt();
         // Closing the input stream will trigger connection release.
         stream.close();
@@ -491,6 +552,7 @@ public class SyncGatewayClient extends DB {
       counter--;
       if (counter < 0) {
         requestTimedout.isSatisfied = true;
+        System.err.println(" -= waitForDocInChangeFeed -= COUNTER OUT for " + changesFeedEndpoint);
         docFound = true;
       }
       CloseableHttpResponse response = restClient.execute(request);
