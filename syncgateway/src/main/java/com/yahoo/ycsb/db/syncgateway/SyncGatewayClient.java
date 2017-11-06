@@ -390,7 +390,7 @@ public class SyncGatewayClient extends DB {
     Status result = getStatus(responseCode);
     if (result == Status.OK) {
       incrementLocalSequenceForUser();
-      incrementLocalSequenceGlobal();
+
       if (roudTripWrite) {
         if ((currentSequence == null) || (currentSequence.equals(""))) {
           System.err.println("Memcached failure!");
@@ -404,7 +404,7 @@ public class SyncGatewayClient extends DB {
         }
       }
     }
-
+    incrementLocalSequenceGlobal();
     return result;
   }
 
