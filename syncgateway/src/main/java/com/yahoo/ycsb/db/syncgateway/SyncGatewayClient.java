@@ -472,7 +472,7 @@ public class SyncGatewayClient extends DB {
     String changesFeedEndpoint = "_changes?since=" + sequenceSince +
         "&feed=longpoll&filter=sync_gateway/bychannel&channels=" + getChannelNameByKey(key);
         */
-    String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=longpoll";
+    String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=normal";
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
 
     //System.out.println("After Insert, checking for feed:" + fullUrl);
