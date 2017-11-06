@@ -89,7 +89,6 @@ public class SyncGatewayClient extends DB {
   private static final String SG_FEED_MODE = "syncgateway.feedmode";
   private static final String SG_FEED_READING_MODE = "syncgateway.feedreadingmode";
 
-
   private static final String SG_INIT_USERS = "syncgateway.initusers";
 
   private static final String MEMCACHED_HOST = "memcached.host";
@@ -107,9 +106,6 @@ public class SyncGatewayClient extends DB {
 
   private static final int SG_READ_MODE_DOCUMENTS = 0;
   private static final int SG_READ_MODE_CHANGES  = 1;
-
-  private static final int SG_FEED_MODE_NORMAL = 0;
-  private static final int SG_FEED_MODE_LONGPOLL = 1;
 
   private static final String SG_FEED_READ_MODE_IDSONLY = "idsonly";
   private static final String SG_FEED_READ_MODE_WITHDOCS = "withdocs";
@@ -132,7 +128,7 @@ public class SyncGatewayClient extends DB {
   private String sequencestart;
   private boolean initUsers;
   private int insertUsersStart=0;
-  private int feedMode;
+  private String feedMode;
   private boolean includeDocWhenReadingFeed;
 
 
@@ -189,14 +185,12 @@ public class SyncGatewayClient extends DB {
     channelsPerUser = Integer.valueOf(props.getProperty(SG_CHANNELS_PER_USER, "10"));
     channelsPerDocument = Integer.valueOf(props.getProperty(SG_CHANNELS_PER_DOCUMENT, "1"));
 
-    String feedModeProp = props.getProperty(SG_FEED_MODE, "normal");
-    String feedReadingModeProp = props.getProperty(SG_FEED_READING_MODE, SG_FEED_READ_MODE_IDSONLY);
-
-    if (feedModeProp.equals("normal")) {
-      feedMode = SG_FEED_MODE_NORMAL;
-    } else {
-      feedMode = SG_FEED_MODE_LONGPOLL;
+    feedMode = props.getProperty(SG_FEED_MODE, "normal");
+    if (!feedMode.equals("normal") && (!feedMode.equals("longpoll"))) {
+      feedMode = "normal";
     }
+
+    String feedReadingModeProp = props.getProperty(SG_FEED_READING_MODE, SG_FEED_READ_MODE_IDSONLY);
 
     includeDocWhenReadingFeed = feedReadingModeProp.equals(SG_FEED_READ_MODE_WITHDOCS);
 
@@ -472,7 +466,9 @@ public class SyncGatewayClient extends DB {
     String changesFeedEndpoint = "_changes?since=" + sequenceSince +
         "&feed=longpoll&filter=sync_gateway/bychannel&channels=" + getChannelNameByKey(key);
         */
-    String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=normal";
+    String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
+        "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
+
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
 
     //System.out.println("After Insert, checking for feed:" + fullUrl);
@@ -489,8 +485,14 @@ public class SyncGatewayClient extends DB {
       request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
     }
 
+    int counter = 10;
     boolean docFound = false;
     while (!docFound) {
+      counter--;
+      if (counter < 0) {
+        requestTimedout.isSatisfied = true;
+        docFound = true;
+      }
       CloseableHttpResponse response = restClient.execute(request);
       HttpEntity responseEntity = response.getEntity();
       if (responseEntity != null) {
