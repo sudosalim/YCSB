@@ -195,9 +195,9 @@ public class SyncGatewayClient extends DB {
     includeDocWhenReadingFeed = feedReadingModeProp.equals(SG_FEED_READ_MODE_WITHDOCS);
 
     insertUsersStart = Integer.valueOf(props.getProperty(SG_INSERTUSERS_START, "0"));
-    conTimeout = Integer.valueOf(props.getProperty(HTTP_CON_TIMEOUT, "10")) * 1000;
-    readTimeout = Integer.valueOf(props.getProperty(HTTP_READ_TIMEOUT, "10")) * 1000;
-    execTimeout = Integer.valueOf(props.getProperty(HTTP_EXEC_TIMEOUT, "10")) * 1000;
+    conTimeout = Integer.valueOf(props.getProperty(HTTP_CON_TIMEOUT, "1")) * conTimeout;
+    readTimeout = Integer.valueOf(props.getProperty(HTTP_READ_TIMEOUT, "1")) * readTimeout;
+    execTimeout = Integer.valueOf(props.getProperty(HTTP_EXEC_TIMEOUT, "1")) * execTimeout;
     headers = props.getProperty(HTTP_HEADERS, "Accept */* Content-Type application/json user-agent Mozilla/5.0 ").
         trim().split(" ");
 
@@ -391,12 +391,13 @@ public class SyncGatewayClient extends DB {
         }
         try {
           waitForDocInChangeFeed2(currentSequence, key);
+          incrementLocalSequenceGlobal();
         } catch (Exception e) {
           syncronizeSequencesForUser(currentIterationUser);
           return Status.UNEXPECTED_STATE;
         }
       }
-      incrementLocalSequenceGlobal();
+
     }
 
     return result;
@@ -480,10 +481,11 @@ public class SyncGatewayClient extends DB {
     while (!docFound) {
       try {
         response = restClient.execute(request);
-      } catch (java.net.SocketTimeoutException ex){
+      } catch (Exception ex){
         response.close();
         restClient.close();
-        System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! for " + changesFeedEndpoint);
+        System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! for " + changesFeedEndpoint
+            + " " + ex.getStackTrace());
         throw new TimeoutException();
       }
 
@@ -494,11 +496,6 @@ public class SyncGatewayClient extends DB {
         StringBuffer responseContent = new StringBuffer();
         String line = "";
         while ((line = reader.readLine()) != null) {
-          //System.out.println(line);
-          if (lookForDocID(line, key)) {
-            docFound = true;
-          }
-          //docFound = true;
           if (requestTimedout.isSatisfied()) {
             // Must avoid memory leak.
             reader.close();
@@ -508,10 +505,21 @@ public class SyncGatewayClient extends DB {
             restClient.close();
             throw new TimeoutException();
           }
+          if (lookForDocID(line, key)) {
+            docFound = true;
+          }
           responseContent.append(line);
         }
+        if (requestTimedout.isSatisfied()) {
+          // Must avoid memory leak.
+          reader.close();
+          stream.close();
+          EntityUtils.consumeQuietly(responseEntity);
+          response.close();
+          restClient.close();
+          throw new TimeoutException();
+        }
         timer.interrupt();
-        // Closing the input stream will trigger connection release.
         stream.close();
       }
       EntityUtils.consumeQuietly(responseEntity);
