@@ -488,7 +488,6 @@ public class SyncGatewayClient extends DB {
             + " " + ex.getStackTrace());
         throw new TimeoutException();
       }
-
       HttpEntity responseEntity = response.getEntity();
       if (responseEntity != null) {
         InputStream stream = responseEntity.getContent();
@@ -510,17 +509,14 @@ public class SyncGatewayClient extends DB {
           }
           responseContent.append(line);
         }
-        if (requestTimedout.isSatisfied()) {
-          // Must avoid memory leak.
-          reader.close();
-          stream.close();
-          EntityUtils.consumeQuietly(responseEntity);
-          response.close();
-          restClient.close();
-          throw new TimeoutException();
-        }
         timer.interrupt();
         stream.close();
+      }
+      if (requestTimedout.isSatisfied()) {
+        EntityUtils.consumeQuietly(responseEntity);
+        response.close();
+        restClient.close();
+        throw new TimeoutException();
       }
       EntityUtils.consumeQuietly(responseEntity);
       response.close();
