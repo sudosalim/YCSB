@@ -478,13 +478,21 @@ public class SyncGatewayClient extends DB {
 
     CloseableHttpResponse response = null;
     boolean docFound = false;
+    int repeatCounter = 1000;
     while (!docFound) {
-      try {
-        response = restClient.execute(request);
-      } catch (Exception ex){
+      repeatCounter--;
+      if (repeatCounter<=0){
         response.close();
         restClient.close();
-        System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! for " + changesFeedEndpoint
+        System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! by repeatCounter for " + changesFeedEndpoint);
+        throw new TimeoutException();
+      }
+      try {
+        response = restClient.execute(request);
+      } catch (java.net.SocketTimeoutException ex){
+        response.close();
+        restClient.close();
+        System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! by Socket ex for " + changesFeedEndpoint
             + " " + ex.getStackTrace());
         throw new TimeoutException();
       }
