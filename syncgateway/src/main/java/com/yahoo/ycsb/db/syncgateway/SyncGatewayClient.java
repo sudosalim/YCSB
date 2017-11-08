@@ -135,9 +135,9 @@ public class SyncGatewayClient extends DB {
   // http parameters
   private volatile Criteria requestTimedout = new Criteria(false);
   private String[] headers;
-  private int conTimeout = 1000;
-  private int readTimeout = 1000;
-  private int execTimeout = 1000;
+  private int conTimeout = 5000;
+  private int readTimeout = 5000;
+  private int execTimeout = 5000;
   private CloseableHttpClient restClient;
 
 
