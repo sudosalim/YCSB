@@ -100,15 +100,25 @@ public class SyncGatewayClient extends DB {
 
   private static final int SG_LOAD_MODE_USERS = 0;
   private static final int SG_LOAD_MODE_DOCUMENTS  = 1;
+  private static final int SG_LOAD_MODE_RANDOM_ACCESS = 2;
+  private static final int SG_LOAD_MODE_ALLUSERS_ACCESS = 3;
+
 
   private static final int SG_INSERT_MODE_BYKEY= 0;
   private static final int SG_INSERT_MODE_BYUSER  = 1;
 
   private static final int SG_READ_MODE_DOCUMENTS = 0;
   private static final int SG_READ_MODE_CHANGES  = 1;
+  private static final int SG_READ_MODE_VIEWQUERY_ACCESS  = 2;
 
   private static final String SG_FEED_READ_MODE_IDSONLY = "idsonly";
   private static final String SG_FEED_READ_MODE_WITHDOCS = "withdocs";
+
+  private static final String SG_USERS_PER_GRANT = "suncgateway.userspergrant";
+  private static final String SG_CHANNELS_PER_GRANT = "suncgateway.channelspergrant";
+  private static final String SG_GRANTS_PER_DOC = "suncgateway.grantsperdoc";
+
+
 
 
   // Sync Gateway parameters
@@ -130,6 +140,10 @@ public class SyncGatewayClient extends DB {
   private int insertUsersStart=0;
   private String feedMode;
   private boolean includeDocWhenReadingFeed;
+  private int usersPerGrant;
+  private int channelsPerGrant;
+  private int grantsPerDoc;
+
 
 
   // http parameters
@@ -165,8 +179,18 @@ public class SyncGatewayClient extends DB {
     portAdmin = props.getProperty(SG_PORT_ADMIN, "4985");
     portPublic = props.getProperty(SG_PORT_PUBLIC, "4984");
     useAuth = props.getProperty(SG_AUTH, "false").equals("true");
-    loadMode = (props.getProperty(SG_LOAD_MODE, "documents").equals("users")) ?
-        SG_LOAD_MODE_USERS : SG_LOAD_MODE_DOCUMENTS;
+    //loadMode = (props.getProperty(SG_LOAD_MODE, "documents").equals("users")) ?
+        //SG_LOAD_MODE_USERS : SG_LOAD_MODE_DOCUMENTS;
+    String loadModeParam = props.getProperty(SG_LOAD_MODE, "documents");
+    if (loadModeParam.equals("documents")){
+      loadMode = SG_LOAD_MODE_DOCUMENTS;
+    } else if (loadModeParam.equals("users")) {
+      loadMode = SG_LOAD_MODE_USERS;
+    } else if (loadModeParam.equals("random_access")) {
+      loadMode = SG_LOAD_MODE_RANDOM_ACCESS;
+    } else if (loadModeParam.equals("allusers_access")) {
+      loadMode = SG_LOAD_MODE_ALLUSERS_ACCESS;
+    }
 
     insertMode = (props.getProperty(SG_INSERT_MODE, "bykey").equals("bykey")) ?
         SG_INSERT_MODE_BYKEY : SG_INSERT_MODE_BYUSER;
@@ -174,8 +198,10 @@ public class SyncGatewayClient extends DB {
     String runModeProp = props.getProperty(SG_READ_MODE, "documents");
     if (runModeProp.equals("documents")) {
       readMode = SG_READ_MODE_DOCUMENTS;
-    } else {
+    } else if (runModeProp.equals("changes")){
       readMode = SG_READ_MODE_CHANGES;
+    } else {
+      readMode = SG_READ_MODE_VIEWQUERY_ACCESS;
     }
 
     totalUsers = Integer.valueOf(props.getProperty(SG_TOTAL_USERS, "1000"));
@@ -206,9 +232,16 @@ public class SyncGatewayClient extends DB {
 
     sequencestart = props.getProperty(SG_SEQUENCE_START, "2000001");
 
+
+    usersPerGrant = Integer.parseInt(props.getProperty(SG_USERS_PER_GRANT, "1"));
+    channelsPerGrant = Integer.parseInt(props.getProperty(SG_CHANNELS_PER_GRANT, "1"));
+    grantsPerDoc = Integer.parseInt(props.getProperty(SG_GRANTS_PER_DOC, "1"));
+
+
     createUserEndpoint = "/" + db + "/_user/";
     documentEndpoint =  "/" + db + "/";
     createSessionEndpoint = "/" + db + "/_session";
+
 
     // Init components
     restClient = createRestClient();
@@ -237,6 +270,10 @@ public class SyncGatewayClient extends DB {
       return readChanges(key);
     }
 
+    if (readMode == SG_READ_MODE_VIEWQUERY_ACCESS) {
+      return runViewQueryAccess(key, result);
+    }
+
     return readSingle(table, key, fields, result);
 
   }
@@ -257,6 +294,21 @@ public class SyncGatewayClient extends DB {
   private Status readSingle(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result) {
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
+
+    int responseCode;
+    try {
+      responseCode = httpGet(fullUrl, result);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "GET");
+    }
+
+    return getStatus(responseCode);
+  }
+
+  private Status runViewQueryAccess(String key, HashMap<String, ByteIterator> result) {
+    String fullUrl = "http://Administrator:password@172.23.100.190:8092/bucket-1/_design/sync_gateway/_view/access?" +
+        "limit=100&stale=false&connection_timeout=60000&inclusive_end=true&skip=0&full_set=&key=%22" +
+        DEFAULT_USERNAME_PREFIX  + rand.nextInt(totalUsers) + "%22";
 
     int responseCode;
     try {
@@ -326,6 +378,10 @@ public class SyncGatewayClient extends DB {
       return insertUser(table, key, values);
     }
 
+    if ((loadMode == SG_LOAD_MODE_RANDOM_ACCESS) || (loadMode == SG_LOAD_MODE_ALLUSERS_ACCESS)) {
+      return insertAccessGrant(table, key, values);
+    }
+
     assignRandomUserToCurrentIteration();
     return insertDocument(table, key, values);
 
@@ -334,6 +390,54 @@ public class SyncGatewayClient extends DB {
   @Override
   public Status delete(String table, String key) {
     return Status.NOT_IMPLEMENTED;
+  }
+
+
+  private Status insertAccessGrant(String table, String key, HashMap<String, ByteIterator> values) {
+
+    String port = (useAuth) ? portPublic : portAdmin;
+    String requestBody;
+    String fullUrl;
+
+    requestBody = buildAccessGrantDocument(key);
+
+    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
+
+    String currentSequence = getLocalSequenceGlobal();
+    HttpPost httpPostRequest = new HttpPost(fullUrl);
+    int responseCode;
+    //System.out.println("before INSERT: User " + currentIterationUser + " just inserted doc " + key
+    //+ " SG seq before insert was " + currentSequence);
+
+    try {
+      responseCode = httpExecute(httpPostRequest, requestBody);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "POST");
+    }
+
+    //System.out.println("INSERT: User " + currentIterationUser + " just inserted doc " + key
+    //+ " SG seq before insert was " + currentSequence);
+
+    Status result = getStatus(responseCode);
+    if (result == Status.OK) {
+      incrementLocalSequenceForUser();
+      if (roudTripWrite) {
+        if ((currentSequence == null) || (currentSequence.equals(""))) {
+          System.err.println("Memcached failure!");
+          return Status.BAD_REQUEST;
+        }
+        try {
+          waitForDocInChangeFeed2(currentSequence, key);
+          incrementLocalSequenceGlobal();
+        } catch (Exception e) {
+          syncronizeSequencesForUser(currentIterationUser);
+          return Status.UNEXPECTED_STATE;
+        }
+      }
+
+    }
+
+    return result;
   }
 
   private Status insertUser(String table, String key, HashMap<String, ByteIterator> values) {
@@ -683,6 +787,7 @@ public class SyncGatewayClient extends DB {
       StringBuffer responseContent = new StringBuffer();
       String line = "";
       while ((line = reader.readLine()) != null) {
+        //System.out.println(line);
         if (requestTimedout.isSatisfied()) {
           // Must avoid memory leak.
           reader.close();
@@ -825,6 +930,51 @@ public class SyncGatewayClient extends DB {
         root.put(k, v.toString());
       });
     return root.toString();
+  }
+
+
+  private String buildAccessGrantDocument(String key) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    String agKey = "accessgrant_" + key;
+    root.put("_id", agKey);
+    for (int g=0; g<grantsPerDoc; g++){
+      String accessFieldName = "access" + g;
+      String accessToFieldName = "accessTo" + g;
+      if (usersPerGrant == 1) {
+        root.put(accessToFieldName, getUserForAccess());
+      } else {
+        ArrayNode usersNode = factory.arrayNode();
+        for (int i=0; i<usersPerGrant; i++) {
+          usersNode.add(getUserForAccess());
+        }
+        root.set(accessToFieldName, usersNode);
+      }
+      if (channelsPerGrant == 1) {
+        root.put(accessFieldName, DEFAULT_CHANNEL_PREFIX  + rand.nextInt(totalChannels));
+      } else {
+        ArrayNode usersNode = factory.arrayNode();
+        for (int i=0; i<channelsPerGrant; i++) {
+          usersNode.add(DEFAULT_CHANNEL_PREFIX  + rand.nextInt(totalChannels));
+        }
+        root.set(accessFieldName, usersNode);
+      }
+    }
+    return root.toString();
+  }
+
+
+  private String getUserForAccess(){
+    if (loadMode == SG_LOAD_MODE_RANDOM_ACCESS) {
+      try {
+        java.util.concurrent.TimeUnit.SECONDS.sleep(1);
+      } catch (Exception ex) {
+        System.out.println(ex.getMessage());
+      }
+
+      return DEFAULT_USERNAME_PREFIX  + rand.nextInt(totalUsers);
+    }
+    return DEFAULT_USERNAME_PREFIX + sgUsersPool.nextValue();
   }
 
 
