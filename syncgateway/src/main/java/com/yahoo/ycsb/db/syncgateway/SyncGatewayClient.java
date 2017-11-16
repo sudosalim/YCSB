@@ -306,7 +306,8 @@ public class SyncGatewayClient extends DB {
   }
 
   private Status runViewQueryAccess(String key, HashMap<String, ByteIterator> result) {
-    String fullUrl = "http://Administrator:password@172.23.100.190:8092/bucket-1/_design/sync_gateway/_view/access?" +
+    String fullUrl = "http://Administrator:password@" + getRandomCBHost() + "" +
+        ":8092/bucket-1/_design/sync_gateway/_view/access?" +
         "limit=100&stale=false&connection_timeout=60000&inclusive_end=true&skip=0&full_set=&key=%22" +
         DEFAULT_USERNAME_PREFIX  + rand.nextInt(totalUsers) + "%22";
 
@@ -891,6 +892,12 @@ public class SyncGatewayClient extends DB {
   private String getRandomHost(){
     //hosts[rand.nextInt(hosts.length)];
     return host;
+  }
+
+
+  private String[] cbHosts = {"172.23.100.190", "172.23.100.191", "172.23.100.192", "172.23.100.193"};
+  private String getRandomCBHost(){
+    return cbHosts[rand.nextInt(4)];
   }
 
   private String buildUserDef() {
