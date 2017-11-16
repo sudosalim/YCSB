@@ -114,9 +114,9 @@ public class SyncGatewayClient extends DB {
   private static final String SG_FEED_READ_MODE_IDSONLY = "idsonly";
   private static final String SG_FEED_READ_MODE_WITHDOCS = "withdocs";
 
-  private static final String SG_USERS_PER_GRANT = "suncgateway.userspergrant";
-  private static final String SG_CHANNELS_PER_GRANT = "suncgateway.channelspergrant";
-  private static final String SG_GRANTS_PER_DOC = "suncgateway.grantsperdoc";
+  private static final String SG_USERS_PER_GRANT = "syncgateway.userspergrant";
+  private static final String SG_CHANNELS_PER_GRANT = "syncgateway.channelspergrant";
+  private static final String SG_GRANTS_PER_DOC = "syncgateway.grantsperdoc";
 
 
 
