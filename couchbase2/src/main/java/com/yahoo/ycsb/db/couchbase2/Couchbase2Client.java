@@ -52,6 +52,7 @@ import com.couchbase.client.java.error.TemporaryFailureException;
 import com.couchbase.client.java.query.*;
 import com.couchbase.client.java.transcoder.JacksonTransformers;
 import com.couchbase.client.java.util.Blocking;
+import com.couchbase.client.java.query.consistency.ScanConsistency;
 import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.DBException;
@@ -1326,9 +1327,8 @@ public class Couchbase2Client extends DB {
     N1qlQueryResult queryResult = bucket.query(N1qlQuery.parameterized(
         soeSearchN1qlQuery,
         JsonArray.from(userName),
-        N1qlParams.build().adhoc(false).maxParallelism(maxParallelism)
+        N1qlParams.build().adhoc(false).maxParallelism(maxParallelism).consistency(ScanConsistency.REQUEST_PLUS)
     ));
-
 
     if (!queryResult.parseSuccess() || !queryResult.finalSuccess()) {
       throw new RuntimeException("Error while parsing N1QL Result. Query: " + soeSearchN1qlQuery
