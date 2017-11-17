@@ -1312,26 +1312,23 @@ public class Couchbase2Client extends DB {
   }
 
   private Status soeSearchN1ql(final Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen) {
-    int recordcount = getSoeLimit();
-    int offset = getSoeOffset();
+    int recordcount = 100;
 
-    PredicateSequence predicateSequence = gen.getSearchPredicateSequnce();
-    String addrCountry = predicateSequence.getName();
-    String addrCountryValue = predicateSequence.getName();
-    String agegroup = predicateSequence.getNestedPredicate().getName();
-    String agegroupValue = predicateSequence.getNestedPredicate().getValueA();
-    String dobyear = predicateSequence.getNestedPredicate().getNestedPredicate().getName();
-    String dobyearValue = predicateSequence.getNestedPredicate().getNestedPredicate().getValueA();
+    String userName = "sg-user-" + rnd.nextInt(10000);
 
-    String soeSearchN1qlQuery = soeQuerySelectAllClause + " `" +  bucketName + "` WHERE " +
-        addrCountry + "= $1 AND " +  agegroup + " = $2 AND DATE_PART_STR(" + dobyear + ", \"year\") = $3 " +
-        "ORDER BY " + addrCountry + ", " + agegroup + ", DATE_PART_STR(" + dobyear + ", \"year\") OFFSET $4 LIMIT $5";
+    String soeSearchN1qlQuery = "SELECT  q.name , OBJECT v2.name:v2.val FOR v2 IN (select RAW MIN([e.val, e])[1] " +
+        "from q.e as e group by e.name) END AS ev  " +
+        "FROM ( select op.name, ARRAY_FLATTEN(ARRAY_AGG(OBJECT_PAIRS(op.val)),2)  " +
+        "as e from `bucket-1` UNNEST OBJECT_PAIRS(_sync.access) as op where op.name " +
+        "in [$1] group by op.name) AS q ;";
+
 
     N1qlQueryResult queryResult = bucket.query(N1qlQuery.parameterized(
         soeSearchN1qlQuery,
-        JsonArray.from(addrCountryValue, agegroupValue, Integer.parseInt(dobyearValue), offset, recordcount),
-        N1qlParams.build().adhoc(adhoc).maxParallelism(maxParallelism)
+        JsonArray.from(userName),
+        N1qlParams.build().adhoc(false).maxParallelism(maxParallelism)
     ));
+
 
     if (!queryResult.parseSuccess() || !queryResult.finalSuccess()) {
       throw new RuntimeException("Error while parsing N1QL Result. Query: " + soeSearchN1qlQuery
@@ -1344,10 +1341,11 @@ public class Couchbase2Client extends DB {
       soeDecode(row.value().toString(), null, tuple);
       result.add(tuple);
     }
+    //System.out.println(userName);
+    //System.out.println(result);
 
     return Status.OK;
   }
-
 
             // *********************  SOE NestScan ********************************
 
