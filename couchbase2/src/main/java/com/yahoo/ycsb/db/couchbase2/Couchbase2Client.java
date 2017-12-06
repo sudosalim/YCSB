@@ -433,7 +433,7 @@ public class Couchbase2Client extends DB {
           throw new RuntimeException("Interrupted while sleeping on TMPFAIL backoff.", ex);
         }
       } catch (DocumentAlreadyExistsException ex) {
-        continue;
+        return Status.ERROR;
       }
     }
 
