@@ -594,7 +594,8 @@ public class Couchbase2Client extends DB {
 
     String filter = "usertable";
     String clientFilter = "couchbase";
-    String timestamp = "" + 1512588244101L + rand.nextInt(1117098);
+    long tsLong = 1512588244101L + rand.nextInt(1117098);
+    String timestamp = "" + tsLong;
     long runStartTime = 1512588244101L + rand.nextInt(1117098);
     Vector<HashMap<String, ByteIterator>> result1 = new Vector<>();
     Vector<HashMap<String, ByteIterator>> result2 = new Vector<>();
