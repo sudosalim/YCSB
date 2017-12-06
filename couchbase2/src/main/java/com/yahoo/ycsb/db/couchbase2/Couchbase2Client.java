@@ -48,6 +48,7 @@ import com.couchbase.client.java.document.json.JsonArray;
 import com.couchbase.client.java.document.json.JsonObject;
 import com.couchbase.client.java.env.CouchbaseEnvironment;
 import com.couchbase.client.java.env.DefaultCouchbaseEnvironment;
+import com.couchbase.client.java.error.DocumentAlreadyExistsException;
 import com.couchbase.client.java.error.TemporaryFailureException;
 import com.couchbase.client.java.query.*;
 import com.couchbase.client.java.transcoder.JacksonTransformers;
@@ -59,8 +60,8 @@ import com.yahoo.ycsb.Status;
 import com.yahoo.ycsb.StringByteIterator;
 import rx.Observable;
 import rx.Subscriber;
-import rx.functions.Action1;
-import rx.functions.Func1;
+//import rx.functions.Action1;
+//import rx.functions.Func1;
 
 import java.io.StringWriter;
 import java.io.Writer;
@@ -130,6 +131,7 @@ public class Couchbase2Client extends DB {
   private int runtimeMetricsInterval;
   private String scanAllQuery;
   private int documentExpiry;
+  private Random rand = new Random();
   
   @Override
   public void init() throws DBException {
@@ -411,12 +413,15 @@ public class Couchbase2Client extends DB {
    * @return The result of the operation.
    */
   private Status insertKv(final String docId, final Map<String, ByteIterator> values) {
-    int tries = 60; // roughly 60 seconds with the 1 second sleep, not 100% accurate.
+    int tries = 6000; // roughly 60 seconds with the 1 second sleep, not 100% accurate.
+
+    String docid = "couchbase:usertable:" + System.currentTimeMillis();
+    System.out.println(docid);
 
     for(int i = 0; i < tries; i++) {
       try {
         waitForMutationResponse(bucket.async().insert(
-            RawJsonDocument.create(docId, documentExpiry, encode(values)),
+            RawJsonDocument.create(docid, documentExpiry, encode(values)),
             persistTo,
             replicateTo
         ));
@@ -427,6 +432,8 @@ public class Couchbase2Client extends DB {
         } catch (InterruptedException e) {
           throw new RuntimeException("Interrupted while sleeping on TMPFAIL backoff.", ex);
         }
+      } catch (DocumentAlreadyExistsException ex) {
+        continue;
       }
     }
 
@@ -584,92 +591,97 @@ public class Couchbase2Client extends DB {
   @Override
   public Status scan(final String table, final String startkey, final int recordcount, final Set<String> fields,
       final Vector<HashMap<String, ByteIterator>> result) {
-    try {
-      if (fields == null || fields.isEmpty()) {
-        return scanAllFields(table, startkey, recordcount, result);
-      } else {
-        return scanSpecificFields(table, startkey, recordcount, fields, result);
-      }
-    } catch (Exception ex) {
-      ex.printStackTrace();
-      return Status.ERROR;
-    }
+
+    String filter = "usertable";
+    String clientFilter = "couchbase";
+    String timestamp = "" + 1512586528310L + rand.nextInt(102209);
+    long runStartTime = 1512586528310L + rand.nextInt(102202);
+    Vector<HashMap<String, ByteIterator>> result1 = new Vector<>();
+    Vector<HashMap<String, ByteIterator>> result2 = new Vector<>();
+
+    return scanTPC(table, filter, clientFilter, timestamp, fields, runStartTime, result1, result2);
   }
 
-  /**
-   * Performs the {@link #scan(String, String, int, Set, Vector)} operation, optimized for all fields.
-   *
-   * Since the full document bodies need to be loaded anyways, it makes sense to just grab the document IDs
-   * from N1QL and then perform the bulk loading via KV for better performance. This is a usual pattern with
-   * Couchbase and shows the benefits of using both N1QL and KV together.
-   *
-   * @param table The name of the table
-   * @param startkey The record key of the first record to read.
-   * @param recordcount The number of records to read
-   * @param result A Vector of HashMaps, where each HashMap is a set field/value pairs for one record
-   * @return The result of the operation.
-   */
-  private Status scanAllFields(final String table, final String startkey, final int recordcount,
-      final Vector<HashMap<String, ByteIterator>> result) {
-    final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-    bucket.async()
-        .query(N1qlQuery.parameterized(
-          scanAllQuery,
-          JsonArray.from(formatId(table, startkey), recordcount),
-          N1qlParams.build().adhoc(adhoc).maxParallelism(maxParallelism)
-        ))
-        .doOnNext(new Action1<AsyncN1qlQueryResult>() {
-          @Override
-          public void call(AsyncN1qlQueryResult result) {
-            if (!result.parseSuccess()) {
-              throw new RuntimeException("Error while parsing N1QL Result. Query: " + scanAllQuery
-                + ", Errors: " + result.errors());
-            }
-          }
-        })
-        .flatMap(new Func1<AsyncN1qlQueryResult, Observable<AsyncN1qlQueryRow>>() {
-          @Override
-          public Observable<AsyncN1qlQueryRow> call(AsyncN1qlQueryResult result) {
-            return result.rows();
-          }
-        })
-        .flatMap(new Func1<AsyncN1qlQueryRow, Observable<RawJsonDocument>>() {
-          @Override
-          public Observable<RawJsonDocument> call(AsyncN1qlQueryRow row) {
-            String id = new String(row.byteValue()).trim();
-            return bucket.async().get(id.substring(1, id.length()-1), RawJsonDocument.class);
-          }
-        })
-        .map(new Func1<RawJsonDocument, HashMap<String, ByteIterator>>() {
-          @Override
-          public HashMap<String, ByteIterator> call(RawJsonDocument document) {
-            HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>();
-            decode(document.content(), null, tuple);
-            return tuple;
-          }
-        })
-        .toBlocking()
-        .forEach(new Action1<HashMap<String, ByteIterator>>() {
-          @Override
-          public void call(HashMap<String, ByteIterator> tuple) {
-            data.add(tuple);
-          }
-        });
+  public Status scanTPC(String table, String filter, String clientFilter, String timestamp,
+                      Set<String> fields, long runStartTime,
+                      Vector<HashMap<String, ByteIterator>> result1, Vector<HashMap<String, ByteIterator >> result2) {
 
-    result.addAll(data);
+    Status s1 = scanHelper(table, filter, clientFilter, Long.valueOf(timestamp), fields, result1);
+    long oldTimeStamp;
+    if (runStartTime > 0) {
+      long time= Long.valueOf(timestamp) - runStartTime;
+      oldTimeStamp = Long.valueOf(timestamp) - time;
+    } else {
+      oldTimeStamp = Long.valueOf(timestamp) - (1800000);
+    }
+    long timestampVal = oldTimeStamp + (long)(Math.random() * (Long.valueOf(timestamp)- 10000 - oldTimeStamp));
+    Status s2 = scanHelper(table, filter, clientFilter, timestampVal, fields, result2);
+    if (s1.isOk() && s2.isOk()) {
+      return Status.OK;
+    }
+    return Status.ERROR;
+  }
+
+
+  private Status scanHelper(String table, String filter, String clientFilter, long timestamp,
+                            Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
+    String scanSpecQuery = "SELECT " + joinFields(fields) + " FROM `" + bucketName
+        + "` WHERE meta().id >= $1 and meta().id <= $2";
+
+    StringBuffer startKey = new StringBuffer();
+    startKey.append(clientFilter);
+    startKey.append(":");
+    startKey.append(filter);
+    startKey.append(":");
+    startKey.append(timestamp);
+
+    StringBuffer endKey = new StringBuffer();
+    endKey.append(clientFilter);
+    endKey.append(":");
+    endKey.append(filter);
+    endKey.append(":");
+    endKey.append(timestamp+5000);
+
+    N1qlQueryResult queryResult = bucket.query(N1qlQuery.parameterized(
+        scanSpecQuery,
+        JsonArray.from(startKey.toString(), endKey.toString()),
+        N1qlParams.build().adhoc(adhoc).maxParallelism(maxParallelism)
+    ));
+
+    if (!queryResult.parseSuccess() || !queryResult.finalSuccess()) {
+      throw new RuntimeException("Error while parsing N1QL Result. Query: " + scanSpecQuery
+          + ", Errors: " + queryResult.errors());
+    }
+
+    boolean allFields = fields == null || fields.isEmpty();
+
+    for (N1qlQueryRow row : queryResult) {
+      JsonObject value = row.value();
+      if (fields == null) {
+        value = value.getObject(bucketName);
+      }
+      Set<String> f = allFields ? value.getNames() : fields;
+      HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>(f.size());
+      for (String field : f) {
+        tuple.put(field, new StringByteIterator(value.getString(field)));
+      }
+      result.add(tuple);
+    }
     return Status.OK;
   }
 
-  /**
-   * Performs the {@link #scan(String, String, int, Set, Vector)} operation N1Ql only for a subset of the fields.
-   *
-   * @param table The name of the table
-   * @param startkey The record key of the first record to read.
-   * @param recordcount The number of records to read
-   * @param fields The list of fields to read, or null for all of them
-   * @param result A Vector of HashMaps, where each HashMap is a set field/value pairs for one record
-   * @return The result of the operation.
-   */
+
+
+    /**
+     * Performs the {@link #scan(String, String, int, Set, Vector)} operation N1Ql only for a subset of the fields.
+     *
+     * @param table The name of the table
+     * @param startkey The record key of the first record to read.
+     * @param recordcount The number of records to read
+     * @param fields The list of fields to read, or null for all of them
+     * @param result A Vector of HashMaps, where each HashMap is a set field/value pairs for one record
+     * @return The result of the operation.
+     */
   private Status scanSpecificFields(final String table, final String startkey, final int recordcount,
       final Set<String> fields, final Vector<HashMap<String, ByteIterator>> result) {
     String scanSpecQuery = "SELECT " + joinFields(fields) + " FROM `" + bucketName
