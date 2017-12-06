@@ -627,7 +627,7 @@ public class Couchbase2Client extends DB {
   private Status scanHelper(String table, String filter, String clientFilter, long timestamp,
                             Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
     String scanSpecQuery = "SELECT " + joinFields(fields) + " FROM `" + bucketName
-        + "` WHERE meta().id >= $1 and meta().id <= $2";
+        + "` WHERE meta().id >= $1 and meta().id <= $2 limit 100";
 
     StringBuffer startKey = new StringBuffer();
     startKey.append(clientFilter);
