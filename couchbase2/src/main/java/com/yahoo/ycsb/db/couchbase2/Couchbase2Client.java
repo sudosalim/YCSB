@@ -369,9 +369,10 @@ public class Couchbase2Client extends DB {
     String fields = encodeN1qlFields(values);
     String updateQuery = "UPDATE `" + bucketName + "` USE KEYS [$1] SET " + fields;
 
+    String docid = "couchbase:usertable:" + System.currentTimeMillis();
     N1qlQueryResult queryResult = bucket.query(N1qlQuery.parameterized(
         updateQuery,
-        JsonArray.from(docId),
+        JsonArray.from(docid),
         N1qlParams.build().adhoc(adhoc).maxParallelism(maxParallelism)
     ));
 
@@ -416,7 +417,6 @@ public class Couchbase2Client extends DB {
     int tries = 6000; // roughly 60 seconds with the 1 second sleep, not 100% accurate.
 
     String docid = "couchbase:usertable:" + System.currentTimeMillis();
-    System.out.println(docid);
 
     for(int i = 0; i < tries; i++) {
       try {
