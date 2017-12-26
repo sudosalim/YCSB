@@ -81,6 +81,7 @@ public class SyncGatewayClient extends DB {
   private static final String SG_ROUND_TRIP_WRITE = "syncgateway.roundtrip";
   private static final String SG_TOTAL_USERS = "syncgateway.totalusers";
   private static final String SG_TOTAL_CHANNELS = "syncgateway.channels";
+  private static final String SG_TOTAL_ROLES = "syncgateway.roles";
   private static final String SG_CHANNELS_PER_USER = "syncgateway.channelsperuser";
   private static final String SG_CHANNELS_PER_DOCUMENT = "syncgateway.channelsperdocument";
 
@@ -102,6 +103,8 @@ public class SyncGatewayClient extends DB {
   private static final int SG_LOAD_MODE_DOCUMENTS  = 1;
   private static final int SG_LOAD_MODE_RANDOM_ACCESS = 2;
   private static final int SG_LOAD_MODE_ALLUSERS_ACCESS = 3;
+  private static final int SG_LOAD_MODE_RANDOM_ROLE = 4;
+  private static final int SG_LOAD_MODE_ROLES = 5;
 
 
   private static final int SG_INSERT_MODE_BYKEY= 0;
@@ -110,6 +113,7 @@ public class SyncGatewayClient extends DB {
   private static final int SG_READ_MODE_DOCUMENTS = 0;
   private static final int SG_READ_MODE_CHANGES  = 1;
   private static final int SG_READ_MODE_VIEWQUERY_ACCESS  = 2;
+  private static final int SG_READ_MODE_VIEWQUERY_ROLE  = 3;
 
   private static final String SG_FEED_READ_MODE_IDSONLY = "idsonly";
   private static final String SG_FEED_READ_MODE_WITHDOCS = "withdocs";
@@ -130,6 +134,7 @@ public class SyncGatewayClient extends DB {
   private int readMode;
   private int totalUsers;
   private int totalChannels;
+  private int totalRoles;
   private int channelsPerUser;
   private int channelsPerDocument;
   private String[] hosts;
@@ -162,6 +167,7 @@ public class SyncGatewayClient extends DB {
   private String createUserEndpoint;
   private String documentEndpoint;
   private String createSessionEndpoint;
+  private String createRoleEndpoint;
 
   private String currentIterationUser = null;
   private Random rand = new Random();
@@ -190,6 +196,10 @@ public class SyncGatewayClient extends DB {
       loadMode = SG_LOAD_MODE_RANDOM_ACCESS;
     } else if (loadModeParam.equals("allusers_access")) {
       loadMode = SG_LOAD_MODE_ALLUSERS_ACCESS;
+    } else if (loadModeParam.equals("random_role")) {
+      loadMode = SG_LOAD_MODE_RANDOM_ROLE;
+    }  else if (loadModeParam.equals("roles")) {
+      loadMode = SG_LOAD_MODE_ROLES;
     }
 
     insertMode = (props.getProperty(SG_INSERT_MODE, "bykey").equals("bykey")) ?
@@ -200,12 +210,15 @@ public class SyncGatewayClient extends DB {
       readMode = SG_READ_MODE_DOCUMENTS;
     } else if (runModeProp.equals("changes")){
       readMode = SG_READ_MODE_CHANGES;
-    } else {
+    } else if (runModeProp.equals("viewquery_access")){
       readMode = SG_READ_MODE_VIEWQUERY_ACCESS;
+    } else if (runModeProp.equals("viewquery_role")){
+      readMode = SG_READ_MODE_VIEWQUERY_ROLE;
     }
 
     totalUsers = Integer.valueOf(props.getProperty(SG_TOTAL_USERS, "1000"));
     totalChannels = Integer.valueOf(props.getProperty(SG_TOTAL_CHANNELS, "100"));
+    totalRoles = Integer.valueOf(props.getProperty(SG_TOTAL_ROLES, "100"));
     roudTripWrite = props.getProperty(SG_ROUND_TRIP_WRITE, "false").equals("true");
     initUsers = props.getProperty(SG_INIT_USERS, "true").equals("true");
     channelsPerUser = Integer.valueOf(props.getProperty(SG_CHANNELS_PER_USER, "10"));
@@ -239,6 +252,7 @@ public class SyncGatewayClient extends DB {
 
 
     createUserEndpoint = "/" + db + "/_user/";
+    createRoleEndpoint = "/" + db + "/_role/";
     documentEndpoint =  "/" + db + "/";
     createSessionEndpoint = "/" + db + "/_session";
 
@@ -272,6 +286,10 @@ public class SyncGatewayClient extends DB {
 
     if (readMode == SG_READ_MODE_VIEWQUERY_ACCESS) {
       return runViewQueryAccess(key, result);
+    }
+
+    if (readMode == SG_READ_MODE_VIEWQUERY_ROLE) {
+      return runViewQueryRole(key, result);
     }
 
     return readSingle(table, key, fields, result);
@@ -308,7 +326,7 @@ public class SyncGatewayClient extends DB {
   private Status runViewQueryAccess(String key, HashMap<String, ByteIterator> result) {
     String fullUrl = "http://Administrator:password@" + getRandomCBHost() + "" +
         ":8092/bucket-1/_design/sync_gateway/_view/access?" +
-        "limit=100&stale=false&connection_timeout=60000&inclusive_end=true&skip=0&full_set=&key=%22" +
+        "limit=10000&stale=false&connection_timeout=60000&inclusive_end=true&skip=0&full_set=&key=%22" +
         DEFAULT_USERNAME_PREFIX  + rand.nextInt(totalUsers) + "%22";
 
     int responseCode;
@@ -320,6 +338,23 @@ public class SyncGatewayClient extends DB {
 
     return getStatus(responseCode);
   }
+
+  private Status runViewQueryRole(String key, HashMap<String, ByteIterator> result) {
+    String fullUrl = "http://Administrator:password@" + getRandomCBHost() + "" +
+        ":8092/bucket-1/_design/sync_gateway/_view/role_access?" +
+        "limit=10000&stale=false&connection_timeout=60000&inclusive_end=true&skip=0&full_set=&key=%22" +
+        DEFAULT_USERNAME_PREFIX  + rand.nextInt(totalUsers) + "%22";
+
+    int responseCode;
+    try {
+      responseCode = httpGet(fullUrl, result);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "GET");
+    }
+
+    return getStatus(responseCode);
+  }
+
 
 
   @Override
@@ -383,6 +418,14 @@ public class SyncGatewayClient extends DB {
       return insertAccessGrant(table, key, values);
     }
 
+    if (loadMode == SG_LOAD_MODE_RANDOM_ROLE) {
+      return insertRoleGrant(table, key, values);
+    }
+
+    if (loadMode == SG_LOAD_MODE_ROLES) {
+      return insertRole(table, key, values);
+    }
+
     assignRandomUserToCurrentIteration();
     return insertDocument(table, key, values);
 
@@ -407,8 +450,6 @@ public class SyncGatewayClient extends DB {
     String currentSequence = getLocalSequenceGlobal();
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
-    //System.out.println("before INSERT: User " + currentIterationUser + " just inserted doc " + key
-    //+ " SG seq before insert was " + currentSequence);
 
     try {
       responseCode = httpExecute(httpPostRequest, requestBody);
@@ -416,8 +457,6 @@ public class SyncGatewayClient extends DB {
       responseCode = handleExceptions(e, fullUrl, "POST");
     }
 
-    //System.out.println("INSERT: User " + currentIterationUser + " just inserted doc " + key
-    //+ " SG seq before insert was " + currentSequence);
 
     Status result = getStatus(responseCode);
     if (result == Status.OK) {
@@ -441,6 +480,51 @@ public class SyncGatewayClient extends DB {
     return result;
   }
 
+
+  private Status insertRoleGrant(String table, String key, HashMap<String, ByteIterator> values) {
+
+    String port = (useAuth) ? portPublic : portAdmin;
+    String requestBody;
+    String fullUrl;
+
+    requestBody = buildRoleGrantDocument(key);
+
+    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
+
+    String currentSequence = getLocalSequenceGlobal();
+    HttpPost httpPostRequest = new HttpPost(fullUrl);
+    int responseCode;
+
+    try {
+      responseCode = httpExecute(httpPostRequest, requestBody);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "POST");
+    }
+
+
+    Status result = getStatus(responseCode);
+    if (result == Status.OK) {
+      incrementLocalSequenceForUser();
+      if (roudTripWrite) {
+        if ((currentSequence == null) || (currentSequence.equals(""))) {
+          System.err.println("Memcached failure!");
+          return Status.BAD_REQUEST;
+        }
+        try {
+          waitForDocInChangeFeed2(currentSequence, key);
+          incrementLocalSequenceGlobal();
+        } catch (Exception e) {
+          syncronizeSequencesForUser(currentIterationUser);
+          return Status.UNEXPECTED_STATE;
+        }
+      }
+
+    }
+
+    return result;
+  }
+
+
   private Status insertUser(String table, String key, HashMap<String, ByteIterator> values) {
 
     String requestBody = buildUserDef();
@@ -460,6 +544,32 @@ public class SyncGatewayClient extends DB {
 
     return result;
   }
+
+
+
+  private Status insertRole(String table, String key, HashMap<String, ByteIterator> values) {
+
+    int id = sgUserInsertCounter.nextValue();
+    String roleName = "sg-role-" + id;
+
+    String requestBody = buildRoleDef(roleName);
+    String fullUrl = "http://" + getRandomHost() + ":" + portAdmin + createRoleEndpoint + roleName;
+    HttpPut httpPutRequest = new HttpPut(fullUrl);
+
+    int responseCode;
+    try {
+      responseCode = httpExecute(httpPutRequest, requestBody);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "POST");
+    }
+    Status result = getStatus(responseCode);
+    if (result == Status.OK) {
+      incrementLocalSequenceForUser();
+    }
+
+    return result;
+  }
+
 
 
   private Status insertDocument(String table, String key, HashMap<String, ByteIterator> values) {
@@ -919,6 +1029,17 @@ public class SyncGatewayClient extends DB {
     return root.toString();
   }
 
+
+  private String buildRoleDef(String roleName) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    root.put("name", roleName);
+    ArrayNode channels = factory.arrayNode();
+    channels.add("*");
+    root.set("admin_channels", channels);
+    return root.toString();
+  }
+
   private String buildDocumentFromMap(String key, HashMap<String, ByteIterator> values) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
@@ -971,6 +1092,37 @@ public class SyncGatewayClient extends DB {
   }
 
 
+  private String buildRoleGrantDocument(String key) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    String agKey = "rolegrant_" + key;
+    root.put("_id", agKey);
+    for (int g=0; g<grantsPerDoc; g++){
+      String accessFieldName = "role" + g;
+      String accessToFieldName = "roleTo" + g;
+      if (usersPerGrant == 1) {
+        root.put(accessToFieldName, getUserForRole());
+      } else {
+        ArrayNode usersNode = factory.arrayNode();
+        for (int i=0; i<usersPerGrant; i++) {
+          usersNode.add(getUserForRole());
+        }
+        root.set(accessToFieldName, usersNode);
+      }
+      if (channelsPerGrant == 1) {
+        root.put(accessFieldName, "role:sg-role-" + rand.nextInt(totalRoles));
+      } else {
+        ArrayNode usersNode = factory.arrayNode();
+        for (int i=0; i<channelsPerGrant; i++) {
+          usersNode.add("role:sg-role-" + rand.nextInt(totalRoles));
+        }
+        root.set(accessFieldName, usersNode);
+      }
+    }
+    return root.toString();
+  }
+
+
   private String getUserForAccess(){
     if (loadMode == SG_LOAD_MODE_RANDOM_ACCESS) {
       try {
@@ -982,6 +1134,11 @@ public class SyncGatewayClient extends DB {
       return DEFAULT_USERNAME_PREFIX  + rand.nextInt(totalUsers);
     }
     return DEFAULT_USERNAME_PREFIX + sgUsersPool.nextValue();
+  }
+
+
+  private String getUserForRole(){
+    return DEFAULT_USERNAME_PREFIX  + rand.nextInt(totalUsers);
   }
 
 
