@@ -1317,11 +1317,17 @@ public class Couchbase2Client extends DB {
 
     String userName = "sg-user-" + rnd.nextInt(10000);
 
+    /*
     String soeSearchN1qlQuery = "SELECT  q.name , OBJECT v2.name:v2.val FOR v2 IN (select RAW MIN([e.val, e])[1] " +
         "from q.e as e group by e.name) END AS ev  " +
         "FROM ( select op.name, ARRAY_FLATTEN(ARRAY_AGG(OBJECT_PAIRS(op.val)),2)  " +
         "as e from `bucket-1` UNNEST OBJECT_PAIRS(_sync.access) as op where op.name " +
         "in [$1] group by op.name) AS q ;";
+    */
+
+
+    String soeSearchN1qlQuery = "SELECT op.name, OBJECT_PAIRS(op.val) as grants FROM `bucket-1` " +
+        "UNNEST OBJECT_PAIRS(`bucket-1`._sync.role_access) as op where op.name in [$1]";
 
 
     N1qlQueryResult queryResult = bucket.query(N1qlQuery.parameterized(
