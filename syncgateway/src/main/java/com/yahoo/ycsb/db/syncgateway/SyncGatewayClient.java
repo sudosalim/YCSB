@@ -79,6 +79,7 @@ public class SyncGatewayClient extends DB {
   private static final String SG_READ_MODE = "syncgateway.readmode";
   private static final String SG_INSERT_MODE = "syncgateway.insertmode";
   private static final String SG_ROUND_TRIP_WRITE = "syncgateway.roundtrip";
+  private static final String SG_TOTAL_DOCS = "syncgateway.totaldocs";
   private static final String SG_TOTAL_USERS = "syncgateway.totalusers";
   private static final String SG_TOTAL_CHANNELS = "syncgateway.channels";
   private static final String SG_TOTAL_ROLES = "syncgateway.roles";
@@ -109,11 +110,14 @@ public class SyncGatewayClient extends DB {
 
   private static final int SG_INSERT_MODE_BYKEY= 0;
   private static final int SG_INSERT_MODE_BYUSER  = 1;
+  private static final int SG_INSERT_MODE_RANDOMCHANNELS  = 2;
+
 
   private static final int SG_READ_MODE_DOCUMENTS = 0;
   private static final int SG_READ_MODE_CHANGES  = 1;
   private static final int SG_READ_MODE_VIEWQUERY_ACCESS  = 2;
   private static final int SG_READ_MODE_VIEWQUERY_ROLE  = 3;
+  private static final int SG_READ_MODE_VIEWQUERY_CHANNEL  = 4;
 
   private static final String SG_FEED_READ_MODE_IDSONLY = "idsonly";
   private static final String SG_FEED_READ_MODE_WITHDOCS = "withdocs";
@@ -135,6 +139,7 @@ public class SyncGatewayClient extends DB {
   private int totalUsers;
   private int totalChannels;
   private int totalRoles;
+  private int totalDocs;
   private int channelsPerUser;
   private int channelsPerDocument;
   private String[] hosts;
@@ -202,8 +207,14 @@ public class SyncGatewayClient extends DB {
       loadMode = SG_LOAD_MODE_ROLES;
     }
 
-    insertMode = (props.getProperty(SG_INSERT_MODE, "bykey").equals("bykey")) ?
-        SG_INSERT_MODE_BYKEY : SG_INSERT_MODE_BYUSER;
+    String insertModeStr = props.getProperty(SG_INSERT_MODE, "bykey");
+    if (insertModeStr.equals("bykey")) {
+      insertMode = SG_INSERT_MODE_BYKEY;
+    } else if (insertModeStr.equals("byuser")) {
+      insertMode = SG_INSERT_MODE_BYUSER;
+    } else if (insertModeStr.equals("randomchannels")) {
+      insertMode = SG_INSERT_MODE_RANDOMCHANNELS;
+    }
 
     String runModeProp = props.getProperty(SG_READ_MODE, "documents");
     if (runModeProp.equals("documents")) {
@@ -214,11 +225,14 @@ public class SyncGatewayClient extends DB {
       readMode = SG_READ_MODE_VIEWQUERY_ACCESS;
     } else if (runModeProp.equals("viewquery_role")){
       readMode = SG_READ_MODE_VIEWQUERY_ROLE;
+    } else if (runModeProp.equals("viewquery_channel")){
+      readMode = SG_READ_MODE_VIEWQUERY_CHANNEL;
     }
 
     totalUsers = Integer.valueOf(props.getProperty(SG_TOTAL_USERS, "1000"));
     totalChannels = Integer.valueOf(props.getProperty(SG_TOTAL_CHANNELS, "100"));
     totalRoles = Integer.valueOf(props.getProperty(SG_TOTAL_ROLES, "100"));
+    totalDocs = Integer.valueOf(props.getProperty(SG_TOTAL_DOCS, "1000000"));
     roudTripWrite = props.getProperty(SG_ROUND_TRIP_WRITE, "false").equals("true");
     initUsers = props.getProperty(SG_INIT_USERS, "true").equals("true");
     channelsPerUser = Integer.valueOf(props.getProperty(SG_CHANNELS_PER_USER, "10"));
@@ -292,6 +306,10 @@ public class SyncGatewayClient extends DB {
       return runViewQueryRole(key, result);
     }
 
+    if (readMode == SG_READ_MODE_VIEWQUERY_CHANNEL) {
+      return runViewQueryChannel(key, result);
+    }
+
     return readSingle(table, key, fields, result);
 
   }
@@ -355,6 +373,25 @@ public class SyncGatewayClient extends DB {
     return getStatus(responseCode);
   }
 
+
+  private Status runViewQueryChannel(String key, HashMap<String, ByteIterator> result) {
+    String channelKey = "channel-" + rand.nextInt(totalChannels);
+    String range = "startkey=%5B%20%22" + channelKey + "%22%2C%200%5D&endkey=%5B%20%22"
+        + channelKey + "%22%2C%20"+ totalDocs + "%5D";
+
+    String fullUrl = "http://Administrator:password@" + getRandomCBHost() + "" +
+        ":8092/bucket-1/_design/sync_gateway/_view/channels?" +
+        "limit=10000&stale=false&connection_timeout=60000&inclusive_end=true&skip=0&full_set=&" +  range;
+
+    int responseCode;
+    try {
+      responseCode = httpGet(fullUrl, result);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "GET");
+    }
+
+    return getStatus(responseCode);
+  }
 
 
   @Override
@@ -1048,8 +1085,14 @@ public class SyncGatewayClient extends DB {
 
     if (insertMode == SG_INSERT_MODE_BYKEY) {
       channelsNode.add(getChannelNameByKey(key));
-    } else {
+    } else if (insertMode == SG_INSERT_MODE_BYUSER) {
       channelsNode.add(getChannelForUser());
+    } else if (insertMode == SG_INSERT_MODE_RANDOMCHANNELS) {
+      for (int i = 0; i<channelsPerDocument; i++) {
+        channelsNode.add(getChannelRandom());
+      }
+    } else {
+      channelsNode.add("*");
     }
 
     root.set("channels", channelsNode);
@@ -1147,6 +1190,11 @@ public class SyncGatewayClient extends DB {
     return DEFAULT_CHANNEL_PREFIX + channelId;
   }
 
+  private String getChannelRandom(){
+    int channelId = rand.nextInt(totalChannels);
+    return DEFAULT_CHANNEL_PREFIX + channelId;
+  }
+
   private String[] getSetOfRandomChannels() {
 
     String[] channels = new String[channelsPerUser];
@@ -1182,6 +1230,7 @@ public class SyncGatewayClient extends DB {
   private String getChannelForUser() {
     return memcachedClient.get("_channel_" + currentIterationUser).toString();
   }
+
 
   private void setLocalSequenceForUser(String userName, String seq) {
     memcachedClient.set("_sequenceCounter_" + userName, 0, seq);
