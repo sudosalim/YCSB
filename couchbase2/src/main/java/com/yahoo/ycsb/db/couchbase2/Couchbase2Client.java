@@ -1315,9 +1315,11 @@ public class Couchbase2Client extends DB {
   private Status soeSearchN1ql(final Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen) {
     int recordcount = 100;
 
-    String userName = "sg-user-" + rnd.nextInt(10000);
+    String userName = "channel-" + rnd.nextInt(1000000);
 
     /*
+    // access
+
     String soeSearchN1qlQuery = "SELECT  q.name , OBJECT v2.name:v2.val FOR v2 IN (select RAW MIN([e.val, e])[1] " +
         "from q.e as e group by e.name) END AS ev  " +
         "FROM ( select op.name, ARRAY_FLATTEN(ARRAY_AGG(OBJECT_PAIRS(op.val)),2)  " +
@@ -1325,10 +1327,21 @@ public class Couchbase2Client extends DB {
         "in [$1] group by op.name) AS q ;";
     */
 
+    /*
 
+    // roles
     String soeSearchN1qlQuery = "SELECT op.name, OBJECT_PAIRS(op.val) as grants FROM `bucket-1` " +
         "UNNEST OBJECT_PAIRS(`bucket-1`._sync.role_access) as op where op.name in [$1]";
+    */
 
+
+    //channels
+    String soeSearchN1qlQuery = "SELECT op.name as ChannelName, LEAST(((`bucket-1`.`_sync`).`sequence`)," +
+        "(((`bucket-1`.`op`).`val`).`seq`)) as LeastSeq, meta(`bucket-1`).id, `bucket-1`._sync.rev as currentRev, " +
+        "(((`bucket-1`.`op`).`val`).`rev`) as removedRev,`bucket-1`._sync.flags as flags FROM `bucket-1` " +
+        "UNNEST OBJECT_PAIRS(`bucket-1`._sync.channels) as op where op.name in [$1] AND " +
+        "least(((`bucket-1`.`_sync`).`sequence`), (((`bucket-1`.`op`).`val`).`seq`)) > 0 " +
+        "ORDER BY ChannelName, LeastSeq";
 
     N1qlQueryResult queryResult = bucket.query(N1qlQuery.parameterized(
         soeSearchN1qlQuery,
