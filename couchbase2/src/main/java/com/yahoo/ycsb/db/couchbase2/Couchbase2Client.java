@@ -1327,14 +1327,11 @@ public class Couchbase2Client extends DB {
         "in [$1] group by op.name) AS q ;";
     */
 
-    /*
-
     // roles
     String soeSearchN1qlQuery = "SELECT op.name, OBJECT_PAIRS(op.val) as grants FROM `bucket-1` " +
         "UNNEST OBJECT_PAIRS(`bucket-1`._sync.role_access) as op where op.name in [$1]";
-    */
 
-
+    /*
     //channels
     String soeSearchN1qlQuery = "SELECT op.name as ChannelName, LEAST(((`bucket-1`.`_sync`).`sequence`)," +
         "(((`bucket-1`.`op`).`val`).`seq`)) as LeastSeq, meta(`bucket-1`).id, `bucket-1`._sync.rev as currentRev, " +
@@ -1342,7 +1339,7 @@ public class Couchbase2Client extends DB {
         "UNNEST OBJECT_PAIRS(`bucket-1`._sync.channels) as op where op.name in [$1] AND " +
         "least(((`bucket-1`.`_sync`).`sequence`), (((`bucket-1`.`op`).`val`).`seq`)) > 0 " +
         "ORDER BY ChannelName, LeastSeq";
-
+    */
     N1qlQueryResult queryResult = bucket.query(N1qlQuery.parameterized(
         soeSearchN1qlQuery,
         JsonArray.from(userName),
