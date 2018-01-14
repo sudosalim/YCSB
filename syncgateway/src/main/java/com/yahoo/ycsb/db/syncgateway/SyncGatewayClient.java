@@ -1168,12 +1168,6 @@ public class SyncGatewayClient extends DB {
 
   private String getUserForAccess(){
     if (loadMode == SG_LOAD_MODE_RANDOM_ACCESS) {
-      try {
-        java.util.concurrent.TimeUnit.SECONDS.sleep(1);
-      } catch (Exception ex) {
-        System.out.println(ex.getMessage());
-      }
-
       return DEFAULT_USERNAME_PREFIX  + rand.nextInt(totalUsers);
     }
     return DEFAULT_USERNAME_PREFIX + sgUsersPool.nextValue();
