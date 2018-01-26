@@ -105,7 +105,8 @@ public class SyncGatewayClient extends DB {
   private static final int SG_INSERT_MODE_BYUSER  = 1;
 
   private static final int SG_READ_MODE_DOCUMENTS = 0;
-  private static final int SG_READ_MODE_CHANGES  = 1;
+  private static final int SG_READ_MODE_DOCUMENTS_WITH_REV = 1;
+  private static final int SG_READ_MODE_CHANGES  = 2;
 
   private static final String SG_FEED_READ_MODE_IDSONLY = "idsonly";
   private static final String SG_FEED_READ_MODE_WITHDOCS = "withdocs";
@@ -174,8 +175,10 @@ public class SyncGatewayClient extends DB {
     String runModeProp = props.getProperty(SG_READ_MODE, "documents");
     if (runModeProp.equals("documents")) {
       readMode = SG_READ_MODE_DOCUMENTS;
-    } else {
+    } else if (runModeProp.equals("changes")){
       readMode = SG_READ_MODE_CHANGES;
+    } else {
+      readMode = SG_READ_MODE_DOCUMENTS_WITH_REV;
     }
 
     totalUsers = Integer.valueOf(props.getProperty(SG_TOTAL_USERS, "1000"));
@@ -237,7 +240,8 @@ public class SyncGatewayClient extends DB {
       return readChanges(key);
     }
 
-    return readSingle(table, key, fields, result);
+
+    return readSingle(key, result, readMode);
 
   }
 
@@ -254,9 +258,12 @@ public class SyncGatewayClient extends DB {
   }
 
 
-  private Status readSingle(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result) {
+  private Status readSingle(String key, HashMap<String, ByteIterator> result, int readMode) {
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
+      if (readMode == SG_READ_MODE_DOCUMENTS_WITH_REV) {
+        fullUrl = fullUrl + "?revs=" + getRevision(key);
+      }
 
     int responseCode;
     try {
@@ -929,6 +936,7 @@ public class SyncGatewayClient extends DB {
       memcachedClient.set(matcher.group(1), 0, matcher.group(2));
     }
   }
+
 
   private String readSessionCookie(String responseWithSession) {
     Pattern pattern = Pattern.compile("\\\"session_id\\\".\\\"([^\\\"]*)");
