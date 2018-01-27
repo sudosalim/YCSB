@@ -240,9 +240,7 @@ public class SyncGatewayClient extends DB {
       return readChanges(key);
     }
 
-
-    return readSingle(key, result, readMode);
-
+    return readSingle(key, result);
   }
 
   private Status readChanges(String key) {
@@ -257,13 +255,12 @@ public class SyncGatewayClient extends DB {
     return Status.OK;
   }
 
-
-  private Status readSingle(String key, HashMap<String, ByteIterator> result, int readMode) {
+  private Status readSingle(String key, HashMap<String, ByteIterator> result) {
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
-      if (readMode == SG_READ_MODE_DOCUMENTS_WITH_REV) {
-        fullUrl = fullUrl + "?revs=" + getRevision(key);
-      }
+    if (readMode == SG_READ_MODE_DOCUMENTS_WITH_REV) {
+      fullUrl += "?revs=" + getRevision(key);
+    }
 
     int responseCode;
     try {
