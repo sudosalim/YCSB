@@ -259,7 +259,7 @@ public class SyncGatewayClient extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
     if (readMode == SG_READ_MODE_DOCUMENTS_WITH_REV) {
-      fullUrl += "?revs=" + getRevision(key);
+      fullUrl += "?rev=" +  getRevision(key);
     }
 
     int responseCode;
