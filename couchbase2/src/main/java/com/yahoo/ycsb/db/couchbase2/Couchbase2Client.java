@@ -1319,15 +1319,18 @@ public class Couchbase2Client extends DB {
 
     String userName = "sg-user-" + rnd.nextInt(1000000);
 
+    //new access
+    String soeSearchN1qlQuery = "SELECT _sync.access.`" + userName + "` FROM `bucket-1` " +
+        "WHERE any op in object_pairs(_sync.access) satisfies op.name = $2 end";
 
-    // access
-
+        // access
+    /*
     String soeSearchN1qlQuery = "SELECT  q.name , OBJECT v2.name:v2.val FOR v2 IN (select RAW MIN([e.val, e])[1] " +
         "from q.e as e group by e.name) END AS ev  " +
         "FROM ( select op.name, ARRAY_FLATTEN(ARRAY_AGG(OBJECT_PAIRS(op.val)),2)  " +
         "as e from `bucket-1` UNNEST OBJECT_PAIRS(_sync.access) as op where op.name " +
         "in [$1] group by op.name) AS q ;";
-
+      */
 
     /*
     // roles
@@ -1345,7 +1348,7 @@ public class Couchbase2Client extends DB {
     */
     N1qlQueryResult queryResult = bucket.query(N1qlQuery.parameterized(
         soeSearchN1qlQuery,
-        JsonArray.from(userName),
+        JsonArray.from(userName, userName),
         N1qlParams.build().adhoc(false).maxParallelism(maxParallelism).consistency(ScanConsistency.REQUEST_PLUS)
     ));
 
