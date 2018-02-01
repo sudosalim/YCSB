@@ -343,7 +343,7 @@ public class SyncGatewayClient extends DB {
 
   private Status runViewQueryAccess(String key, HashMap<String, ByteIterator> result) {
     String fullUrl = "http://Administrator:password@" + getRandomCBHost() + "" +
-        ":8092/bucket-1/_design/sync_gateway/_view/access?" +
+        ":8092/bucket-1/_design/sync_gateway_2.0/_view/access?" +
         "limit=10000&stale=false&connection_timeout=60000&inclusive_end=true&skip=0&full_set=&key=%22" +
         DEFAULT_USERNAME_PREFIX  + rand.nextInt(totalUsers) + "%22";
 
@@ -359,7 +359,7 @@ public class SyncGatewayClient extends DB {
 
   private Status runViewQueryRole(String key, HashMap<String, ByteIterator> result) {
     String fullUrl = "http://Administrator:password@" + getRandomCBHost() + "" +
-        ":8092/bucket-1/_design/sync_gateway/_view/role_access?" +
+        ":8092/bucket-1/_design/sync_gateway_2.0/_view/role_access?" +
         "limit=10000&stale=false&connection_timeout=60000&inclusive_end=true&skip=0&full_set=&key=%22" +
         DEFAULT_USERNAME_PREFIX  + rand.nextInt(totalUsers) + "%22";
 
@@ -380,7 +380,7 @@ public class SyncGatewayClient extends DB {
         + channelKey + "%22%2C%20"+ totalDocs + "%5D";
 
     String fullUrl = "http://Administrator:password@" + getRandomCBHost() + "" +
-        ":8092/bucket-1/_design/sync_gateway/_view/channels?" +
+        ":8092/bucket-1/_design/sync_gateway_2.0/_view/channels?" +
         "limit=10000&stale=false&connection_timeout=60000&inclusive_end=true&skip=0&full_set=&" +  range;
 
     int responseCode;
