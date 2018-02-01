@@ -1358,7 +1358,7 @@ public class Couchbase2Client extends DB {
     */
 
     N1qlQueryResult queryResult = bucket.query(N1qlQuery.simple(soeSearchN1qlQuery,
-        N1qlParams.build().adhoc(false).maxParallelism(maxParallelism).consistency(ScanConsistency.REQUEST_PLUS)
+        N1qlParams.build().maxParallelism(maxParallelism).consistency(ScanConsistency.REQUEST_PLUS)
     ));
 
 
