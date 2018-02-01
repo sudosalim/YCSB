@@ -1321,7 +1321,9 @@ public class Couchbase2Client extends DB {
 
     //new access
     String soeSearchN1qlQuery = "SELECT _sync.access.`" + userName + "` FROM `bucket-1` " +
-        "WHERE any op in object_pairs(_sync.access) satisfies op.name = $2 end";
+        "WHERE any op in object_pairs(_sync.access) satisfies op.name = \""+ userName +"\" end";
+
+    //System.out.println(soeSearchN1qlQuery);
 
         // access
     /*
@@ -1346,11 +1348,19 @@ public class Couchbase2Client extends DB {
         "least(((`bucket-1`.`_sync`).`sequence`), (((`bucket-1`.`op`).`val`).`seq`)) > 0 " +
         "ORDER BY ChannelName, LeastSeq";
     */
+
+    /*
     N1qlQueryResult queryResult = bucket.query(N1qlQuery.parameterized(
         soeSearchN1qlQuery,
-        JsonArray.from(userName, userName),
+        JsonArray.from(userName),
+        N1qlParams.build().adhoc(true).maxParallelism(maxParallelism).consistency(ScanConsistency.REQUEST_PLUS)
+    ));
+    */
+
+    N1qlQueryResult queryResult = bucket.query(N1qlQuery.simple(soeSearchN1qlQuery,
         N1qlParams.build().adhoc(false).maxParallelism(maxParallelism).consistency(ScanConsistency.REQUEST_PLUS)
     ));
+
 
     if (!queryResult.parseSuccess() || !queryResult.finalSuccess()) {
       throw new RuntimeException("Error while parsing N1QL Result. Query: " + soeSearchN1qlQuery
