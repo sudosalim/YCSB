@@ -159,9 +159,9 @@ public class SyncGatewayClient extends DB {
   // http parameters
   private volatile Criteria requestTimedout = new Criteria(false);
   private String[] headers;
-  private int conTimeout = 5000;
-  private int readTimeout = 5000;
-  private int execTimeout = 5000;
+  private int conTimeout = 30000;
+  private int readTimeout = 30000;
+  private int execTimeout = 30000;
   private CloseableHttpClient restClient;
 
 
@@ -925,6 +925,8 @@ public class SyncGatewayClient extends DB {
       request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
     }
 
+    System.out.println(endpoint);
+
     CloseableHttpResponse response = restClient.execute(request);
     responseCode = response.getStatusLine().getStatusCode();
     HttpEntity responseEntity = response.getEntity();
@@ -935,7 +937,7 @@ public class SyncGatewayClient extends DB {
       StringBuffer responseContent = new StringBuffer();
       String line = "";
       while ((line = reader.readLine()) != null) {
-        //System.out.println(line);
+        System.out.println(line);
         if (requestTimedout.isSatisfied()) {
           // Must avoid memory leak.
           reader.close();
