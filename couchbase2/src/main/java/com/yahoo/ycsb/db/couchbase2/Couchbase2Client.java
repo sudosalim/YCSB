@@ -133,6 +133,9 @@ public class Couchbase2Client extends DB {
   private int runtimeMetricsInterval;
   private String scanAllQuery;
   private int documentExpiry;
+  private boolean certAuthEnabled;
+  private String certKeystoreFile;
+  private String certKeystorePassword;
   
   @Override
   public void init() throws DBException {
@@ -156,6 +159,10 @@ public class Couchbase2Client extends DB {
     networkMetricsInterval = Integer.parseInt(props.getProperty("couchbase.networkMetricsInterval", "0"));
     runtimeMetricsInterval = Integer.parseInt(props.getProperty("couchbase.runtimeMetricsInterval", "0"));
     documentExpiry = Integer.parseInt(props.getProperty("couchbase.documentExpiry", "0"));
+    certKeystoreFile = props.getProperty("couchbase.certKeystoreFile", "");
+    certKeystorePassword = props.getProperty("couchbase.certKeystorePassword", "");
+
+
     scanAllQuery =  "SELECT RAW meta().id FROM `" + bucketName +
       "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
 
@@ -186,6 +193,7 @@ public class Couchbase2Client extends DB {
               .kvTimeout(10000) // 10 instead of 2.5s for KV ops
               .kvEndpoints(kvEndpoints);
 
+
           // Tune boosting and epoll based on settings
           SelectStrategyFactory factory = boost > 0 ?
               new BackoffSelectStrategyFactory() : DefaultSelectStrategyFactory.INSTANCE;
@@ -199,13 +207,22 @@ public class Couchbase2Client extends DB {
               : new NioEventLoopGroup(poolSize, threadFactory, SelectorProvider.provider(), factory);
           builder.ioPool(group, new IoPoolShutdownHook(group));
 
+          certAuthEnabled = !certKeystoreFile.equals("");
+          if (certAuthEnabled) {
+            builder.sslEnabled(true)
+                .sslKeystoreFile(certKeystoreFile)
+                .sslKeystorePassword(certKeystorePassword)
+                .certAuthEnabled(true);
+          }
+
           env = builder.build();
           logParams();
         }
       }
 
       cluster = CouchbaseCluster.create(env, host);
-      bucket = cluster.openBucket(bucketName, bucketPassword);
+      bucket = certAuthEnabled ? cluster.openBucket(bucketName) :
+          cluster.openBucket(bucketName, bucketPassword);
       kvTimeout = env.kvTimeout();
     } catch (Exception ex) {
       throw new DBException("Could not connect to Couchbase Bucket.", ex);
