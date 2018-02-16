@@ -1050,7 +1050,7 @@ public class SyncGatewayClient extends DB {
   }
 
   private String buildUserDef() {
-    int id = sgUserInsertCounter.nextValue();
+    int id = sgUserInsertCounter.nextValue() + insertUsersStart;
     String userName = DEFAULT_USERNAME_PREFIX + id;
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
