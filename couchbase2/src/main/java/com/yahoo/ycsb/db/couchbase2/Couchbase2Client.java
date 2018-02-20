@@ -1315,11 +1315,12 @@ public class Couchbase2Client extends DB {
   private Status soeSearchN1ql(final Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen) {
     int recordcount = 100;
 
-    String channelName = "channel-" + rnd.nextInt(1000000);
+    //String channelName = "channel-" + rnd.nextInt(1000000);
 
-    //String userName = "sg-user-" + rnd.nextInt(1000000);
+    String userName = "sg-user-" + rnd.nextInt(1000000);
 
     // new channels - XA
+    /*
     String soeSearchN1qlQuery = "SELECT LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" +
         channelName + "`.seq) as sequence, meta().xattrs._sync.sequence as documentSequence, " +
         "meta().xattrs._sync.channels.`" + channelName + "`.seq as removalSequence, " +
@@ -1329,13 +1330,13 @@ public class Couchbase2Client extends DB {
         "satisfies op.name = \"" + channelName + "\" end " +
         "AND LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" + channelName + "`.seq) > 0 " +
         "ORDER BY LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" + channelName + "`.seq)";
+    */
 
 
-    /*
     //new access - XA
     String soeSearchN1qlQuery = "SELECT meta().xattrs._sync.access.`" + userName + "` FROM `bucket-1` " +
         "WHERE any op in object_pairs(meta().xattrs._sync.access) satisfies op.name = \""+ userName +"\" end";
-    */
+
     /*
     //new access - noxa
     String soeSearchN1qlQuery = "SELECT _sync.access.`" + userName + "` FROM `bucket-1` " +
