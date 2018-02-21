@@ -105,6 +105,10 @@ public class Couchbase2Client extends DB {
 
     // Enable support for IPv6
     System.setProperty("com.couchbase.forceIPv4", "false");
+
+    // Disable buffer pooling
+    System.setProperty("com.couchbase.bufferPoolingEnabled", "false");
+
   }
 
   private static final String SEPARATOR = ":";
