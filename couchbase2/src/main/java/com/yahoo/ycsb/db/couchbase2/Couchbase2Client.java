@@ -1334,14 +1334,15 @@ public class Couchbase2Client extends DB {
 
 
     //new access - XA
+    /*
     String soeSearchN1qlQuery = "SELECT meta().xattrs._sync.access.`" + userName + "` FROM `bucket-1` " +
         "WHERE any op in object_pairs(meta().xattrs._sync.access) satisfies op.name = \""+ userName +"\" end";
+    */
 
-    /*
     //new access - noxa
     String soeSearchN1qlQuery = "SELECT _sync.access.`" + userName + "` FROM `bucket-1` " +
         "WHERE any op in object_pairs(_sync.access) satisfies op.name = \""+ userName +"\" end";
-    */
+
     //System.out.println(soeSearchN1qlQuery);
 
         // access
