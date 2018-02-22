@@ -376,12 +376,15 @@ public class SyncGatewayClient extends DB {
 
   private Status runViewQueryChannel(String key, HashMap<String, ByteIterator> result) {
     String channelKey = "channel-" + rand.nextInt(totalChannels);
-    String range = "startkey=%5B%20%22" + channelKey + "%22%2C%200%5D&endkey=%5B%20%22"
-        + channelKey + "%22%2C%20"+ totalDocs + "%5D";
+    String range = "startkey=%5B%20%22" + channelKey + "%22%2C%207000000%5D&endkey=%5B%20%22"
+        + channelKey + "%22%2C%2015000000%5D";
 
     String fullUrl = "http://Administrator:password@" + getRandomCBHost() + "" +
         ":8092/bucket-1/_design/sync_gateway_2.0/_view/channels?" +
         "limit=10000&stale=false&connection_timeout=60000&inclusive_end=true&skip=0&full_set=&" +  range;
+
+
+    //System.out.println(fullUrl);
 
     int responseCode;
     try {
