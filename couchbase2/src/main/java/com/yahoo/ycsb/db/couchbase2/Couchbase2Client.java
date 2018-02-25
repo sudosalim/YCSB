@@ -1320,7 +1320,7 @@ public class Couchbase2Client extends DB {
     //String userName = "sg-user-" + rnd.nextInt(1000000);
 
     // new channels - XA
-
+  /*
     String soeSearchN1qlQuery = "SELECT LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" +
         channelName + "`.seq) as sequence, meta().xattrs._sync.sequence as documentSequence, " +
         "meta().xattrs._sync.channels.`" + channelName + "`.seq as removalSequence, " +
@@ -1331,7 +1331,20 @@ public class Couchbase2Client extends DB {
         "AND LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" + channelName + "`.seq) > 7000000 " +
         "AND LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" + channelName + "`.seq) < 15000000 " +
         "ORDER BY LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" + channelName + "`.seq)";
+*/
 
+    // new channels - noXA
+
+    String soeSearchN1qlQuery = "SELECT LEAST(_sync.sequence, _sync.channels.`" +
+        channelName + "`.seq) as sequence, _sync.sequence as documentSequence, " +
+        "_sync.channels.`" + channelName + "`.seq as removalSequence, " +
+        "_sync.rev as documentRev,  meta().id as id, _sync.channels.`" +
+        channelName + "`.rev as removalRev FROM `bucket-1` " +
+        "WHERE any op in object_pairs(_sync.channels) " +
+        "satisfies op.name = \"" + channelName + "\" end " +
+        "AND LEAST(_sync.sequence, _sync.channels.`" + channelName + "`.seq) > 7000000 " +
+        "AND LEAST(_sync.sequence, _sync.channels.`" + channelName + "`.seq) < 15000000 " +
+        "ORDER BY LEAST(_sync.sequence, _sync.channels.`" + channelName + "`.seq)";
 
 
     //new access - XA
