@@ -133,7 +133,8 @@ public class Couchbase2Client extends DB {
   private int runtimeMetricsInterval;
   private String scanAllQuery;
   private int documentExpiry;
-  private boolean certAuthEnabled;
+  private String SSLMode;
+  private Boolean certAuthEnabled = false;
   private String certKeystoreFile;
   private String certKeystorePassword;
   
@@ -161,7 +162,7 @@ public class Couchbase2Client extends DB {
     documentExpiry = Integer.parseInt(props.getProperty("couchbase.documentExpiry", "0"));
     certKeystoreFile = props.getProperty("couchbase.certKeystoreFile", "");
     certKeystorePassword = props.getProperty("couchbase.certKeystorePassword", "");
-
+    SSLMode = props.getProperty("couchbase.useSSL","none");
 
     scanAllQuery =  "SELECT RAW meta().id FROM `" + bucketName +
       "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
@@ -207,12 +208,14 @@ public class Couchbase2Client extends DB {
               : new NioEventLoopGroup(poolSize, threadFactory, SelectorProvider.provider(), factory);
           builder.ioPool(group, new IoPoolShutdownHook(group));
 
-          certAuthEnabled = !certKeystoreFile.equals("");
-          if (certAuthEnabled) {
+          if (!SSLMode.equals("none")) {
             builder.sslEnabled(true)
                 .sslKeystoreFile(certKeystoreFile)
-                .sslKeystorePassword(certKeystorePassword)
-                .certAuthEnabled(true);
+                .sslKeystorePassword(certKeystorePassword);
+            if (SSLMode.equals("auth")){
+              certAuthEnabled = true;
+              builder.certAuthEnabled(true);
+            }
           }
 
           env = builder.build();
