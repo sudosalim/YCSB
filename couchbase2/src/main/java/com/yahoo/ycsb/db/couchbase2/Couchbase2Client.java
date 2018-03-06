@@ -1315,7 +1315,7 @@ public class Couchbase2Client extends DB {
   private Status soeSearchN1ql(final Vector<HashMap<String, ByteIterator>> result, PredicateGenerator gen) {
     int recordcount = 100;
 
-    String channelName = "channel-" + rnd.nextInt(1000000);
+    String channelName = "channel-" + rnd.nextInt(150000);
 
     //String userName = "sg-user-" + rnd.nextInt(1000000);
 
