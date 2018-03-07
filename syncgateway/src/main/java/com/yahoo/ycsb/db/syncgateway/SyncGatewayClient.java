@@ -376,7 +376,7 @@ public class SyncGatewayClient extends DB {
 
   private Status runViewQueryChannel(String key, HashMap<String, ByteIterator> result) {
     String channelKey = "channel-" + rand.nextInt(totalChannels);
-    String range = "startkey=%5B%20%22" + channelKey + "%22%2C%2070000000%5D&endkey=%5B%20%22"
+    String range = "startkey=%5B%20%22" + channelKey + "%22%2C%20143000000%5D&endkey=%5B%20%22"
         + channelKey + "%22%2C%20150000000%5D";
 
     String fullUrl = "http://Administrator:password@" + getRandomCBHost() + "" +
