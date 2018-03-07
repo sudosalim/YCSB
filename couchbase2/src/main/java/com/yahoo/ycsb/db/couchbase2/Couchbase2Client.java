@@ -1328,7 +1328,7 @@ public class Couchbase2Client extends DB {
         channelName + "`.rev as removalRev FROM `bucket-1` " +
         "WHERE any op in object_pairs(meta().xattrs._sync.channels) " +
         "satisfies op.name = \"" + channelName + "\" end " +
-        "AND LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" + channelName + "`.seq) > 70000000 " +
+        "AND LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" + channelName + "`.seq) > 143000000 " +
         "AND LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" + channelName + "`.seq) < 150000000 " +
         "ORDER BY LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" + channelName + "`.seq)";
 
