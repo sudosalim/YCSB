@@ -1319,8 +1319,27 @@ public class Couchbase2Client extends DB {
 
     //String userName = "sg-user-" + rnd.nextInt(1000000);
 
-    // new channels - XA
+    //new channels - XA, prepared
 
+    String soeSearchN1qlQuery = "SELECT LEAST(sync.sequence, channel.val.seq) AS sequence, sync.sequence " +
+        "AS documentSequence, META().id AS id, channel.val.seq AS removalSequence, sync.rev AS documentRev, " +
+        "channel.val.rev AS removalRev FROM `bucket-1` LET channel = FIRST ch FOR ch " +
+        "IN OBJECT_PAIRS(META().xattrs._sync.channels) WHEN ch.name = $1 END, " +
+        "sync = META().xattrs._sync WHERE channel.name = $1 AND (LEAST(sync.sequence, channel.val.seq) " +
+        "BETWEEN 7000000 AND 15000000) AND ANY op IN OBJECT_PAIRS(sync.channels) " +
+        "SATISFIES [op.name, LEAST(sync.sequence, op.val.seq)] BETWEEN  [$1, 7000000] " +
+        "AND [$1, 15000000]  END ORDER BY sequence;";
+
+
+    N1qlQueryResult queryResult = bucket.query(N1qlQuery.parameterized(
+        soeSearchN1qlQuery,
+        JsonArray.from(channelName),
+        N1qlParams.build().adhoc(true).maxParallelism(maxParallelism).consistency(ScanConsistency.REQUEST_PLUS)
+    ));
+
+
+    // new channels - XA
+    /*
     String soeSearchN1qlQuery = "SELECT LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" +
         channelName + "`.seq) as sequence, meta().xattrs._sync.sequence as documentSequence, " +
         "meta().xattrs._sync.channels.`" + channelName + "`.seq as removalSequence, " +
@@ -1331,7 +1350,7 @@ public class Couchbase2Client extends DB {
         "AND LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" + channelName + "`.seq) > 7000000 " +
         "AND LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" + channelName + "`.seq) < 15000000 " +
         "ORDER BY LEAST(meta().xattrs._sync.sequence,meta().xattrs._sync.channels.`" + channelName + "`.seq)";
-
+    */
 
     // new channels - noXA
     /*
@@ -1391,10 +1410,11 @@ public class Couchbase2Client extends DB {
     ));
     */
 
+    /*
     N1qlQueryResult queryResult = bucket.query(N1qlQuery.simple(soeSearchN1qlQuery,
         N1qlParams.build().maxParallelism(maxParallelism).consistency(ScanConsistency.REQUEST_PLUS)
     ));
-
+    */
 
     if (!queryResult.parseSuccess() || !queryResult.finalSuccess()) {
       throw new RuntimeException("Error while parsing N1QL Result. Query: " + soeSearchN1qlQuery
@@ -1407,7 +1427,7 @@ public class Couchbase2Client extends DB {
       soeDecode(row.value().toString(), null, tuple);
       result.add(tuple);
     }
-    //System.out.println(userName);
+    //System.out.println(channelName);
     //System.out.println(result);
 
     return Status.OK;
