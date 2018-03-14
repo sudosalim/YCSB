@@ -1327,8 +1327,8 @@ public class Couchbase2Client extends DB {
         "IN OBJECT_PAIRS(META().xattrs._sync.channels) WHEN ch.name = $1 END, " +
         "sync = META().xattrs._sync WHERE channel.name = $1 AND (LEAST(sync.sequence, channel.val.seq) " +
         "BETWEEN 7000000 AND 15000000) AND ANY op IN OBJECT_PAIRS(sync.channels) " +
-        "SATISFIES [op.name, LEAST(sync.sequence, op.val.seq)] BETWEEN  [$1, 7000000] " +
-        "AND [$1, 15000000]  END ORDER BY sequence;";
+        "SATISFIES [op.name, LEAST(sync.sequence, op.val.seq)] BETWEEN  [$1, 70000000] " +
+        "AND [$1, 150000000]  END ORDER BY sequence;";
 
 
     N1qlQueryResult queryResult = bucket.query(N1qlQuery.parameterized(
