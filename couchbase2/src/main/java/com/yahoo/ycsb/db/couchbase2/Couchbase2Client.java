@@ -1319,8 +1319,18 @@ public class Couchbase2Client extends DB {
 
     //String userName = "sg-user-" + rnd.nextInt(1000000);
 
-    //new channels - XA, prepared
+    //channels, iteration #5, XA, prepared
 
+    String soeSearchN1qlQuery = "SELECT [op.name, LEAST(META(b).xattrs._sync.sequence, op.val.seq),op.val.seq][1] " +
+        "AS sequence, [op.name, LEAST(META(b).xattrs._sync.sequence, op.val.seq),op.val.seq][2] " +
+        "AS removalSequence, META(b).xattrs._sync.sequence AS documentSequence, META(b).xattrs._sync.rev " +
+        "AS documentRev, META(b).id AS id FROM `bucket-1` AS b UNNEST OBJECT_PAIRS(META(b).xattrs._sync.channels) " +
+        "AS op WHERE [op.name, LEAST(META(b).xattrs._sync.sequence, op.val.seq),op.val.seq] BETWEEN [$1, 7000000] " +
+        "AND [$1, 15000000] ORDER BY sequence;";
+
+
+        //new channels - XA, prepared
+    /*
     String soeSearchN1qlQuery = "SELECT LEAST(sync.sequence, channel.val.seq) AS sequence, sync.sequence " +
         "AS documentSequence, META().id AS id, channel.val.seq AS removalSequence, sync.rev AS documentRev, " +
         "channel.val.rev AS removalRev FROM `bucket-1` LET channel = FIRST ch FOR ch " +
@@ -1329,7 +1339,7 @@ public class Couchbase2Client extends DB {
         "BETWEEN 7000000 AND 15000000) AND ANY op IN OBJECT_PAIRS(sync.channels) " +
         "SATISFIES [op.name, LEAST(sync.sequence, op.val.seq)] BETWEEN  [$1, 70000000] " +
         "AND [$1, 150000000]  END ORDER BY sequence;";
-
+    */
 
     N1qlQueryResult queryResult = bucket.query(N1qlQuery.parameterized(
         soeSearchN1qlQuery,
