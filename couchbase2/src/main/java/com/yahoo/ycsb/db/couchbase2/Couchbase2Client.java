@@ -1325,8 +1325,8 @@ public class Couchbase2Client extends DB {
         "AS sequence, [op.name, LEAST(META(b).xattrs._sync.sequence, op.val.seq),op.val.seq][2] " +
         "AS removalSequence, META(b).xattrs._sync.sequence AS documentSequence, META(b).xattrs._sync.rev " +
         "AS documentRev, META(b).id AS id FROM `bucket-1` AS b UNNEST OBJECT_PAIRS(META(b).xattrs._sync.channels) " +
-        "AS op WHERE [op.name, LEAST(META(b).xattrs._sync.sequence, op.val.seq),op.val.seq] BETWEEN [$1, 7000000] " +
-        "AND [$1, 15000000] ORDER BY sequence;";
+        "AS op WHERE [op.name, LEAST(META(b).xattrs._sync.sequence, op.val.seq),op.val.seq] BETWEEN [$1, 70000000] " +
+        "AND [$1, 150000000] ORDER BY sequence;";
 
 
         //new channels - XA, prepared
