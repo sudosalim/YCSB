@@ -29,12 +29,15 @@ import com.couchbase.client.deps.com.fasterxml.jackson.core.JsonFactory;
 import com.couchbase.client.deps.com.fasterxml.jackson.core.JsonGenerator;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.JsonNode;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.node.ObjectNode;
+import com.couchbase.client.deps.io.netty.buffer.ByteBuf;
+import com.couchbase.client.deps.io.netty.buffer.Unpooled;
 import com.couchbase.client.deps.io.netty.channel.DefaultSelectStrategyFactory;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 import com.couchbase.client.deps.io.netty.channel.SelectStrategy;
 import com.couchbase.client.deps.io.netty.channel.SelectStrategyFactory;
 import com.couchbase.client.deps.io.netty.channel.epoll.EpollEventLoopGroup;
 import com.couchbase.client.deps.io.netty.channel.nio.NioEventLoopGroup;
+import com.couchbase.client.deps.io.netty.util.CharsetUtil;
 import com.couchbase.client.deps.io.netty.util.IntSupplier;
 import com.couchbase.client.deps.io.netty.util.concurrent.DefaultThreadFactory;
 import com.couchbase.client.java.Bucket;
@@ -43,7 +46,7 @@ import com.couchbase.client.java.CouchbaseCluster;
 import com.couchbase.client.java.PersistTo;
 import com.couchbase.client.java.ReplicateTo;
 import com.couchbase.client.java.document.Document;
-import com.couchbase.client.java.document.RawJsonDocument;
+import com.couchbase.client.java.document.BinaryDocument;
 import com.couchbase.client.java.document.json.JsonArray;
 import com.couchbase.client.java.document.json.JsonObject;
 import com.couchbase.client.java.env.CouchbaseEnvironment;
@@ -268,7 +271,7 @@ public class Couchbase2Client extends DB {
    */
   private Status readKv(final String docId, final Set<String> fields, final Map<String, ByteIterator> result)
     throws Exception {
-    RawJsonDocument loaded = bucket.get(docId, RawJsonDocument.class);
+    BinaryDocument loaded = bucket.get(docId, BinaryDocument.class);
     if (loaded == null) {
       return Status.NOT_FOUND;
     }
@@ -349,7 +352,7 @@ public class Couchbase2Client extends DB {
    */
   private Status updateKv(final String docId, final Map<String, ByteIterator> values) {
     waitForMutationResponse(bucket.async().replace(
-        RawJsonDocument.create(docId, documentExpiry, encode(values)),
+        BinaryDocument.create(docId, documentExpiry, encode(values)),
         persistTo,
         replicateTo
     ));
@@ -419,7 +422,7 @@ public class Couchbase2Client extends DB {
     for(int i = 0; i < tries; i++) {
       try {
         waitForMutationResponse(bucket.async().insert(
-            RawJsonDocument.create(docId, documentExpiry, encode(values)),
+            BinaryDocument.create(docId, documentExpiry, encode(values)),
             persistTo,
             replicateTo
         ));
@@ -498,7 +501,7 @@ public class Couchbase2Client extends DB {
    */
   private Status upsertKv(final String docId, final Map<String, ByteIterator> values) {
     waitForMutationResponse(bucket.async().upsert(
-        RawJsonDocument.create(docId, documentExpiry, encode(values)),
+        BinaryDocument.create(docId, documentExpiry, encode(values)),
         persistTo,
         replicateTo
     ));
@@ -636,16 +639,16 @@ public class Couchbase2Client extends DB {
             return result.rows();
           }
         })
-        .flatMap(new Func1<AsyncN1qlQueryRow, Observable<RawJsonDocument>>() {
+        .flatMap(new Func1<AsyncN1qlQueryRow, Observable<BinaryDocument>>() {
           @Override
-          public Observable<RawJsonDocument> call(AsyncN1qlQueryRow row) {
+          public Observable<BinaryDocument> call(AsyncN1qlQueryRow row) {
             String id = new String(row.byteValue()).trim();
-            return bucket.async().get(id.substring(1, id.length()-1), RawJsonDocument.class);
+            return bucket.async().get(id.substring(1, id.length()-1), BinaryDocument.class);
           }
         })
-        .map(new Func1<RawJsonDocument, HashMap<String, ByteIterator>>() {
+        .map(new Func1<BinaryDocument, HashMap<String, ByteIterator>>() {
           @Override
-          public HashMap<String, ByteIterator> call(RawJsonDocument document) {
+          public HashMap<String, ByteIterator> call(BinaryDocument document) {
             HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>();
             decode(document.content(), null, tuple);
             return tuple;
@@ -855,10 +858,11 @@ public class Couchbase2Client extends DB {
    * @param fields the fields to check.
    * @param dest the result passed back to YCSB.
    */
-  private void decode(final String source, final Set<String> fields,
+  private void decode(final ByteBuf source, final Set<String> fields,
                       final Map<String, ByteIterator> dest) {
     try {
-      JsonNode json = JacksonTransformers.MAPPER.readTree(source);
+      String sourceStr = source.toString(CharsetUtil.UTF_8);
+      JsonNode json = JacksonTransformers.MAPPER.readTree(sourceStr);
       boolean checkFields = fields != null && !fields.isEmpty();
       for (Iterator<Map.Entry<String, JsonNode>> jsonFields = json.fields(); jsonFields.hasNext();) {
         Map.Entry<String, JsonNode> jsonField = jsonFields.next();
@@ -882,7 +886,7 @@ public class Couchbase2Client extends DB {
    * @param source the source value.
    * @return the encoded string.
    */
-  private String encode(final Map<String, ByteIterator> source) {
+  private ByteBuf encode(final Map<String, ByteIterator> source) {
     Map<String, String> stringMap = StringByteIterator.getStringMap(source);
     ObjectNode node = JacksonTransformers.MAPPER.createObjectNode();
     for (Map.Entry<String, String> pair : stringMap.entrySet()) {
@@ -896,7 +900,8 @@ public class Couchbase2Client extends DB {
     } catch (Exception e) {
       throw new RuntimeException("Could not encode JSON value");
     }
-    return writer.toString();
+    String strValue = writer.toString();
+    return Unpooled.copiedBuffer(strValue, CharsetUtil.UTF_8);
   }
 }
 
