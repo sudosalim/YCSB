@@ -126,6 +126,7 @@ public class Couchbase2Client extends DB {
   private boolean kv;
   private int maxParallelism;
   private String host;
+  private int port;
   private int kvEndpoints;
   private int queryEndpoints;
   private int boost;
@@ -139,6 +140,7 @@ public class Couchbase2Client extends DB {
     Properties props = getProperties();
 
     host = props.getProperty("couchbase.host", "127.0.0.1");
+    port = Integer.parseInt(props.getProperty("couchbase.adminport", "8091"));
     bucketName = props.getProperty("couchbase.bucket", "default");
     String bucketPassword = props.getProperty("couchbase.password", "");
 
@@ -177,6 +179,7 @@ public class Couchbase2Client extends DB {
 
           DefaultCouchbaseEnvironment.Builder builder = DefaultCouchbaseEnvironment
               .builder()
+              .bootstrapHttpDirectPort(port)
               .queryEndpoints(queryEndpoints)
               .callbacksOnIoPool(true)
               .runtimeMetricsCollectorConfig(runtimeConfig)
