@@ -227,6 +227,7 @@ public class Couchbase2Client extends DB {
     StringBuilder sb = new StringBuilder();
 
     sb.append("host=").append(host);
+    sb.append(", port=").append(port);
     sb.append(", bucket=").append(bucketName);
     sb.append(", upsert=").append(upsert);
     sb.append(", persistTo=").append(persistTo);
