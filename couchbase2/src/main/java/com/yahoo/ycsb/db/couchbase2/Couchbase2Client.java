@@ -78,6 +78,7 @@ import java.util.concurrent.locks.LockSupport;
  * <ul>
  * <li><b>couchbase.host=127.0.0.1</b> The hostname from one server.</li>
  * <li><b>couchhbase.adminport=8091</b> The REST Admin port for the <b>host</b> being connected to</li>
+ * <li><b>couchhbase.carrierport=11210</b> The <b>memcached</b> port for the <b>host</b> being connected to</li>
  * <li><b>couchbase.bucket=default</b> The bucket name to use.</li>
  * <li><b>couchbase.password=</b> The password of the bucket.</li>
  * <li><b>couchbase.syncMutationResponse=true</b> If mutations should wait for the response to complete.</li>
@@ -128,6 +129,7 @@ public class Couchbase2Client extends DB {
   private int maxParallelism;
   private String host;
   private int port;
+  private int carrierPort;
   private int kvEndpoints;
   private int queryEndpoints;
   private int boost;
@@ -142,6 +144,7 @@ public class Couchbase2Client extends DB {
 
     host = props.getProperty("couchbase.host", "127.0.0.1");
     port = Integer.parseInt(props.getProperty("couchbase.adminport", "8091"));
+    carrierPort = Integer.parseInt(props.getProperty("couchbase.carrierport", "11210"));
     bucketName = props.getProperty("couchbase.bucket", "default");
     String bucketPassword = props.getProperty("couchbase.password", "");
 
@@ -181,6 +184,7 @@ public class Couchbase2Client extends DB {
           DefaultCouchbaseEnvironment.Builder builder = DefaultCouchbaseEnvironment
               .builder()
               .bootstrapHttpDirectPort(port)
+              .bootstrapCarrierDirectPort(carrierPort)
               .queryEndpoints(queryEndpoints)
               .callbacksOnIoPool(true)
               .runtimeMetricsCollectorConfig(runtimeConfig)
@@ -227,7 +231,8 @@ public class Couchbase2Client extends DB {
     StringBuilder sb = new StringBuilder();
 
     sb.append("host=").append(host);
-    sb.append(", port=").append(port);
+    sb.append(", adminport=").append(port);
+    sb.append(", carrierport=").append(carrierPort);
     sb.append(", bucket=").append(bucketName);
     sb.append(", upsert=").append(upsert);
     sb.append(", persistTo=").append(persistTo);
