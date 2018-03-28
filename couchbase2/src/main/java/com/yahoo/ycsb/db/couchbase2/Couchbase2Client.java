@@ -69,6 +69,10 @@ import java.util.*;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
+import java.util.logging.ConsoleHandler;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * A class that wraps the 2.x Couchbase SDK to be used with YCSB.
@@ -76,6 +80,7 @@ import java.util.concurrent.locks.LockSupport;
  * <p> The following options can be passed when using this database client to override the defaults.
  *
  * <ul>
+ * <li><b>couchbase.sdklogging=off</b> The logging level for the Couchbase Java SDK</li>
  * <li><b>couchbase.host=127.0.0.1</b> The hostname from one server.</li>
  * <li><b>couchhbase.adminport=8091</b> The REST Admin port for the <b>host</b> being connected to</li>
  * <li><b>couchhbase.carrierport=11210</b> The <b>memcached</b> port for the <b>host</b> being connected to</li>
@@ -115,6 +120,7 @@ public class Couchbase2Client extends DB {
 
   private static volatile CouchbaseEnvironment env = null;
 
+  private Level sdkLogLevel;
   private Cluster cluster;
   private Bucket bucket;
   private String bucketName;
@@ -137,10 +143,12 @@ public class Couchbase2Client extends DB {
   private int runtimeMetricsInterval;
   private String scanAllQuery;
   private int documentExpiry;
-  
+
   @Override
   public void init() throws DBException {
     Properties props = getProperties();
+
+    sdkLogLevel = parseLoggingLevel(props.getProperty("couchbase.sdklogging", "false"));
 
     host = props.getProperty("couchbase.host", "127.0.0.1");
     port = Integer.parseInt(props.getProperty("couchbase.adminport", "8091"));
@@ -212,6 +220,14 @@ public class Couchbase2Client extends DB {
         }
       }
 
+      Logger logger = Logger.getLogger("com.couchbase.client");
+      logger.setLevel(sdkLogLevel);
+      for(Handler h : logger.getParent().getHandlers()) {
+        if(h instanceof ConsoleHandler){
+          h.setLevel(sdkLogLevel);
+        }
+      }
+
       cluster = CouchbaseCluster.create(env, host);
       bucket = cluster.openBucket(bucketName, bucketPassword);
       kvTimeout = env.kvTimeout();
@@ -230,7 +246,8 @@ public class Couchbase2Client extends DB {
   private void logParams() {
     StringBuilder sb = new StringBuilder();
 
-    sb.append("host=").append(host);
+    sb.append("sdklogging=").append(sdkLogLevel.getName());
+    sb.append(", host=").append(host);
     sb.append(", adminport=").append(port);
     sb.append(", carrierport=").append(carrierPort);
     sb.append(", bucket=").append(bucketName);
@@ -855,6 +872,20 @@ public class Couchbase2Client extends DB {
       return PersistTo.FOUR;
     default:
       throw new DBException("\"couchbase.persistTo\" must be between 0 and 4");
+    }
+  }
+
+  /**
+   * Helper method to configure Java SDK logging
+   * @param property the property to parse
+   * @return the parsed setting
+   * @throws DBException if the property could not be parsed
+   */
+  private static Level parseLoggingLevel(final String property) throws DBException {
+    try {
+      return Level.parse(property.toUpperCase());
+    } catch (IllegalArgumentException e) {
+      throw new DBException("\"couchbase.sdklogging\" is not valid. See Level.java for valid options");
     }
   }
 
