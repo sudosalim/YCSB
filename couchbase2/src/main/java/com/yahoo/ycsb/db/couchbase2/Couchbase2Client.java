@@ -82,6 +82,7 @@ import java.util.logging.Logger;
  * <ul>
  * <li><b>couchbase.host=127.0.0.1</b> The hostname from one server.</li>
  * <li><b>couchhbase.adminport=8091</b> The REST Admin port for the <b>host</b> being connected to</li>
+ * <li><b>couchhbase.carrierport=11210</b> The <b>memcached</b> port for the <b>host</b> being connected to</li>
  * <li><b>couchbase.bucket=default</b> The bucket name to use.</li>
  * <li><b>couchbase.password=</b> The password of the bucket.</li>
  * <li><b>couchbase.syncMutationResponse=true</b> If mutations should wait for the response to complete.</li>
