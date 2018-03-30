@@ -25,6 +25,7 @@ import com.couchbase.client.core.metrics.DefaultLatencyMetricsCollectorConfig;
 import com.couchbase.client.core.metrics.DefaultMetricsCollectorConfig;
 import com.couchbase.client.core.metrics.LatencyMetricsCollectorConfig;
 import com.couchbase.client.core.metrics.MetricsCollectorConfig;
+//import com.couchbase.client.core.tracing.ThresholdLogTracer;
 import com.couchbase.client.deps.com.fasterxml.jackson.core.JsonFactory;
 import com.couchbase.client.deps.com.fasterxml.jackson.core.JsonGenerator;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.JsonNode;
@@ -133,6 +134,9 @@ public class Couchbase2Client extends DB {
   private int runtimeMetricsInterval;
   private String scanAllQuery;
   private int documentExpiry;
+
+  //private ThresholdLogTracer tracer = ThresholdLogTracer.create();
+
   
   @Override
   public void init() throws DBException {
@@ -158,6 +162,8 @@ public class Couchbase2Client extends DB {
     documentExpiry = Integer.parseInt(props.getProperty("couchbase.documentExpiry", "0"));
     scanAllQuery =  "SELECT RAW meta().id FROM `" + bucketName +
       "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+
+    //tracer.
 
     try {
       synchronized (INIT_COORDINATOR) {
