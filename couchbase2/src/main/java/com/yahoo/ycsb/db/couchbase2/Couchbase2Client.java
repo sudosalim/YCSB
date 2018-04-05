@@ -25,7 +25,8 @@ import com.couchbase.client.core.metrics.DefaultLatencyMetricsCollectorConfig;
 import com.couchbase.client.core.metrics.DefaultMetricsCollectorConfig;
 import com.couchbase.client.core.metrics.LatencyMetricsCollectorConfig;
 import com.couchbase.client.core.metrics.MetricsCollectorConfig;
-//import com.couchbase.client.core.tracing.ThresholdLogTracer;
+import com.couchbase.client.core.tracing.ThresholdLogTracer;
+import com.couchbase.client.core.tracing.ThresholdLogReporter;
 import com.couchbase.client.deps.com.fasterxml.jackson.core.JsonFactory;
 import com.couchbase.client.deps.com.fasterxml.jackson.core.JsonGenerator;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.JsonNode;
@@ -134,8 +135,19 @@ public class Couchbase2Client extends DB {
   private int runtimeMetricsInterval;
   private String scanAllQuery;
   private int documentExpiry;
+  private boolean tracerEnabled;
+  private int tracerKvThreshold;
+  private int tracerN1qlThreshold;
+  private int tracerViewThreshold;
+  private int tracerFtsThreshold;
+  private int tracerAnalyticsThreshold;
+  private int tracerSampleSize;
+  private boolean tracerPretty;
+  private int tracerLoggingInterval;
 
-  //private ThresholdLogTracer tracer = ThresholdLogTracer.create();
+
+  private ThresholdLogTracer tracer;
+
 
   
   @Override
@@ -162,8 +174,30 @@ public class Couchbase2Client extends DB {
     documentExpiry = Integer.parseInt(props.getProperty("couchbase.documentExpiry", "0"));
     scanAllQuery =  "SELECT RAW meta().id FROM `" + bucketName +
       "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+    tracerKvThreshold =  Integer.parseInt(props.getProperty("couchbase.tracerKvThreshold",
+        "500000"));
+    tracerN1qlThreshold = Integer.parseInt(props.getProperty("couchbase.tracerN1qlThreshold",
+        "1000000"));
+    tracerViewThreshold = Integer.parseInt(props.getProperty("couchbase.tracerViewThreshold",
+        "1000000"));
+    tracerFtsThreshold = Integer.parseInt(props.getProperty("couchbase.tracerFtsThreshold",
+        "1000000"));
+    tracerAnalyticsThreshold = Integer.parseInt(props.getProperty("couchbase.tracerAnalyticsThreshold",
+        "1000000"));
+    tracerSampleSize = Integer.parseInt(props.getProperty("couchbase.tracerSampleSize",
+        "10"));
+    tracerLoggingInterval = Integer.parseInt(props.getProperty("couchbase.tracerLoggingIntervalSeconds",
+        "60"));
+    tracerPretty = props.getProperty("couchbase.tracerEnabled", "true").equals("true");
 
-    //tracer.
+    tracer = ThresholdLogTracer.create(ThresholdLogReporter.builder()
+              .kvThreshold(tracerKvThreshold)
+              .n1qlThreshold(tracerN1qlThreshold)
+              .viewThreshold(tracerViewThreshold)
+              .ftsThreshold(tracerFtsThreshold)
+              .sampleSize(tracerSampleSize)
+              .logInterval(tracerLoggingInterval, TimeUnit.SECONDS)
+              .build());
 
     try {
       synchronized (INIT_COORDINATOR) {
@@ -190,7 +224,8 @@ public class Couchbase2Client extends DB {
               .socketConnectTimeout(10000) // 10 secs socket connect timeout
               .connectTimeout(30000) // 30 secs overall bucket open timeout
               .kvTimeout(10000) // 10 instead of 2.5s for KV ops
-              .kvEndpoints(kvEndpoints);
+              .kvEndpoints(kvEndpoints)
+              .tracer(tracer);
 
           // Tune boosting and epoll based on settings
           SelectStrategyFactory factory = boost > 0 ?
