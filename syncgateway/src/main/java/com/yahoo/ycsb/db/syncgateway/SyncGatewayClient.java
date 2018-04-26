@@ -107,6 +107,7 @@ public class SyncGatewayClient extends DB {
   private static final int SG_READ_MODE_DOCUMENTS = 0;
   private static final int SG_READ_MODE_DOCUMENTS_WITH_REV = 1;
   private static final int SG_READ_MODE_CHANGES  = 2;
+  private static final int SG_READ_MODE_ALLCHANGES  = 3;
 
   private static final String SG_FEED_READ_MODE_IDSONLY = "idsonly";
   private static final String SG_FEED_READ_MODE_WITHDOCS = "withdocs";
@@ -177,6 +178,8 @@ public class SyncGatewayClient extends DB {
       readMode = SG_READ_MODE_DOCUMENTS;
     } else if (runModeProp.equals("changes")){
       readMode = SG_READ_MODE_CHANGES;
+    } else if (runModeProp.equals("allchanges")){
+      readMode = SG_READ_MODE_ALLCHANGES;
     } else {
       readMode = SG_READ_MODE_DOCUMENTS_WITH_REV;
     }
@@ -238,6 +241,8 @@ public class SyncGatewayClient extends DB {
 
     if (readMode == SG_READ_MODE_CHANGES) {
       return readChanges(key);
+    } else if (readMode == SG_READ_MODE_ALLCHANGES) {
+      return readAllChanges(key);
     }
 
     return readSingle(key, result);
@@ -252,6 +257,15 @@ public class SyncGatewayClient extends DB {
     }
     syncronizeSequencesForUser(currentIterationUser);
 
+    return Status.OK;
+  }
+
+  private Status readAllChanges(String key) {
+    try {
+      checkForChanges("0", getChannelNameByKey(key));
+    } catch (Exception e) {
+      return Status.ERROR;
+    }
     return Status.OK;
   }
 
