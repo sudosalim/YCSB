@@ -454,7 +454,7 @@ public class SyncGatewayClient extends DB {
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=normal&" + includeDocsParam;
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
 
-    //System.out.println(fullUrl);
+    System.out.println(fullUrl);
 
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
@@ -490,7 +490,7 @@ public class SyncGatewayClient extends DB {
         }
         responseContent.append(line);
       }
-      //System.out.println(fullResponse);
+      System.out.println(fullResponse);
       timer.interrupt();
       // Closing the input stream will trigger connection release.
       stream.close();
@@ -1038,6 +1038,7 @@ public class SyncGatewayClient extends DB {
           try {
             sessionCookie = httpAuthWithSessionCookie(requestBody);
             memcachedClient.set(userName, 0, sessionCookie);
+            syncLocalSequenceWithSyncGatewayForUserAndGlobally(userName);
           } catch (Exception e) {
             System.err.println("Autorization failure for user " + userName + ", exiting...");
             System.exit(1);
