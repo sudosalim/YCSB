@@ -75,6 +75,7 @@ public class SyncGatewayClient extends DB {
   private static final String SG_PORT_ADMIN = "syncgateway.port.admin";
   private static final String SG_PORT_PUBLIC = "syncgateway.port.public";
   private static final String SG_AUTH = "syncgateway.auth";
+  private static final String SG_STAR_CHANNEL = "syncgateway.starchannel";
   private static final String SG_LOAD_MODE = "syncgateway.loadmode";
   private static final String SG_READ_MODE = "syncgateway.readmode";
   private static final String SG_INSERT_MODE = "syncgateway.insertmode";
@@ -108,6 +109,7 @@ public class SyncGatewayClient extends DB {
   private static final int SG_READ_MODE_DOCUMENTS_WITH_REV = 1;
   private static final int SG_READ_MODE_CHANGES  = 2;
   private static final int SG_READ_MODE_ALLCHANGES  = 3;
+  private static final int SG_READ_MODE_200CHANGES  = 4;
 
   private static final String SG_FEED_READ_MODE_IDSONLY = "idsonly";
   private static final String SG_FEED_READ_MODE_WITHDOCS = "withdocs";
@@ -132,6 +134,7 @@ public class SyncGatewayClient extends DB {
   private int insertUsersStart=0;
   private String feedMode;
   private boolean includeDocWhenReadingFeed;
+  private boolean starChannel;
 
 
   // http parameters
@@ -167,6 +170,7 @@ public class SyncGatewayClient extends DB {
     portAdmin = props.getProperty(SG_PORT_ADMIN, "4985");
     portPublic = props.getProperty(SG_PORT_PUBLIC, "4984");
     useAuth = props.getProperty(SG_AUTH, "false").equals("true");
+    starChannel = props.getProperty(SG_STAR_CHANNEL, "false").equals("true");
     loadMode = (props.getProperty(SG_LOAD_MODE, "documents").equals("users")) ?
         SG_LOAD_MODE_USERS : SG_LOAD_MODE_DOCUMENTS;
 
@@ -180,6 +184,8 @@ public class SyncGatewayClient extends DB {
       readMode = SG_READ_MODE_CHANGES;
     } else if (runModeProp.equals("allchanges")){
       readMode = SG_READ_MODE_ALLCHANGES;
+    } else if (runModeProp.equals("200changes")){
+      readMode = SG_READ_MODE_200CHANGES;
     } else {
       readMode = SG_READ_MODE_DOCUMENTS_WITH_REV;
     }
@@ -243,7 +249,10 @@ public class SyncGatewayClient extends DB {
       return readChanges(key);
     } else if (readMode == SG_READ_MODE_ALLCHANGES) {
       return readAllChanges(key);
+    } else if (readMode == SG_READ_MODE_200CHANGES) {
+      return read200Changes(key);
     }
+
 
     return readSingle(key, result);
   }
@@ -251,6 +260,20 @@ public class SyncGatewayClient extends DB {
   private Status readChanges(String key) {
     try {
       String seq = getLocalSequenceForUser(currentIterationUser);
+      checkForChanges(seq, getChannelNameByKey(key));
+    } catch (Exception e) {
+      return Status.ERROR;
+    }
+    syncronizeSequencesForUser(currentIterationUser);
+
+    return Status.OK;
+  }
+
+
+  private Status read200Changes(String key) {
+    try {
+      String seq = getLocalSequenceForUser(currentIterationUser);
+      seq = String.valueOf(Integer.parseInt(seq) - 200);
       checkForChanges(seq, getChannelNameByKey(key));
     } catch (Exception e) {
       return Status.ERROR;
@@ -431,6 +454,8 @@ public class SyncGatewayClient extends DB {
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=normal&" + includeDocsParam;
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
 
+    //System.out.println(fullUrl);
+
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -449,10 +474,10 @@ public class SyncGatewayClient extends DB {
       BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
       StringBuffer responseContent = new StringBuffer();
       String line = "";
-      //String fullResponse = "CHANGES FEED RESPONSE: " + "(user)" + currentIterationUser + ", (changes since) " +
-          //sequenceSince + ": ";
+      String fullResponse = "CHANGES FEED RESPONSE: " + "(user)" + currentIterationUser + ", (changes since) " +
+          sequenceSince + ": ";
       while ((line = reader.readLine()) != null) {
-        //fullResponse = fullResponse + line + "\n";
+        fullResponse = fullResponse + line + "\n";
         if (requestTimedout.isSatisfied()) {
           // Must avoid memory leak.
           reader.close();
@@ -815,12 +840,15 @@ public class SyncGatewayClient extends DB {
     root.put("password", DEFAULT_USER_PASSWORD);
     ArrayNode channels = factory.arrayNode();
 
-    String[] channelsSet = getSetOfRandomChannels();
-    for (int i=0; i<channelsPerUser; i++){
-      channels.add(channelsSet[i]);
+    if (starChannel) {
+      channels.add("*");
+    } else {
+      String[] channelsSet = getSetOfRandomChannels();
+      for (int i=0; i<channelsPerUser; i++){
+        channels.add(channelsSet[i]);
+      }
+      saveChannelForUser(userName, channelsSet[0]);
     }
-    saveChannelForUser(userName, channelsSet[0]);
-    //channels.add("*");
     root.set("admin_channels", channels);
     return root.toString();
   }
