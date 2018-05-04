@@ -313,8 +313,13 @@ public class SyncGatewayClient extends DB {
   @Override
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
                      Vector<HashMap<String, ByteIterator>> result) {
-    return Status.NOT_IMPLEMENTED;
+
+    return AuthRandomUser();
+
+    //return Status.NOT_IMPLEMENTED;
   }
+
+
 
   @Override
   public Status update(String table, String key, HashMap<String, ByteIterator> values) {
@@ -376,6 +381,19 @@ public class SyncGatewayClient extends DB {
   public Status delete(String table, String key) {
     return Status.NOT_IMPLEMENTED;
   }
+
+  private Status AuthRandomUser() {
+
+    assignRandomUserToCurrentIteration();
+    String requestBody = buildAutorizationBody(currentIterationUser);
+    try {
+      httpAuthWithSessionCookie(requestBody);
+    } catch (IOException ex) {
+      return Status.ERROR;
+    }
+    return Status.OK;
+  }
+
 
   private Status insertUser(String table, String key, HashMap<String, ByteIterator> values) {
 
@@ -1008,7 +1026,6 @@ public class SyncGatewayClient extends DB {
     }
     return found;
   }
-
 
   private String getRevision(String key){
     Object respose = memcachedClient.get(key);
