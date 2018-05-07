@@ -314,7 +314,7 @@ public class SyncGatewayClient extends DB {
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
                      Vector<HashMap<String, ByteIterator>> result) {
 
-    return AuthRandomUser();
+    return authRandomUser();
 
     //return Status.NOT_IMPLEMENTED;
   }
@@ -382,7 +382,7 @@ public class SyncGatewayClient extends DB {
     return Status.NOT_IMPLEMENTED;
   }
 
-  private Status AuthRandomUser() {
+  private Status authRandomUser() {
 
     assignRandomUserToCurrentIteration();
     String requestBody = buildAutorizationBody(currentIterationUser);
