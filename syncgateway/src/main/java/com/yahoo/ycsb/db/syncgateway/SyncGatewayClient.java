@@ -114,6 +114,8 @@ public class SyncGatewayClient extends DB {
   private static final String SG_FEED_READ_MODE_IDSONLY = "idsonly";
   private static final String SG_FEED_READ_MODE_WITHDOCS = "withdocs";
 
+  private static final String SG_CHANNELS_PER_GRANT = "syncgateway.channelspergrant";
+  private static final String SG_GRANT_ACCESS_TO_ALL_USERS = "syncgateway.grantaccesstoall";
 
   // Sync Gateway parameters
   private String portAdmin;
@@ -135,7 +137,8 @@ public class SyncGatewayClient extends DB {
   private String feedMode;
   private boolean includeDocWhenReadingFeed;
   private boolean starChannel;
-
+  private int channelsPerGrant;
+  private boolean grantAccessToAllUsers;
 
   // http parameters
   private volatile Criteria requestTimedout = new Criteria(false);
@@ -218,6 +221,9 @@ public class SyncGatewayClient extends DB {
 
     sequencestart = props.getProperty(SG_SEQUENCE_START, "2000001");
 
+    channelsPerGrant = Integer.parseInt(props.getProperty(SG_CHANNELS_PER_GRANT, "1"));
+    grantAccessToAllUsers = props.getProperty(SG_GRANT_ACCESS_TO_ALL_USERS, "false").equals("true");
+
     createUserEndpoint = "/" + db + "/_user/";
     documentEndpoint =  "/" + db + "/";
     createSessionEndpoint = "/" + db + "/_session";
@@ -234,7 +240,10 @@ public class SyncGatewayClient extends DB {
 
     if ((loadMode != SG_LOAD_MODE_USERS) && (useAuth) && (initUsers)) {
       initAllUsers();
+    }
 
+    if (grantAccessToAllUsers) {
+      grantAccessToAllUsers();
     }
 
   }
@@ -461,6 +470,52 @@ public class SyncGatewayClient extends DB {
 
     return result;
   }
+
+
+  private Status insertAccessGrant(String userName) {
+
+    String port = (useAuth) ? portPublic : portAdmin;
+    String requestBody;
+    String fullUrl;
+
+    requestBody = buildAccessGrantDocument(userName);
+
+    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
+
+    HttpPost httpPostRequest = new HttpPost(fullUrl);
+    int responseCode;
+
+    try {
+      responseCode = httpExecute(httpPostRequest, requestBody);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "POST");
+    }
+
+    Status result = getStatus(responseCode);
+
+    return result;
+  }
+
+  private String buildAccessGrantDocument(String userName) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    String agKey = "accessgrant_" + userName;
+    root.put("_id", agKey);
+    String accessFieldName = "access";
+    String accessToFieldName = "accessTo";
+    root.put(accessToFieldName, userName);
+    if (channelsPerGrant == 1) {
+      root.put(accessFieldName, DEFAULT_CHANNEL_PREFIX  + rand.nextInt(totalChannels));
+    } else {
+      ArrayNode usersNode = factory.arrayNode();
+      for (int i=0; i<channelsPerGrant; i++) {
+        usersNode.add(DEFAULT_CHANNEL_PREFIX  + rand.nextInt(totalChannels));
+      }
+      root.set(accessFieldName, usersNode);
+    }
+    return root.toString();
+  }
+
 
   private void checkForChanges(String sequenceSince, String channel) throws IOException {
     String port = (useAuth) ? portPublic : portAdmin;
@@ -1066,6 +1121,17 @@ public class SyncGatewayClient extends DB {
       }
     }
     setLocalSequenceGlobally(sequencestart);
+  }
+
+  private void grantAccessToAllUsers(){
+    int userId = 0;
+    while (userId < (totalUsers + insertUsersStart)) {
+      userId = sgUsersPool.nextValue() + insertUsersStart;
+      if (userId < (totalUsers + insertUsersStart)) {
+        String userName = DEFAULT_USERNAME_PREFIX + userId;
+        insertAccessGrant(userName);
+      }
+    }
   }
 
 
