@@ -323,9 +323,11 @@ public class SyncGatewayClient extends DB {
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
                      Vector<HashMap<String, ByteIterator>> result) {
 
-    return authRandomUser();
+    assignRandomUserToCurrentIteration();
+    insertAccessGrant(currentIterationUser);
 
-    //return Status.NOT_IMPLEMENTED;
+    return authCurrentUser();
+
   }
 
 
@@ -391,9 +393,7 @@ public class SyncGatewayClient extends DB {
     return Status.NOT_IMPLEMENTED;
   }
 
-  private Status authRandomUser() {
-
-    assignRandomUserToCurrentIteration();
+  private Status authCurrentUser() {
     String requestBody = buildAutorizationBody(currentIterationUser);
     try {
       httpAuthWithSessionCookie(requestBody);
