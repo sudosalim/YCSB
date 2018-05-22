@@ -116,6 +116,7 @@ public class SyncGatewayClient extends DB {
 
   private static final String SG_CHANNELS_PER_GRANT = "syncgateway.channelspergrant";
   private static final String SG_GRANT_ACCESS_TO_ALL_USERS = "syncgateway.grantaccesstoall";
+  private static final String SG_GRANT_ACCESS_IN_SCAN = "syncgateway.grantaccessinscan";
 
   // Sync Gateway parameters
   private String portAdmin;
@@ -139,6 +140,8 @@ public class SyncGatewayClient extends DB {
   private boolean starChannel;
   private int channelsPerGrant;
   private boolean grantAccessToAllUsers;
+  private boolean grantAccessInScanOperation;
+
 
   // http parameters
   private volatile Criteria requestTimedout = new Criteria(false);
@@ -223,6 +226,7 @@ public class SyncGatewayClient extends DB {
 
     channelsPerGrant = Integer.parseInt(props.getProperty(SG_CHANNELS_PER_GRANT, "1"));
     grantAccessToAllUsers = props.getProperty(SG_GRANT_ACCESS_TO_ALL_USERS, "false").equals("true");
+    grantAccessInScanOperation = props.getProperty(SG_GRANT_ACCESS_IN_SCAN, "false").equals("true");
 
     createUserEndpoint = "/" + db + "/_user/";
     documentEndpoint =  "/" + db + "/";
@@ -323,6 +327,10 @@ public class SyncGatewayClient extends DB {
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
                      Vector<HashMap<String, ByteIterator>> result) {
 
+    assignRandomUserToCurrentIteration();
+    if (grantAccessInScanOperation) {
+      insertAccessGrant(currentIterationUser);
+    }
     return authRandomUser();
 
     //return Status.NOT_IMPLEMENTED;
@@ -393,7 +401,6 @@ public class SyncGatewayClient extends DB {
 
   private Status authRandomUser() {
 
-    assignRandomUserToCurrentIteration();
     String requestBody = buildAutorizationBody(currentIterationUser);
     try {
       httpAuthWithSessionCookie(requestBody);
