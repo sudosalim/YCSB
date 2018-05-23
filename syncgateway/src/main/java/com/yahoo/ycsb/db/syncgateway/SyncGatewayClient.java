@@ -65,6 +65,7 @@ import java.util.*;
 public class SyncGatewayClient extends DB {
   private static CounterGenerator sgUserInsertCounter = new CounterGenerator(0);
   private static CounterGenerator sgUsersPool = new CounterGenerator(0);
+  private static CounterGenerator sgAccessPool = new CounterGenerator(0);
   private static final String HTTP_CON_TIMEOUT = "rest.timeout.con";
   private static final String HTTP_READ_TIMEOUT = "rest.timeout.read";
   private static final String HTTP_EXEC_TIMEOUT = "rest.timeout.exec";
@@ -497,7 +498,6 @@ public class SyncGatewayClient extends DB {
     } catch (Exception e) {
       responseCode = handleExceptions(e, fullUrl, "POST");
     }
-
     Status result = getStatus(responseCode);
 
     return result;
@@ -1132,8 +1132,9 @@ public class SyncGatewayClient extends DB {
 
   private void grantAccessToAllUsers(){
     int userId = 0;
+    assignRandomUserToCurrentIteration();
     while (userId < (totalUsers + insertUsersStart)) {
-      userId = sgUsersPool.nextValue() + insertUsersStart;
+      userId = sgAccessPool.nextValue() + insertUsersStart;
       if (userId < (totalUsers + insertUsersStart)) {
         String userName = DEFAULT_USERNAME_PREFIX + userId;
         insertAccessGrant(userName);
