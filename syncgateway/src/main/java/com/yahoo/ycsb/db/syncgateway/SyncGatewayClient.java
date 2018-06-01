@@ -954,7 +954,18 @@ public class SyncGatewayClient extends DB {
     return DEFAULT_CHANNEL_PREFIX + channelId;
   }
 
+
   private String[] getSetOfRandomChannels() {
+
+    String[] channels = new String[channelsPerUser];
+
+    for (int i=0; i<channelsPerUser; i++){
+      channels[i] = DEFAULT_CHANNEL_PREFIX + rand.nextInt(channelsPerUser);
+    }
+    return channels;
+  }
+
+  private String[] getSetOfRandomChannels_old() {
 
     String[] channels = new String[channelsPerUser];
     int[] allChannels = new int[totalChannels];
