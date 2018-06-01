@@ -554,10 +554,10 @@ public class SyncGatewayClient extends DB {
       BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
       StringBuffer responseContent = new StringBuffer();
       String line = "";
-      String fullResponse = "CHANGES FEED RESPONSE: " + "(user)" + currentIterationUser + ", (changes since) " +
-          sequenceSince + ": ";
+      //String fullResponse = "CHANGES FEED RESPONSE: " + "(user)" + currentIterationUser + ", (changes since) " +
+      //    sequenceSince + ": ";
       while ((line = reader.readLine()) != null) {
-        fullResponse = fullResponse + line + "\n";
+        //fullResponse = fullResponse + line + "\n";
         if (requestTimedout.isSatisfied()) {
           // Must avoid memory leak.
           reader.close();
@@ -658,17 +658,10 @@ public class SyncGatewayClient extends DB {
 
   private void waitForDocInChangeFeed(String sequenceSince, String key) throws IOException {
     String port = (useAuth) ? portPublic : portAdmin;
-    /*
-    String changesFeedEndpoint = "_changes?since=" + sequenceSince +
-        "&feed=longpoll&filter=sync_gateway/bychannel&channels=" + getChannelNameByKey(key);
-        */
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
 
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
-
-    //System.out.println("After Insert, checking for feed:" + fullUrl);
-
 
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
@@ -724,6 +717,7 @@ public class SyncGatewayClient extends DB {
     }
     restClient.close();
   }
+
 
   private int httpExecute(HttpEntityEnclosingRequestBase request, String data)
       throws IOException {
