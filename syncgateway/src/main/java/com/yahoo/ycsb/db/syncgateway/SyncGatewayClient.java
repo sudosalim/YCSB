@@ -964,7 +964,7 @@ public class SyncGatewayClient extends DB {
     }
     return channels;
   }
-
+ /*
   private String[] getSetOfRandomChannels_old() {
 
     String[] channels = new String[channelsPerUser];
@@ -979,7 +979,7 @@ public class SyncGatewayClient extends DB {
     }
     return channels;
   }
-
+ */
   private void shuffleArray(int[] array) {
     int index;
     //Random random = new Random();
