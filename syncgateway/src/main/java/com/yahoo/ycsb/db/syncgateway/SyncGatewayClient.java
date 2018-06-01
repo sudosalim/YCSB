@@ -960,7 +960,7 @@ public class SyncGatewayClient extends DB {
     String[] channels = new String[channelsPerUser];
 
     for (int i=0; i<channelsPerUser; i++){
-      channels[i] = DEFAULT_CHANNEL_PREFIX + rand.nextInt(channelsPerUser);
+      channels[i] = DEFAULT_CHANNEL_PREFIX + rand.nextInt(totalChannels);
     }
     return channels;
   }
