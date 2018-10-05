@@ -135,7 +135,7 @@ public class Couchbase2Client extends DB {
   private String scanAllQuery;
   private int documentExpiry;
   private String sslMode;
-  private Boolean certAuthEnabled = false;
+  private static Boolean certAuthEnabled = false;
   private String certKeystoreFile;
   private String certKeystorePassword;
   
@@ -225,8 +225,12 @@ public class Couchbase2Client extends DB {
       }
 
       cluster = CouchbaseCluster.create(env, host);
-      cluster.authenticate(CertAuthenticator.INSTANCE);
-      bucket = cluster.openBucket(bucketName);
+      if (certAuthEnabled){
+        cluster.authenticate(CertAuthenticator.INSTANCE);
+        bucket = cluster.openBucket(bucketName);
+      } else {
+        bucket = cluster.openBucket(bucketName, bucketPassword);
+      }
 
       kvTimeout = env.kvTimeout();
     } catch (Exception ex) {
