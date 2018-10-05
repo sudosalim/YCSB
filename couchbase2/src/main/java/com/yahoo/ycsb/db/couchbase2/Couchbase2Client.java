@@ -37,6 +37,7 @@ import com.couchbase.client.deps.io.netty.channel.epoll.EpollEventLoopGroup;
 import com.couchbase.client.deps.io.netty.channel.nio.NioEventLoopGroup;
 import com.couchbase.client.deps.io.netty.util.IntSupplier;
 import com.couchbase.client.deps.io.netty.util.concurrent.DefaultThreadFactory;
+import com.couchbase.client.java.auth.CertAuthenticator;
 import com.couchbase.client.java.Bucket;
 import com.couchbase.client.java.Cluster;
 import com.couchbase.client.java.CouchbaseCluster;
@@ -224,8 +225,9 @@ public class Couchbase2Client extends DB {
       }
 
       cluster = CouchbaseCluster.create(env, host);
-      bucket = certAuthEnabled ? cluster.openBucket(bucketName) :
-          cluster.openBucket(bucketName, bucketPassword);
+      cluster.authenticate(CertAuthenticator.INSTANCE);
+      bucket = cluster.openBucket(bucketName);
+
       kvTimeout = env.kvTimeout();
     } catch (Exception ex) {
       throw new DBException("Could not connect to Couchbase Bucket.", ex);
