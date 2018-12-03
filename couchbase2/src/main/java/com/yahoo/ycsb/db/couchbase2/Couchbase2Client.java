@@ -25,6 +25,8 @@ import com.couchbase.client.core.metrics.DefaultLatencyMetricsCollectorConfig;
 import com.couchbase.client.core.metrics.DefaultMetricsCollectorConfig;
 import com.couchbase.client.core.metrics.LatencyMetricsCollectorConfig;
 import com.couchbase.client.core.metrics.MetricsCollectorConfig;
+import com.couchbase.client.core.tracing.ThresholdLogTracer;
+import com.couchbase.client.core.tracing.ThresholdLogReporter;
 import com.couchbase.client.deps.com.fasterxml.jackson.core.JsonFactory;
 import com.couchbase.client.deps.com.fasterxml.jackson.core.JsonGenerator;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.JsonNode;
@@ -184,6 +186,13 @@ public class Couchbase2Client extends DB {
       synchronized (INIT_COORDINATOR) {
         if (env == null) {
 
+          ThresholdLogTracer tracer = ThresholdLogTracer.create(ThresholdLogReporter.builder()
+              .n1qlThreshold(60000000, TimeUnit.MICROSECONDS) // 1 microsecond
+              .logInterval(3600, TimeUnit.SECONDS) // log every second
+              .sampleSize(Integer.MAX_VALUE)
+              .pretty(true) // pretty print the json output in the logs
+              .build());
+
           LatencyMetricsCollectorConfig latencyConfig = networkMetricsInterval <= 0
               ? DefaultLatencyMetricsCollectorConfig.disabled()
               : DefaultLatencyMetricsCollectorConfig
@@ -205,6 +214,7 @@ public class Couchbase2Client extends DB {
               .socketConnectTimeout(10000) // 10 secs socket connect timeout
               .connectTimeout(30000) // 30 secs overall bucket open timeout
               .kvTimeout(10000) // 10 instead of 2.5s for KV ops
+              .tracer(tracer)
               .kvEndpoints(kvEndpoints);
 
           // Tune boosting and epoll based on settings
