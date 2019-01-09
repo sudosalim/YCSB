@@ -18,6 +18,8 @@
 package com.yahoo.ycsb.db.syncgateway;
 
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.yahoo.ycsb.*;
 import com.yahoo.ycsb.generator.CounterGenerator;
@@ -343,7 +345,6 @@ public class SyncGatewayClient extends DB {
   public Status update(String table, String key, HashMap<String, ByteIterator> values) {
     assignRandomUserToCurrentIteration();
 
-    String requestBody = buildDocumentFromMap(key, values);
     String docRevision = getRevision(key);
 
     if (docRevision == null) {
@@ -357,6 +358,24 @@ public class SyncGatewayClient extends DB {
     int responseCode;
 
     fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
+    
+    HashMap<String, Object> responsebodymap = new HashMap<String, Object>();
+    
+    try {
+		responsebodymap = getResponseBody(fullUrl);
+	} catch (IOException e1) {
+		// TODO Auto-generated catch block
+		e1.printStackTrace();
+	}
+    
+    if(values.size() == 1) {
+    	for(String field : values.keySet()) {
+    		responsebodymap.put(field, values.get(field));
+    	}
+    }
+    
+    String requestBody = buildupdateDocument(key, responsebodymap);
+    
     HttpPut httpPutRequest = new HttpPut(fullUrl);
 
     try {
@@ -821,6 +840,74 @@ public class SyncGatewayClient extends DB {
     restClient.close();
     return responseCode;
   }
+  
+  // Connection is automatically released back in case of an exception.
+  private HashMap<String, Object> getResponseBody(String endpoint) throws IOException {
+    requestTimedout.setIsSatisfied(false);
+    Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
+    timer.start();
+    int responseCode = 200;
+    HttpGet request = new HttpGet(endpoint);
+    for (int i = 0; i < headers.length; i = i + 2) {
+      request.setHeader(headers[i], headers[i + 1]);
+    }
+
+    if (useAuth) {
+      request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
+    }
+    
+    HashMap<String, Object> resultmap = new  HashMap<String, Object>();
+    
+    CloseableHttpResponse response = restClient.execute(request);
+      
+    responseCode = response.getStatusLine().getStatusCode();
+    
+    HttpEntity responseEntity = response.getEntity();
+        
+    // If null entity don't bother about connection release.
+    if (responseEntity != null) {
+    	
+        // CONVERT RESPONSE TO STRING and THEN TO JSON OBJECT TO HASHMAP
+    	
+        String responsestring = EntityUtils.toString(responseEntity);
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode actualObj = mapper.readTree(responsestring);
+        
+        for (int i = 1; i<=10; i++) {
+        	
+        	String fieldname = "field" + i ;
+        	JsonNode fieldNode = actualObj.get("fieldname");
+        	resultmap.put(fieldname, fieldNode.textValue());
+        }
+        
+     // CONVERT RESPONSE TO STRING and THEN TO JSON OBJECT TO HASHMAP -- Ended 
+
+      InputStream stream = responseEntity.getContent();
+      BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+      StringBuffer responseContent = new StringBuffer();
+      String line = "";
+      while ((line = reader.readLine()) != null) {
+        if (requestTimedout.isSatisfied()) {
+          // Must avoid memory leak.
+          reader.close();
+          stream.close();
+          EntityUtils.consumeQuietly(responseEntity);
+          response.close();
+          restClient.close();
+          throw new TimeoutException();
+        }
+        responseContent.append(line);
+      }
+      timer.interrupt();
+    //  result.put("response", new StringByteIterator(responseContent.toString()));
+      // Closing the input stream will trigger connection release.
+      stream.close();
+    }
+    EntityUtils.consumeQuietly(responseEntity);
+    response.close();
+    restClient.close();
+    return resultmap;
+  }
 
 
   private String httpAuthWithSessionCookie(String data) throws IOException {
@@ -947,7 +1034,27 @@ public class SyncGatewayClient extends DB {
       });
     return root.toString();
   }
+  
+  private String buildupdateDocument(String key, HashMap<String, Object> values) {
+	    JsonNodeFactory factory = JsonNodeFactory.instance;
+	    ObjectNode root = factory.objectNode();
+	    ArrayNode channelsNode = factory.arrayNode();
+	    root.put("_id", key);
 
+	    if (insertMode == SG_INSERT_MODE_BYKEY) {
+	      channelsNode.add(getChannelNameByKey(key));
+	    } else {
+	      channelsNode.add(getChannelForUser());
+	    }
+
+	    root.set("channels", channelsNode);
+
+	    values.forEach((k, v)-> {
+	        root.put(k, v.toString());
+	      });
+	    return root.toString();
+	  }
+  
 
   private String getChannelNameByKey(String key){
     int channelId = Math.abs(key.hashCode() % totalChannels);
