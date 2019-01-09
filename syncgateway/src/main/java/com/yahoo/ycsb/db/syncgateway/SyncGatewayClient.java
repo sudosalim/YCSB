@@ -359,7 +359,7 @@ public class SyncGatewayClient extends DB {
 
     fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
     
-    HashMap<String, Object> responsebodymap = new HashMap<String, Object>();
+    HashMap<String, String> responsebodymap = new HashMap<String, String>();
     
     try {
 		responsebodymap = getResponseBody(fullUrl);
@@ -842,7 +842,7 @@ public class SyncGatewayClient extends DB {
   }
   
   // Connection is automatically released back in case of an exception.
-  private HashMap<String, Object> getResponseBody(String endpoint) throws IOException {
+  private HashMap<String, String> getResponseBody(String endpoint) throws IOException {
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -856,7 +856,7 @@ public class SyncGatewayClient extends DB {
       request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
     }
     
-    HashMap<String, Object> resultmap = new  HashMap<String, Object>();
+    HashMap<String, String> resultmap = new HashMap();
     
     CloseableHttpResponse response = restClient.execute(request);
       
@@ -876,7 +876,7 @@ public class SyncGatewayClient extends DB {
         for (int i = 1; i<=10; i++) {
         	
         	String fieldname = "field" + i ;
-        	JsonNode fieldNode = actualObj.get("fieldname");
+        	JsonNode fieldNode = actualObj.get(fieldname);
         	resultmap.put(fieldname, fieldNode.textValue());
         }
         
@@ -1035,7 +1035,7 @@ public class SyncGatewayClient extends DB {
     return root.toString();
   }
   
-  private String buildupdateDocument(String key, HashMap<String, Object> values) {
+  private String buildupdateDocument(String key, HashMap<String, String> values) {
 	    JsonNodeFactory factory = JsonNodeFactory.instance;
 	    ObjectNode root = factory.objectNode();
 	    ArrayNode channelsNode = factory.arrayNode();
