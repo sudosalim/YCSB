@@ -361,20 +361,19 @@ public class SyncGatewayClient extends DB {
     
     HashMap<String, Object> responsebodymap = new HashMap<String, Object>();
     
-    try {
+    
 		responsebodymap = getResponseBody(fullUrl);
 		
 		System.out.println("responsebody map before update " + responsebodymap );
-	} catch (IOException e1) {
-		// TODO Auto-generated catch block
-		e1.printStackTrace();
-	}
+
     
     if(values.size() == 1) {
     	
     	System.out.println("printing single field since entered the if condition" + values);
-    	for(String field : values.keySet()) {
-    		responsebodymap.put(field, values.get(field));
+    	
+    	
+    	for(Map.Entry mp:values.entrySet()) {
+    		responsebodymap.put((String) mp.getKey(), mp.getValue().toString());
     	}
     	System.out.println("responsebodymap after update"+responsebodymap);
     }
