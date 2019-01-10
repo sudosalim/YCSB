@@ -381,15 +381,14 @@ public class SyncGatewayClient extends DB {
     	//	responsebodymap.put((String) mp.getKey(),mp.getValue().toString());
     	}
     */	
-    	values.forEach((k, v)-> {
+    //	values.forEach((k, v)-> {
 	  //      System.out.println("writing the key value before assigning it " + k+" : "+ v);
 	   //     String var = v.toString() ;
 	   //     System.out.println("value of var is : "+var);
-	        String var2 = values.toString();
-	        System.out.println("value of var2 is : "+var2);
+  //  		responsebodymap.put(k,values.toString());
 	        
-	      });
-    	System.out.println("responsebodymap after update"+responsebodymap); 
+	//      });
+  //  	System.out.println("responsebodymap after update"+responsebodymap); 
     }
     
     	
