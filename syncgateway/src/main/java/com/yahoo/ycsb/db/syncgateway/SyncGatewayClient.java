@@ -382,7 +382,12 @@ public class SyncGatewayClient extends DB {
     	}
     */	
     	values.forEach((k, v)-> {
-	        System.out.println("writing the key value before assigning it " + k+" : "+ v.toString());
+	        System.out.println("writing the key value before assigning it " + k+" : "+ v);
+	        String var = v.toString() ;
+	        System.out.println("value of var is : "+var);
+	        String var2 = values.toString();
+	        System.out.println("value of var2 is : "+var2);
+	        
 	      });
     	System.out.println("responsebodymap after update"+responsebodymap); 
     }
@@ -900,7 +905,7 @@ public class SyncGatewayClient extends DB {
         
         System.out.println("value of actualObj"+ actualObj);
         
-        for (int i = 0; i<9; i++) {
+        for (int i = 0; i<=9; i++) {
         	System.out.println("enterd the loop");
         	
         	String fieldname = "field" + i ;
