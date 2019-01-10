@@ -125,13 +125,13 @@ LICENSE file.
 
         <!-- Checks for whitespace                               -->
         <!-- See http://checkstyle.sf.net/config_whitespace.html -->
+        <!--
         <module name="EmptyForIteratorPad"/>
         <module name="MethodParamPad"/>
         <module name="NoWhitespaceAfter"/>
         <module name="NoWhitespaceBefore"/>
         <module name="ParenPad"/>
         <module name="TypecastParenPad"/>
-        <!--
         <module name="WhitespaceAfter">
 	    	<property name="tokens" value="COMMA, SEMI"/>
 		</module>
