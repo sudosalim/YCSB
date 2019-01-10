@@ -380,6 +380,7 @@ public class SyncGatewayClient extends DB {
     	//	System.out.println("writing the key value before assigning it " + mp.getKey()+" : "+mp.getValue().toString()
     		responsebodymap.put((String) mp.getKey(), var1);
     	}
+    }
     
     	
     String requestBody = buildupdateDocument(key, responsebodymap);
