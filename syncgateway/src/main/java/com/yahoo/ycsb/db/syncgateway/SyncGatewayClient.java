@@ -374,7 +374,7 @@ public class SyncGatewayClient extends DB {
  
     if(values.size() == 1) {
     	
-    	System.out.println("printing single field since entered the if condition" + values);
+    //	System.out.println("printing single field since entered the if condition" + values);
 
    /* 	for(Map.Entry mp:values.entrySet()) {
     		System.out.println("writing the key value before assigning it " + mp.getKey()+" : "+mp.getValue().toString());  
@@ -382,9 +382,9 @@ public class SyncGatewayClient extends DB {
     	}
     */	
     	values.forEach((k, v)-> {
-	        System.out.println("writing the key value before assigning it " + k+" : "+ v);
-	        String var = v.toString() ;
-	        System.out.println("value of var is : "+var);
+	  //      System.out.println("writing the key value before assigning it " + k+" : "+ v);
+	   //     String var = v.toString() ;
+	   //     System.out.println("value of var is : "+var);
 	        String var2 = values.toString();
 	        System.out.println("value of var2 is : "+var2);
 	        
