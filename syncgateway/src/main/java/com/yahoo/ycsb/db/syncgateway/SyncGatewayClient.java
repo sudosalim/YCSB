@@ -860,7 +860,9 @@ public class SyncGatewayClient extends DB {
     HashMap<String, Object> resultmap = new HashMap<String, Object>();
     
     CloseableHttpResponse response = restClient.execute(request);
-      
+    
+    System.out.println(response);
+    
     responseCode = response.getStatusLine().getStatusCode();
     
     HttpEntity responseEntity = response.getEntity();
@@ -871,6 +873,7 @@ public class SyncGatewayClient extends DB {
         // CONVERT RESPONSE TO STRING and THEN TO JSON OBJECT TO HASHMAP
     	
         String responsestring = EntityUtils.toString(responseEntity);
+        System.out.println(responsestring);
         ObjectMapper mapper = new ObjectMapper();
         JsonNode actualObj = mapper.readTree(responsestring);
         
@@ -878,6 +881,7 @@ public class SyncGatewayClient extends DB {
         	
         	String fieldname = "field" + i ;
         	JsonNode fieldNode = actualObj.get(fieldname);
+        	System.out.println(fieldNode.textValue());
         	resultmap.put(fieldname, fieldNode.textValue());
         }
         
