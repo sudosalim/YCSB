@@ -371,18 +371,18 @@ public class SyncGatewayClient extends DB {
 			
 		}
 		
-  /*---------  
+ 
     if(values.size() == 1) {
     	
     	System.out.println("printing single field since entered the if condition" + values);
 
     	for(Map.Entry mp:values.entrySet()) {
-    		System.out.println("writing the key value before assigning it " + mp.getKey()+" : "+mp.getValue());  
-    		responsebodymap.put((String) mp.getKey(),mp.getValue());
+    		System.out.println("writing the key value before assigning it " + mp.getKey()+" : "+mp.getValue().toString());  
+    		responsebodymap.put((String) mp.getKey(),mp.getValue().toString());
     	}
     	System.out.println("responsebodymap after update"+responsebodymap); 
     }
-    --------------*/
+    
     	
     String requestBody = buildupdateDocument(key, responsebodymap, values);
     
@@ -878,13 +878,15 @@ public class SyncGatewayClient extends DB {
     responseCode = response.getStatusLine().getStatusCode();
     
     HttpEntity responseEntity = response.getEntity();
+    
+    System.out.println("printing responseEntity : "+responseEntity);
         
     // If null entity don't bother about connection release.
     if (responseEntity != null) {
     	
         // CONVERT RESPONSE TO STRING and THEN TO JSON OBJECT TO HASHMAP
     	
-        String responsestring = EntityUtils.toString(responseEntity);
+        String responsestring = EntityUtils.toString(responseEntity, "UTF-8");
         
         System.out.println("responsestring or entities to string:" + responsestring);
         
