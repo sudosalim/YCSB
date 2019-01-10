@@ -377,11 +377,9 @@ public class SyncGatewayClient extends DB {
     	System.out.println("printing single field since entered the if condition" + values);
     	
     	
-    	for(Map.Entry<String, ByteIterator> mp:values.entrySet()) {
-    		String k = mp.getKey();
-    		Object v = mp.getValue();
-    		System.out.println("printing key abd byteiteration object"+k+v);  		
-    		responsebodymap.put(k,v);
+    	for(Map.Entry mp:values.entrySet()) {
+    		System.out.println("writing the key value before assigning it " + mp.getKey()+" : "+mp.getValue());  
+    		responsebodymap.put((String) mp.getKey(),mp.getValue());
     	}
     	System.out.println("responsebodymap after update"+responsebodymap);
     }
