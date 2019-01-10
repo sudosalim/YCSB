@@ -361,11 +361,16 @@ public class SyncGatewayClient extends DB {
     
     HashMap<String, Object> responsebodymap = new HashMap<String, Object>();
     
-    
-		responsebodymap = getResponseBody(fullUrl);
+    	try {
+			responsebodymap = getResponseBody(fullUrl);
+			System.out.println("responsebody map before update " + responsebodymap );
+			
+		} catch (IOException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+			
+		}
 		
-		System.out.println("responsebody map before update " + responsebodymap );
-
     
     if(values.size() == 1) {
     	
@@ -902,27 +907,27 @@ public class SyncGatewayClient extends DB {
         
      // CONVERT RESPONSE TO STRING and THEN TO JSON OBJECT TO HASHMAP -- Ended 
 
-      InputStream stream = responseEntity.getContent();
+  /*    InputStream stream = responseEntity.getContent();
       BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
       StringBuffer responseContent = new StringBuffer();
-      String line = "";
-      while ((line = reader.readLine()) != null) {
+      String line = "";*/
+   //   while ((line = reader.readLine()) != null) {
         if (requestTimedout.isSatisfied()) {
           // Must avoid memory leak.
-          reader.close();
-          stream.close();
+    //      reader.close();
+    //      stream.close();
           EntityUtils.consumeQuietly(responseEntity);
           response.close();
           restClient.close();
           throw new TimeoutException();
         }
-        responseContent.append(line);
-      }
+     //   responseContent.append(line);
+    //  }
       
       timer.interrupt();
     //  result.put("response", new StringByteIterator(responseContent.toString()));
       // Closing the input stream will trigger connection release.
-      stream.close();
+   //   stream.close();
     }
     EntityUtils.consumeQuietly(responseEntity);
     response.close();
