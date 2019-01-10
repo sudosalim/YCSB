@@ -375,24 +375,14 @@ public class SyncGatewayClient extends DB {
     if(values.size() == 1) {
     	
     //	System.out.println("printing single field since entered the if condition" + values);
-
-   /* 	for(Map.Entry mp:values.entrySet()) {
-    		System.out.println("writing the key value before assigning it " + mp.getKey()+" : "+mp.getValue().toString());  
-    	//	responsebodymap.put((String) mp.getKey(),mp.getValue().toString());
+    	String var1 = values.toString();
+    	for(Map.Entry<String, ByteIterator> mp:values.entrySet()) {
+    	//	System.out.println("writing the key value before assigning it " + mp.getKey()+" : "+mp.getValue().toString()
+    		responsebodymap.put((String) mp.getKey(), var1);
     	}
-    */	
-    //	values.forEach((k, v)-> {
-	  //      System.out.println("writing the key value before assigning it " + k+" : "+ v);
-	   //     String var = v.toString() ;
-	   //     System.out.println("value of var is : "+var);
-  //  		responsebodymap.put(k,values.toString());
-	        
-	//      });
-  //  	System.out.println("responsebodymap after update"+responsebodymap); 
-    }
     
     	
-    String requestBody = buildupdateDocument(key, responsebodymap, values);
+    String requestBody = buildupdateDocument(key, responsebodymap);
     
     System.out.println("request body after build for update and buildupdatedocument" + requestBody);
     
@@ -1072,7 +1062,7 @@ public class SyncGatewayClient extends DB {
     return root.toString();
   }
   
-  private String buildupdateDocument(String key, HashMap<String, Object> values , HashMap<String, ByteIterator> values2) {
+  private String buildupdateDocument(String key, HashMap<String, Object> values) {
 	    JsonNodeFactory factory = JsonNodeFactory.instance;
 	    ObjectNode root = factory.objectNode();
 	    ArrayNode channelsNode = factory.arrayNode();
@@ -1090,10 +1080,6 @@ public class SyncGatewayClient extends DB {
 	        root.put(k, v.toString());
 	      });
 	    
-	    
-	    values2.forEach((k, v)-> {
-	        root.put(k, v.toString());
-	      });
 	    return root.toString();
 	  }
   
