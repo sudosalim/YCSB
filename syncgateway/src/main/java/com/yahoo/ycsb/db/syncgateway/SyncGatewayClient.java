@@ -346,10 +346,16 @@ public class SyncGatewayClient extends DB {
     assignRandomUserToCurrentIteration();
 
     String docRevision = getRevision(key);
-
+    
     if (docRevision == null) {
       System.err.println("Revision for document " + key + " not found in local");
       return Status.UNEXPECTED_STATE;
+    }
+    
+    int intdocRevision = Integer.parseInt((docRevision.split("-")[0]));
+    
+    if(intdocRevision > 1){
+    	return Status.OK;
     }
 
     String currentSequence = getLocalSequenceForUser(currentIterationUser);
