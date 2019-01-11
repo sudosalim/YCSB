@@ -363,7 +363,7 @@ public class SyncGatewayClient extends DB {
     
     	try {
 			responsebodymap = getResponseBody(fullUrl);
-			System.out.println("responsebody map before update " + responsebodymap );
+		//	System.out.println("responsebody map before update " + responsebodymap );
 			
 		} catch (IOException e1) {
 			// TODO Auto-generated catch block
@@ -385,7 +385,7 @@ public class SyncGatewayClient extends DB {
     	
     String requestBody = buildupdateDocument(key, responsebodymap);
     
-    System.out.println("request body after build for update and buildupdatedocument" + requestBody);
+   // System.out.println("request body after build for update and buildupdatedocument" + requestBody);
     
     HttpPut httpPutRequest = new HttpPut(fullUrl);
 
@@ -872,13 +872,13 @@ public class SyncGatewayClient extends DB {
     
     CloseableHttpResponse response = restClient.execute(request);
     
-    System.out.println("Response :" + response);
+  //  System.out.println("Response :" + response);
     
     responseCode = response.getStatusLine().getStatusCode();
     
     HttpEntity responseEntity = response.getEntity();
     
-    System.out.println("printing responseEntity : "+responseEntity);
+  //  System.out.println("printing responseEntity : "+responseEntity);
         
     // If null entity don't bother about connection release.
     if (responseEntity != null) {
@@ -887,25 +887,25 @@ public class SyncGatewayClient extends DB {
     	
         String responsestring = EntityUtils.toString(responseEntity, "UTF-8");
         
-        System.out.println("responsestring or entities to string:" + responsestring);
+    //    System.out.println("responsestring or entities to string:" + responsestring);
         
         ObjectMapper mapper = new ObjectMapper();
         
         JsonNode actualObj = mapper.readTree(responsestring);
         
-        System.out.println("value of actualObj"+ actualObj);
+    //    System.out.println("value of actualObj"+ actualObj);
         
         for (int i = 0; i<=9; i++) {
-        	System.out.println("enterd the loop");
+     //   	System.out.println("enterd the loop");
         	
         	String fieldname = "field" + i ;
         	JsonNode fieldNode = actualObj.get(fieldname);
         	
-        	System.out.println("field from the loop" + fieldNode.textValue());
+      //  	System.out.println("field from the loop" + fieldNode.textValue());
         	resultmap.put(fieldname, fieldNode.textValue());
         }
         
-        System.out.println("resultmap is" + resultmap);
+    //    System.out.println("resultmap is" + resultmap);
         
      // CONVERT RESPONSE TO STRING and THEN TO JSON OBJECT TO HASHMAP -- Ended 
 
