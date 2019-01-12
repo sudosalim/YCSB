@@ -121,7 +121,7 @@ public class SyncGatewayClient extends DB {
   private static final String SG_GRANT_ACCESS_TO_ALL_USERS = "syncgateway.grantaccesstoall";
   private static final String SG_GRANT_ACCESS_IN_SCAN = "syncgateway.grantaccessinscan";
   
-  private static final String DS_UPDATE_COUNT = "deltasync.updatecount";
+  private static final String SG_UPDATEFIELDCOUNT = "syncgateway.updatefieldcount";
 
   // Sync Gateway parameters
   private String portAdmin;
@@ -169,7 +169,7 @@ public class SyncGatewayClient extends DB {
   private Random rand = new Random();
   
   //delta sync parameters
-  private int updatecount;
+  private int updatefieldcount;
 
 
   @Override
@@ -241,7 +241,7 @@ public class SyncGatewayClient extends DB {
     createSessionEndpoint = "/" + db + "/_session";
     
     //delta sync properties
-    updatecount = Integer.valueOf(props.getProperty(DS_UPDATE_COUNT, "1"));
+    updatefieldcount = Integer.valueOf(props.getProperty(SG_UPDATEFIELDCOUNT, "1"));
 
     // Init components
     restClient = createRestClient();
@@ -362,7 +362,7 @@ public class SyncGatewayClient extends DB {
     
     int intdocRevision = Integer.parseInt((docRevision.split("-")[0]));
     
-    if(intdocRevision > updatecount){
+    if(intdocRevision > updatefieldcount){
     	return Status.OK;
     }
 
