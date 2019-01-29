@@ -18,6 +18,8 @@
 package com.yahoo.ycsb.db.syncgateway;
 
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+//import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -122,6 +124,9 @@ public class SyncGatewayClient extends DB {
   private static final String SG_GRANT_ACCESS_IN_SCAN = "syncgateway.grantaccessinscan";
   
   private static final String SG_UPDATEFIELDCOUNT = "syncgateway.updatefieldcount";
+  
+  private static final String SG_DOCTYPE = "syncgateway.doctype";
+  private static final String SG_DOC_DEPTH = "syncgateway.docdepth";
 
   // Sync Gateway parameters
   private String portAdmin;
@@ -170,6 +175,10 @@ public class SyncGatewayClient extends DB {
   
   //delta sync parameters
   private int updatefieldcount;
+  
+  //nested doc paramtere
+  private int docdepth; 
+  private String doctype;
 
 
   @Override
@@ -242,6 +251,11 @@ public class SyncGatewayClient extends DB {
     
     //delta sync properties
     updatefieldcount = Integer.valueOf(props.getProperty(SG_UPDATEFIELDCOUNT, "1"));
+    
+    //doc type properties
+    doctype = props.getProperty(SG_DOCTYPE, "simple");
+    docdepth = Integer.valueOf(props.getProperty(SG_DOC_DEPTH, "1"));
+    
 
     // Init components
     restClient = createRestClient();
@@ -347,11 +361,8 @@ public class SyncGatewayClient extends DB {
     //return Status.NOT_IMPLEMENTED;
   }
 
-
-
   @Override
   public Status update(String table, String key, HashMap<String, ByteIterator> values) {
-    assignRandomUserToCurrentIteration();
 
     String docRevision = getRevision(key);
     
@@ -365,15 +376,16 @@ public class SyncGatewayClient extends DB {
     if(intdocRevision > updatefieldcount){
     	return Status.OK;
     }
-
-    String currentSequence = getLocalSequenceForUser(currentIterationUser);
+   
+    
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl;
     int responseCode;
 
     fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
     
-    HashMap<String, Object> responsebodymap = new HashMap<String, Object>();
+    String responsebodymap = null;
+    String requestBody = null;
     
     	try {
 			responsebodymap = getResponseBody(fullUrl);
@@ -384,23 +396,20 @@ public class SyncGatewayClient extends DB {
 			e1.printStackTrace();
 			
 		}
-		
- 
-    if(values.size() == 1) {
+	
+  
+    if (doctype.equals("simple")) {
     	
-    //	System.out.println("printing single field since entered the if condition" + values);
-    	String var1 = values.toString();
-    	for(Map.Entry<String, ByteIterator> mp:values.entrySet()) {
-    	//	System.out.println("writing the key value before assigning it " + mp.getKey()+" : "+mp.getValue().toString()
-    		responsebodymap.put((String) mp.getKey(), var1);
-    	}
+    	 requestBody = buildupdateDocument(key, responsebodymap, values);
+    	
     }
     
+    else if (doctype.equals("nested")) {
     	
-    String requestBody = buildupdateDocument(key, responsebodymap);
-    
-   // System.out.println("request body after build for update and buildupdatedocument" + requestBody);
-    
+    	 requestBody = buildupdateNestedDoc(key, responsebodymap, values);
+    	
+    }
+      
     HttpPut httpPutRequest = new HttpPut(fullUrl);
 
     try {
@@ -410,23 +419,9 @@ public class SyncGatewayClient extends DB {
     }
 
     Status result = getStatus(responseCode);
-    if (result == Status.OK) {
-      incrementLocalSequenceForUser();
-      if (roudTripWrite) {
-        if ((currentSequence == null) || (currentSequence.equals(""))) {
-          System.err.println("Memcached failure!");
-          return Status.BAD_REQUEST;
-        }
-        try {
-          waitForDocInChangeFeed(currentSequence, key);
-        } catch (Exception e) {
-          syncronizeSequencesForUser(currentIterationUser);
-          return Status.UNEXPECTED_STATE;
-        }
-      }
-    }
     return result;
   }
+  
 
   @Override
   public Status insert(String table, String key, HashMap<String, ByteIterator> values) {
@@ -480,13 +475,23 @@ public class SyncGatewayClient extends DB {
   private Status insertDocument(String table, String key, HashMap<String, ByteIterator> values) {
 
     String port = (useAuth) ? portPublic : portAdmin;
-    String requestBody;
+    String requestBody = null;
     String fullUrl;
+    
+    if(doctype.equals("simple")) {
+    	requestBody = buildDocumentFromMap(key, values);
+    }
+    
+    else if(doctype.equals("nested")) {
+        
+    	requestBody = buildnestedDocFromMap(key, values);
 
-    requestBody = buildDocumentFromMap(key, values);
+    }
+  //  
+    
     fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
 
-    String currentSequence = getLocalSequenceGlobal();
+ //   String currentSequence = getLocalSequenceGlobal(); //commenting to acvoid getLocalSequenceForUser
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
     //System.out.println("before INSERT: User " + currentIterationUser + " just inserted doc " + key
@@ -502,24 +507,6 @@ public class SyncGatewayClient extends DB {
         //+ " SG seq before insert was " + currentSequence);
 
     Status result = getStatus(responseCode);
-    if (result == Status.OK) {
-      incrementLocalSequenceForUser();
-      if (roudTripWrite) {
-        if ((currentSequence == null) || (currentSequence.equals(""))) {
-          System.err.println("Memcached failure!");
-          return Status.BAD_REQUEST;
-        }
-        try {
-          waitForDocInChangeFeed2(currentSequence, key);
-          incrementLocalSequenceGlobal();
-        } catch (Exception e) {
-          syncronizeSequencesForUser(currentIterationUser);
-          return Status.UNEXPECTED_STATE;
-        }
-      }
-
-    }
-
     return result;
   }
 
@@ -865,9 +852,10 @@ public class SyncGatewayClient extends DB {
     restClient.close();
     return responseCode;
   }
-  
+ 
+ 
   // Connection is automatically released back in case of an exception.
-  private HashMap<String, Object> getResponseBody(String endpoint) throws IOException {
+  private String getResponseBody(String endpoint) throws IOException {
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -885,73 +873,39 @@ public class SyncGatewayClient extends DB {
     HashMap<String, Object> resultmap = new HashMap<String, Object>();
     
     CloseableHttpResponse response = restClient.execute(request);
-    
-  //  System.out.println("Response :" + response);
-    
+ 
     responseCode = response.getStatusLine().getStatusCode();
     
     HttpEntity responseEntity = response.getEntity();
     
-  //  System.out.println("printing responseEntity : "+responseEntity);
-        
+       String responsestring = null;
     // If null entity don't bother about connection release.
     if (responseEntity != null) {
     	
         // CONVERT RESPONSE TO STRING and THEN TO JSON OBJECT TO HASHMAP
     	
-        String responsestring = EntityUtils.toString(responseEntity, "UTF-8");
+        responsestring = EntityUtils.toString(responseEntity, "UTF-8");
         
-    //    System.out.println("responsestring or entities to string:" + responsestring);
-        
-        ObjectMapper mapper = new ObjectMapper();
-        
-        JsonNode actualObj = mapper.readTree(responsestring);
-        
-    //    System.out.println("value of actualObj"+ actualObj);
-        
-        for (int i = 0; i<=9; i++) {
-     //   	System.out.println("enterd the loop");
-        	
-        	String fieldname = "field" + i ;
-        	JsonNode fieldNode = actualObj.get(fieldname);
-        	
-      //  	System.out.println("field from the loop" + fieldNode.textValue());
-        	resultmap.put(fieldname, fieldNode.textValue());
-        }
-        
-    //    System.out.println("resultmap is" + resultmap);
-        
-     // CONVERT RESPONSE TO STRING and THEN TO JSON OBJECT TO HASHMAP -- Ended 
 
-  /*    InputStream stream = responseEntity.getContent();
-      BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
-      StringBuffer responseContent = new StringBuffer();
-      String line = "";*/
-   //   while ((line = reader.readLine()) != null) {
         if (requestTimedout.isSatisfied()) {
-          // Must avoid memory leak.
-    //      reader.close();
-    //      stream.close();
+
           EntityUtils.consumeQuietly(responseEntity);
           response.close();
           restClient.close();
           throw new TimeoutException();
         }
-     //   responseContent.append(line);
-    //  }
       
       timer.interrupt();
-    //  result.put("response", new StringByteIterator(responseContent.toString()));
-      // Closing the input stream will trigger connection release.
-   //   stream.close();
     }
     EntityUtils.consumeQuietly(responseEntity);
     response.close();
     restClient.close();
-    return resultmap;
+    return responsestring;
   }
-
-
+  
+  
+  
+  
   private String httpAuthWithSessionCookie(String data) throws IOException {
 
     String fullUrl = "http://" + getRandomHost() + ":" + portAdmin + createSessionEndpoint;
@@ -1077,26 +1031,144 @@ public class SyncGatewayClient extends DB {
     return root.toString();
   }
   
-  private String buildupdateDocument(String key, HashMap<String, Object> values) {
+  
+  @SuppressWarnings("deprecation")
+private String buildnestedDocFromMap(String key, HashMap<String, ByteIterator> values) {
 	    JsonNodeFactory factory = JsonNodeFactory.instance;
 	    ObjectNode root = factory.objectNode();
 	    ArrayNode channelsNode = factory.arrayNode();
-	    root.put("_id", key);
+    
+	    values.forEach((k, v)-> {
+	        root.put(k, v.toString());
+	      });
+	    ObjectNode finalValNode = factory.objectNode();
+	    
+	    ObjectNode[] valNode = new ObjectNode[docdepth+1];
+	    
+	  //  String objectname = null ;
+	    for (int i=1;i<=docdepth;i++) {
+	    	valNode[i] = factory.objectNode();
+	    	for (int j=0; j<=values.size(); j++) {
+	    		if(i==1) {
+	    			valNode[i].set("level"+Integer.toString(i)+Integer.toString(j), root); 
+	    		}
+	    		
+	    		else {
+	    		valNode[i].set("level"+Integer.toString(i)+Integer.toString(j), valNode[i-1]);	
+	    	}
+	       }	
+	    	finalValNode = valNode[i];
+	    }
+	    finalValNode.put("_id", key);
+	    return finalValNode.toString();
+	  }
+  
+  
+  private String buildupdateNestedDoc(String key, String responsestring, HashMap<String, ByteIterator> values) {
+	    JsonNodeFactory factory = JsonNodeFactory.instance;
+	    ObjectMapper mapper = new ObjectMapper();   
+	    
+	    JsonNode actualObj = null;
+		try {
+			actualObj = mapper.readTree(responsestring);
+		} catch (JsonProcessingException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}	    
+
+	    
+	    int depth = docdepth;
+	    
+	    ObjectNode[] valNode = new ObjectNode[docdepth+1];
+	    
+	    for(int i=depth; i>=1; i--) {
+	    	    	
+	    	valNode[i] = factory.objectNode();
+	    	    	
+	    	String levelname = "level"+Integer.toString(i)+"0"; 
+ 	
+	    	if (i==depth) {
+	    		
+	    		valNode[i] = (ObjectNode) actualObj.get(levelname);
+	    		
+	    	}
+	    	if (i<depth) {
+	    		valNode[i] = (ObjectNode) valNode[i+1].get(levelname);
+	    	}
+    	
+	    }
+	      
+	    ObjectNode finalValNode = factory.objectNode();
+	    	    
+	    String flevelname = null;
+	    for (int i=1; i<=depth; i++) {
+	    	
+	    	String levelname = "level"+Integer.toString(i)+"0"; 
+
+	    	if (i==1) {
+	    	  	
+	    		String var1 = values.toString();
+	    	  	for(Map.Entry<String, ByteIterator> mp:values.entrySet()) {
+	    	  		
+	    	  		valNode[i].put(mp.getKey(), var1);
+	    	  		
+	    	  }	
+	    	}
+	    	
+	    	if(i>1) {
+	    		
+	    		levelname = "level"+Integer.toString(i-1)+"0";
+	    		
+	    		valNode[i].set(levelname, valNode[i-1]);	
+	    		
+	    	}
+	    	
+	    	levelname = "level"+Integer.toString(i)+"0";
+	    	flevelname = levelname ;
+	    	finalValNode = valNode[i]; 
+	    }    
+	    
+	    ((ObjectNode)actualObj).set(flevelname, finalValNode);	    
+	    return ((ObjectNode)actualObj).toString();
+    }
+
+  private String buildupdateDocument(String key, String responsestring, HashMap<String, ByteIterator> values) {
+	    JsonNodeFactory factory = JsonNodeFactory.instance;
+	    ObjectMapper mapper = new ObjectMapper();   
+	    
+	    JsonNode actualObj = null;
+		try {
+			actualObj = mapper.readTree(responsestring);
+		} catch (JsonProcessingException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}	    
+	    ObjectNode root = factory.objectNode();
+	    
+	    ArrayNode channelsNode = factory.arrayNode();
 
 	    if (insertMode == SG_INSERT_MODE_BYKEY) {
 	      channelsNode.add(getChannelNameByKey(key));
 	    } else {
 	      channelsNode.add(getChannelForUser());
 	    }
-
-	    root.set("channels", channelsNode);
-
-	    values.forEach((k, v)-> {
-	        root.put(k, v.toString());
-	      });
+	   
+	    ((ObjectNode)actualObj).set("channels", channelsNode);
 	    
-	    return root.toString();
+    	String var1 = values.toString();
+    	for(Map.Entry<String, ByteIterator> mp:values.entrySet()) {
+    		((ObjectNode)actualObj).put(mp.getKey(), var1);
+    	}
+	    
+	    return ((ObjectNode)actualObj).toString();
 	  }
+  
   
 
   private String getChannelNameByKey(String key){
