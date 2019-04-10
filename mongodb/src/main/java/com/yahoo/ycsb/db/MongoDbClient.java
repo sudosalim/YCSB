@@ -25,6 +25,8 @@
 package com.yahoo.ycsb.db;
 
 import com.mongodb.*;
+import com.mongodb.client.ClientSession;
+import com.mongodb.ClientSessionOptions;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
@@ -77,6 +79,7 @@ public class MongoDbClient extends DB {
   private static final UpdateOptions UPDATE_WITH_UPSERT = new UpdateOptions()
       .upsert(true);
 
+
   /**
    * The database name to access.
    */
@@ -108,6 +111,8 @@ public class MongoDbClient extends DB {
 
   /** The bulk inserts pending for the thread. */
   private final List<Document> bulkInserts = new ArrayList<Document>();
+
+  private static ClientSession session1;
 
   /**
    * Cleanup any state for this DB. Called once per DB instance; there is one DB
@@ -834,6 +839,9 @@ public class MongoDbClient extends DB {
   @Override
   public Status insert(String table, String key,
       HashMap<String, ByteIterator> values) {
+
+    ClientSession session1 = mongoClient.startSession(ClientSessionOptions.builder().causallyConsistent(true).build());
+    session1.close();
     try {
       MongoCollection<Document> collection = database.getCollection(table);
       Document toInsert = new Document("_id", key);
@@ -846,10 +854,10 @@ public class MongoDbClient extends DB {
           // this is effectively an insert, but using an upsert instead due
           // to current inability of the framework to clean up after itself
           // between test runs.
-          collection.replaceOne(new Document("_id", toInsert.get("_id")),
+          collection.replaceOne(session1, new Document("_id", toInsert.get("_id")),
               toInsert, UPDATE_WITH_UPSERT);
         } else {
-          collection.insertOne(toInsert);
+          collection.insertOne(session1, toInsert);
         }
       } else {
         bulkInserts.add(toInsert);
@@ -862,9 +870,9 @@ public class MongoDbClient extends DB {
                   new Document("_id", doc.get("_id")),
                   doc, UPDATE_WITH_UPSERT));
             }
-            collection.bulkWrite(updates);
+            collection.bulkWrite(session1, updates);
           } else {
-            collection.insertMany(bulkInserts, INSERT_UNORDERED);
+            collection.insertMany(session1, bulkInserts, INSERT_UNORDERED);
           }
           bulkInserts.clear();
         } else {
@@ -899,10 +907,12 @@ public class MongoDbClient extends DB {
   public Status read(String table, String key, Set<String> fields,
       HashMap<String, ByteIterator> result) {
     try {
+      ClientSession session1 = mongoClient.
+          startSession(ClientSessionOptions.builder().causallyConsistent(true).build());
       MongoCollection<Document> collection = database.getCollection(table);
       Document query = new Document("_id", key);
 
-      FindIterable<Document> findIterable = collection.find(query);
+      FindIterable<Document> findIterable = collection.find(session1, query);
       if (fields != null) {
         Document projection = new Document();
         for (String field : fields) {
