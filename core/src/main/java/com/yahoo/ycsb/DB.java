@@ -132,4 +132,10 @@ public abstract class DB {
    * @return The result of the operation.
    */
   public abstract Status delete(String table, String key);
+
+
+  public Status transaction(String table, String[] operations,  String[] keys, Set<String> fields,
+                            Map<String, ByteIterator> values) {
+    return Status.NOT_IMPLEMENTED;
+  }
 }

@@ -31,6 +31,7 @@ import com.yahoo.ycsb.Status;
 import com.yahoo.ycsb.StringByteIterator;
 
 import java.util.*;
+import java.util.stream;
 
 /**
  * Full YCSB implementation based on the new Couchbase Java SDK 3.x.
@@ -42,6 +43,9 @@ public class Couchbase3Client extends DB {
   private volatile ClusterEnvironment environment;
   private volatile Cluster cluster;
   private volatile Collection collection;
+
+
+  private int[] transactionKeys;
 
   @Override
   public synchronized void init() {
@@ -115,6 +119,24 @@ public class Couchbase3Client extends DB {
     }
   }
 
+  @Override
+  public Status transaction(String table, String[] operations,  String[] keys, Set<String> fields,
+                            Map<String, ByteIterator> values) {
+
+    int operationsCount = operations.length;
+    int documentsTotal = keys.length;
+
+    try {
+
+
+      collection.replace(formatId(table, key), encode(values));
+      return Status.OK;
+    } catch (Throwable t) {
+      return Status.ERROR;
+    }
+  }
+
+
   /**
    * Helper method to turn the passed in iterator values into a map we can encode to json.
    *
@@ -154,6 +176,17 @@ public class Couchbase3Client extends DB {
    */
   private static String formatId(final String prefix, final String key) {
     return prefix + KEY_SEPARATOR + key;
+  }
+
+
+  private int nextTransactionKey(int totalKeys){
+    if (transactionKeys == null) {
+      transactionKeys = IntStream.rangeClosed(0, totalKeys).toArray();
+
+    }
+
+
+
   }
 
 }
