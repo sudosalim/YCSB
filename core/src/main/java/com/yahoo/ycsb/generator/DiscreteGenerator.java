@@ -57,8 +57,10 @@ public class DiscreteGenerator extends Generator<String> {
 
     double val = ThreadLocalRandom.current().nextDouble();
 
+
     for (Pair p : values) {
       double pw = p.weight / sum;
+
       if (val < pw) {
         return p.value;
       }

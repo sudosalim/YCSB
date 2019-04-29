@@ -134,8 +134,9 @@ public abstract class DB {
   public abstract Status delete(String table, String key);
 
 
-  public Status transaction(String table, String[] operations,  String[] keys, Set<String> fields,
-                            Map<String, ByteIterator> values) {
+  public Status transaction(String table, String[] transationKeys, Map<String, ByteIterator>[] transationValues,
+                            String[] transationOperations, Set<String> fields, Map<String, ByteIterator> result) {
+
     return Status.NOT_IMPLEMENTED;
   }
 }

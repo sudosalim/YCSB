@@ -31,7 +31,7 @@ import com.yahoo.ycsb.Status;
 import com.yahoo.ycsb.StringByteIterator;
 
 import java.util.*;
-import java.util.stream;
+
 
 /**
  * Full YCSB implementation based on the new Couchbase Java SDK 3.x.
@@ -120,16 +120,32 @@ public class Couchbase3Client extends DB {
   }
 
   @Override
-  public Status transaction(String table, String[] operations,  String[] keys, Set<String> fields,
-                            Map<String, ByteIterator> values) {
-
-    int operationsCount = operations.length;
-    int documentsTotal = keys.length;
+  public Status transaction(String table, String[] transationKeys, Map<String, ByteIterator>[] transationValues,
+                            String[] transationOperations, Set<String> fields, Map<String, ByteIterator> result) {
 
     try {
-
-
-      collection.replace(formatId(table, key), encode(values));
+      // Init and Start transaction here
+      for (int i=0; i<transationKeys.length; i++) {
+        switch (transationOperations[i]) {
+        case "TRREAD":
+          Optional<GetResult> document = collection.get(formatId(table, transationKeys[i]));
+          if (!document.isPresent()) {
+            return Status.NOT_FOUND;
+          }
+          extractFields(document.get().contentAsObject(), fields, result);
+          break;
+        case "TRUPDATE":
+          collection.replace(formatId(table, transationKeys[i]), encode(transationValues[i]));
+          break;
+        case "TRINSERT":
+          collection.upsert(formatId(table, transationKeys[i]), encode(transationValues[i]));
+          break;
+        default:
+          break;
+        }
+      }
+      // close transaction here
+      //validate transaction and return results
       return Status.OK;
     } catch (Throwable t) {
       return Status.ERROR;
@@ -178,15 +194,5 @@ public class Couchbase3Client extends DB {
     return prefix + KEY_SEPARATOR + key;
   }
 
-
-  private int nextTransactionKey(int totalKeys){
-    if (transactionKeys == null) {
-      transactionKeys = IntStream.rangeClosed(0, totalKeys).toArray();
-
-    }
-
-
-
-  }
 
 }
