@@ -25,6 +25,9 @@ import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.env.ClusterEnvironment;
 import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.java.kv.GetResult;
+import com.couchbase.transactions.*;
+
+import com.couchbase.transactions.error.TransactionFailed;
 import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.Status;
@@ -43,8 +46,8 @@ public class Couchbase3Client extends DB {
   private volatile ClusterEnvironment environment;
   private volatile Cluster cluster;
   private volatile Collection collection;
-
-
+  private static Transactions transactions;
+  private static boolean transactionEnabled;
   private int[] transactionKeys;
 
   @Override
@@ -57,6 +60,7 @@ public class Couchbase3Client extends DB {
       String username = props.getProperty("couchbase.username", "Administrator");
       String password = props.getProperty("couchbase.password", "password");
       int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
+      transactionEnabled = Boolean.parseBoolean(props.getProperty("couchbase.transactionsEnabled", "false"));
 
       environment = ClusterEnvironment
           .builder(hostname, username, password)
@@ -65,6 +69,9 @@ public class Couchbase3Client extends DB {
       cluster = Cluster.connect(environment);
       Bucket bucket = cluster.bucket(bucketName);
       collection = bucket.defaultCollection();
+      if ((transactions == null) && transactionEnabled) {
+        transactions = Transactions.create(cluster);
+      }
     }
   }
 
@@ -119,12 +126,22 @@ public class Couchbase3Client extends DB {
     }
   }
 
+
   @Override
   public Status transaction(String table, String[] transationKeys, Map<String, ByteIterator>[] transationValues,
                             String[] transationOperations, Set<String> fields, Map<String, ByteIterator> result) {
+    if (transactionEnabled) {
+      return transactionContext(table, transationKeys, transationValues, transationOperations, fields, result);
+    }
+    return simpleCustomSequense(table, transationKeys, transationValues, transationOperations, fields, result);
+
+  }
+
+  public Status simpleCustomSequense(String table, String[] transationKeys,
+                                     Map<String, ByteIterator>[] transationValues, String[] transationOperations,
+                                     Set<String> fields, Map<String, ByteIterator> result) {
 
     try {
-      // Init and Start transaction here
       for (int i=0; i<transationKeys.length; i++) {
         switch (transationOperations[i]) {
         case "TRREAD":
@@ -144,12 +161,48 @@ public class Couchbase3Client extends DB {
           break;
         }
       }
-      // close transaction here
-      //validate transaction and return results
       return Status.OK;
     } catch (Throwable t) {
       return Status.ERROR;
     }
+  }
+
+
+
+  public Status transactionContext(String table, String[] transationKeys, Map<String, ByteIterator>[] transationValues,
+                            String[] transationOperations, Set<String> fields, Map<String, ByteIterator> result) {
+
+    try {
+      transactions.run((ctx) -> {
+        // Init and Start transaction here
+          for (int i = 0; i < transationKeys.length; i++) {
+            final String formattedDocId = formatId(table, transationKeys[i]);
+            switch (transationOperations[i]) {
+            case "TRREAD":
+              TransactionJsonDocument doc = ctx.getOrError(collection, formattedDocId);
+              extractFields(doc.contentAs(JsonObject.class), fields, result);
+              break;
+            case "TRUPDATE":
+              TransactionJsonDocument docToReplace = ctx.getOrError(collection, formattedDocId);
+              JsonObject content = docToReplace.contentAs(JsonObject.class);
+              for (Map.Entry<String, String> entry: encode(transationValues[i]).entrySet()){
+                content.put(entry.getKey(), entry.getValue());
+              }
+              ctx.replace(docToReplace, content);
+              break;
+            case "TRINSERT":
+              ctx.insert(collection, formattedDocId, encode(transationValues[i]));
+              break;
+            default:
+              break;
+            }
+          }
+          ctx.commit();
+        });
+    } catch (TransactionFailed e) {
+      return Status.ERROR;
+    }
+    return Status.OK;
   }
 
 
