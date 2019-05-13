@@ -27,14 +27,15 @@ import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.java.kv.GetResult;
 import com.couchbase.transactions.*;
 
+import com.couchbase.transactions.config.TransactionConfigBuilder;
 import com.couchbase.transactions.error.TransactionFailed;
+import com.couchbase.transactions.log.LogDefer;
 import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.Status;
 import com.yahoo.ycsb.StringByteIterator;
 
 import java.util.*;
-
 
 /**
  * Full YCSB implementation based on the new Couchbase Java SDK 3.x.
@@ -70,7 +71,9 @@ public class Couchbase3Client extends DB {
       Bucket bucket = cluster.bucket(bucketName);
       collection = bucket.defaultCollection();
       if ((transactions == null) && transactionEnabled) {
-        transactions = Transactions.create(cluster);
+        transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
+            .durabilityLevel(TransactionDurabilityLevel.MAJORITY)
+            .build());
       }
     }
   }
@@ -119,6 +122,7 @@ public class Couchbase3Client extends DB {
   @Override
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
+
       collection.insert(formatId(table, key), encode(values));
       return Status.OK;
     } catch (Throwable t) {
@@ -168,7 +172,6 @@ public class Couchbase3Client extends DB {
   }
 
 
-
   public Status transactionContext(String table, String[] transationKeys, Map<String, ByteIterator>[] transationValues,
                             String[] transationOperations, Set<String> fields, Map<String, ByteIterator> result) {
 
@@ -200,6 +203,11 @@ public class Couchbase3Client extends DB {
           ctx.commit();
         });
     } catch (TransactionFailed e) {
+      for (LogDefer err : e.result().log().logs()) {
+        // Optionally, log the result to your own logger
+        System.out.println("Transaction logger:" + err.toString());
+
+      }
       return Status.ERROR;
     }
     return Status.OK;
