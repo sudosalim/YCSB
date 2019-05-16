@@ -65,7 +65,7 @@ public class Couchbase3Client extends DB {
 
       environment = ClusterEnvironment
           .builder(hostname, username, password)
-          .serviceConfig(ServiceConfig.keyValueServiceConfig(KeyValueServiceConfig.create(kvEndpoints)))
+          .serviceConfig(ServiceConfig.keyValueServiceConfig(KeyValueServiceConfig.builder().endpoints(kvEndpoints)))
           .build();
       cluster = Cluster.connect(environment);
       Bucket bucket = cluster.bucket(bucketName);
