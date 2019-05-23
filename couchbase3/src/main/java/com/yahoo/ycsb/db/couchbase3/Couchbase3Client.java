@@ -27,15 +27,21 @@ import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.java.kv.GetResult;
 
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
+import static com.couchbase.client.java.kv.GetOptions.getOptions;
 import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
 import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
 import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
+
+import com.couchbase.client.java.kv.PersistTo;
+import com.couchbase.client.java.kv.ReplicateTo;
 
 import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
 import com.yahoo.ycsb.DBException;
 import com.yahoo.ycsb.Status;
 import com.yahoo.ycsb.StringByteIterator;
+
+import java.time.Duration;
 
 import java.util.*;
 
@@ -50,6 +56,10 @@ public class Couchbase3Client extends DB {
   private volatile Cluster cluster;
   private volatile Collection collection;
   private DurabilityLevel durabilityLevel;
+  private PersistTo persistTo;
+  private ReplicateTo replicateTo;
+  private boolean useDurabilityLevels;
+  private int kvTimeoutMillis;
 
   @Override
   public synchronized void init() throws DBException {
@@ -60,7 +70,19 @@ public class Couchbase3Client extends DB {
       String bucketName = props.getProperty("couchbase.bucket", "ycsb");
       String username = props.getProperty("couchbase.username", "Administrator");
       String password = props.getProperty("couchbase.password", "password");
-      durabilityLevel = parseDurabilityLevel(props.getProperty("couchbase.durability", "0"));
+
+      kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "10000"));
+
+      // durability options
+      String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
+      if (rawDurabilityLevel == null) {
+        persistTo = parsePersistTo(props.getProperty("couchbase.persistTo", "0"));
+        replicateTo = parseReplicateTo(props.getProperty("couchbase.replicateTo", "0"));
+        useDurabilityLevels = false;
+      } else {
+        durabilityLevel = parseDurabilityLevel(rawDurabilityLevel);
+        useDurabilityLevels = true;
+      }
 
       int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
 
@@ -74,9 +96,42 @@ public class Couchbase3Client extends DB {
     }
   }
 
+  private static ReplicateTo parseReplicateTo(final String property) throws DBException {
+    int value = Integer.parseInt(property);
+    switch (value) {
+    case 0:
+      return ReplicateTo.NONE;
+    case 1:
+      return ReplicateTo.ONE;
+    case 2:
+      return ReplicateTo.TWO;
+    case 3:
+      return ReplicateTo.THREE;
+    default:
+      throw new DBException("\"couchbase.replicateTo\" must be between 0 and 3");
+    }
+  }
+
+  private static PersistTo parsePersistTo(final String property) throws DBException {
+    int value = Integer.parseInt(property);
+    switch (value) {
+    case 0:
+      return PersistTo.NONE;
+    case 1:
+      return PersistTo.ONE;
+    case 2:
+      return PersistTo.TWO;
+    case 3:
+      return PersistTo.THREE;
+    case 4:
+      return PersistTo.FOUR;
+    default:
+      throw new DBException("\"couchbase.persistTo\" must be between 0 and 4");
+    }
+  }
+
   private static DurabilityLevel parseDurabilityLevel(final String property) throws DBException {
     int value = Integer.parseInt(property);
-
     switch (value) {
     case 0:
       return DurabilityLevel.NONE;
@@ -103,7 +158,8 @@ public class Couchbase3Client extends DB {
   @Override
   public Status read(final String table, final String key, final Set<String> fields,
                      final Map<String, ByteIterator> result) {
-    Optional<GetResult> document = collection.get(formatId(table, key));
+    Optional<GetResult> document = collection.get(formatId(table, key),
+        getOptions().timeout(Duration.ofMillis(kvTimeoutMillis)));
     if (!document.isPresent()) {
       return Status.NOT_FOUND;
     }
@@ -125,8 +181,17 @@ public class Couchbase3Client extends DB {
   @Override
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
-      collection.replace(formatId(table, key), encode(values),
-          replaceOptions().durabilityLevel(durabilityLevel));
+      if (useDurabilityLevels) {
+        collection.replace(formatId(table, key), encode(values),
+            replaceOptions()
+                .durabilityLevel(durabilityLevel)
+                .timeout(Duration.ofMillis(kvTimeoutMillis)));
+      } else {
+        collection.replace(formatId(table, key), encode(values),
+            replaceOptions()
+                .durability(persistTo, replicateTo)
+                .timeout(Duration.ofMillis(kvTimeoutMillis)));
+      }
       return Status.OK;
     } catch (Throwable t) {
       return Status.ERROR;
@@ -136,8 +201,18 @@ public class Couchbase3Client extends DB {
   @Override
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
-      collection.insert(formatId(table, key), encode(values),
-          insertOptions().durabilityLevel(durabilityLevel));
+      if (useDurabilityLevels) {
+        collection.insert(formatId(table, key), encode(values),
+            insertOptions()
+                .durabilityLevel(durabilityLevel)
+                .timeout(Duration.ofMillis(kvTimeoutMillis)));
+      } else {
+        collection.insert(formatId(table, key), encode(values),
+            insertOptions()
+                .durability(persistTo, replicateTo)
+                .timeout(Duration.ofMillis(kvTimeoutMillis)));
+      }
+
       return Status.OK;
     } catch (Throwable t) {
       return Status.ERROR;
@@ -161,8 +236,18 @@ public class Couchbase3Client extends DB {
   @Override
   public Status delete(final String table, final String key) {
     try {
-      collection.remove(formatId(table, key),
-          removeOptions().durabilityLevel(durabilityLevel));
+      if (useDurabilityLevels) {
+        collection.remove(formatId(table, key),
+            removeOptions()
+                .durabilityLevel(durabilityLevel)
+                .timeout(Duration.ofMillis(kvTimeoutMillis)));
+      } else {
+        collection.remove(formatId(table, key),
+            removeOptions()
+                .durability(persistTo, replicateTo)
+                .timeout(Duration.ofMillis(kvTimeoutMillis)));
+      }
+
       return Status.OK;
     } catch (Throwable t) {
       return Status.ERROR;
