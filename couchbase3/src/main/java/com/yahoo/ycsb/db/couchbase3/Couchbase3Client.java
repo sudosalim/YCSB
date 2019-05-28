@@ -72,7 +72,7 @@ public class Couchbase3Client extends DB {
       collection = bucket.defaultCollection();
       if ((transactions == null) && transactionEnabled) {
         transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
-            .durabilityLevel(TransactionDurabilityLevel.MAJORITY)
+            .durabilityLevel(TransactionDurabilityLevel.NONE)
             .build());
       }
     }
