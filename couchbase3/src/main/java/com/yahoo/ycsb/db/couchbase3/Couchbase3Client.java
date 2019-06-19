@@ -18,6 +18,7 @@
 package com.yahoo.ycsb.db.couchbase3;
 
 import com.couchbase.client.core.env.ServiceConfig;
+import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.service.KeyValueServiceConfig;
 import com.couchbase.client.java.Bucket;
 import com.couchbase.client.java.Cluster;
@@ -70,6 +71,7 @@ public class Couchbase3Client extends DB {
       String bucketName = props.getProperty("couchbase.bucket", "ycsb");
       String username = props.getProperty("couchbase.username", "Administrator");
       String password = props.getProperty("couchbase.password", "password");
+      Boolean enableMutationToken = props.getProperty("couchbase.enableMutationToken", "false").equals("true");
 
       kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "10000"));
 
@@ -88,6 +90,7 @@ public class Couchbase3Client extends DB {
 
       environment = ClusterEnvironment
           .builder(hostname, username, password)
+          .ioConfig(IoConfig.mutationTokensEnabled(enableMutationToken))
           .serviceConfig(ServiceConfig.keyValueServiceConfig(KeyValueServiceConfig.builder().endpoints(kvEndpoints)))
           .build();
       cluster = Cluster.connect(environment);
