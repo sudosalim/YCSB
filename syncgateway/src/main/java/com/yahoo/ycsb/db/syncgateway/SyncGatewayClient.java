@@ -934,6 +934,9 @@ public class SyncGatewayClient extends DB {
     if (starChannel) {
       channels.add("*");
       saveChannelForUser(userName, "*");
+    } else if (channelsPerUser == 1){
+      String channelName = DEFAULT_CHANNEL_PREFIX + id;
+      saveChannelForUser(userName, channelName);
     } else {
       String[] channelsSet = getSetOfRandomChannels();
       for (int i = 0; i < channelsPerUser; i++) {
