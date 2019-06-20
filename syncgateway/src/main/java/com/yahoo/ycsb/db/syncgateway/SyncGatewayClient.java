@@ -1045,7 +1045,7 @@ public class SyncGatewayClient extends DB {
   }
 
   private String getlastSequenceFromSG() throws IOException {
-    String port = (useAuth) ? portPublic : portAdmin;
+    String port = portAdmin;
 
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
 
@@ -1053,9 +1053,9 @@ public class SyncGatewayClient extends DB {
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
     HttpGet request = new HttpGet(fullUrl);
-    for (int i = 0; i < headers.length; i = i + 2) {
-      request.setHeader(headers[i], headers[i + 1]);
-    }
+    //for (int i = 0; i < headers.length; i = i + 2) {
+    //  request.setHeader(headers[i], headers[i + 1]);
+    //}
 
     String lastsequence = null;
     //String str1 = null;
@@ -1071,13 +1071,13 @@ public class SyncGatewayClient extends DB {
       StringBuffer responseContent = new StringBuffer();
       String line = "";
       while ((line = reader.readLine()) != null) {
-        System.out.println("printing the line in getlastSequenceFromSG" + line);
+        //System.out.println("printing the line in getlastSequenceFromSG" + line);
         if (line.contains("update_seq")) {
           //str1 = line.substring(14);
           String[] arrOfstr = line.split(",");
           String[] arrOfstr2 = arrOfstr[1].split(":");
           lastsequence = arrOfstr2[1];
-          System.out.println("lastsequence found" + lastsequence);
+          //System.out.println("lastsequence found" + lastsequence);
         }
         if (requestTimedout.isSatisfied()) {
           // Must avoid memory leak.
