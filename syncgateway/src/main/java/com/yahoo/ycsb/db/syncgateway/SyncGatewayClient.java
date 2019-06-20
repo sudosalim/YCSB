@@ -1074,9 +1074,10 @@ public class SyncGatewayClient extends DB {
         //System.out.println("printing the line in getlastSequenceFromSG" + line);
         if (line.contains("update_seq")) {
           //str1 = line.substring(14);
-          String[] arrOfstr = line.split(",");
-          String[] arrOfstr2 = arrOfstr[1].split(":");
-          lastsequence = arrOfstr2[1];
+          String[] arrOfstr = line.split("committed_update_seq");
+          String[] arrOfstr1 = arrOfstr[1].split(":");
+          String[] arrOfstr2 = arrOfstr1[1].split(",");
+          lastsequence = arrOfstr2[0];
           //System.out.println("lastsequence found" + lastsequence);
         }
         if (requestTimedout.isSatisfied()) {
