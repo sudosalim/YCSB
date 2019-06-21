@@ -438,15 +438,19 @@ public class SyncGatewayClient extends DB {
     String requestBody;
     String fullUrl;
 
-    String channel = getChannelNameByTotalChannels();
-    //System.out.println("channel name at the begining " + channel);
+    String channel = null;
 
     if (insertMode == SG_INSERT_MODE_BYKEY) {
-      System.out.println("entered buildDocumentWithChannel since its SG_INSERT_MODE_BYKEY ");
-      requestBody = buildDocumentWithChannel(key, values, channel);
+      channel = getChannelNameByTotalChannels();
+      //requestBody = buildDocumentWithChannel(key, values, channel);
     } else {
-      requestBody = buildDocumentFromMap(key, values);
+      channel = getChannelForUser();
+      //requestBody = buildDocumentFromMap(key, values);
     }
+
+    requestBody = buildDocumentWithChannel(key, values, channel);
+
+    //System.out.println("channel name at the begining " + channel);
 
     //System.out.println("printing the body " + requestBody);
     fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
@@ -483,13 +487,9 @@ public class SyncGatewayClient extends DB {
           return Status.BAD_REQUEST;
         }
         try {
-          if (insertMode == SG_INSERT_MODE_BYKEY) {
-            //System.out.println("entering waitForDocInChangeFeed3 since its SG_INSERT_MODE_BYKEY " + channel);
-            lastseq = waitForDocInChangeFeed3(lastSequence, channel, key);
-            //System.out.println("chanel and last seq " + lastseq);
-          } else {
-            lastseq = waitForDocInChangeFeed2(lastSequence, key);
-          }
+          //System.out.println("entering waitForDocInChangeFeed3 since its SG_INSERT_MODE_BYKEY " + channel);
+          lastseq = waitForDocInChangeFeed3(lastSequence, channel, key);
+          //System.out.println("chanel and last seq " + lastseq);
           //System.out.println("lastseq from waitForDocInChangeFeed2" + lastseq);
           incrementLocalSequenceGlobal();
           setLastSequenceGlobally(lastseq);
