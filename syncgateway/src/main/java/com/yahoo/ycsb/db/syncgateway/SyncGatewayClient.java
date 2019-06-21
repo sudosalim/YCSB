@@ -438,7 +438,17 @@ public class SyncGatewayClient extends DB {
     String requestBody;
     String fullUrl;
 
-    requestBody = buildDocumentFromMap(key, values);
+    String channel =  getChannelNameByKey(key);
+    System.out.println("channel name at the begining " + channel);
+
+    if (insertMode == SG_INSERT_MODE_BYKEY) {
+      System.out.println("entered buildDocumentWithChannel since its SG_INSERT_MODE_BYKEY ");
+      requestBody = buildDocumentWithChannel(key, values, channel);
+    } else {
+      requestBody = buildDocumentFromMap(key, values);
+    }
+
+    //System.out.println("printing the body " + requestBody);
     fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
 
     String currentSequence = getLocalSequenceGlobal();
@@ -455,6 +465,7 @@ public class SyncGatewayClient extends DB {
 
     try {
       responseCode = httpExecute(httpPostRequest, requestBody);
+      //System.out.println("printing the responseCode " + responseCode);
     } catch (Exception e) {
       responseCode = handleExceptions(e, fullUrl, "POST");
     }
@@ -472,7 +483,13 @@ public class SyncGatewayClient extends DB {
           return Status.BAD_REQUEST;
         }
         try {
-          lastseq = waitForDocInChangeFeed2(lastSequence, key);
+          if (insertMode == SG_INSERT_MODE_BYKEY) {
+            System.out.println("entering waitForDocInChangeFeed3 since its SG_INSERT_MODE_BYKEY " + channel);
+            lastseq = waitForDocInChangeFeed3(lastSequence, channel, key);
+            System.out.println("chanel and last seq " + lastseq);
+          } else {
+            lastseq = waitForDocInChangeFeed2(lastSequence, key);
+          }
           //System.out.println("lastseq from waitForDocInChangeFeed2" + lastseq);
           incrementLocalSequenceGlobal();
           setLastSequenceGlobally(lastseq);
@@ -593,6 +610,90 @@ public class SyncGatewayClient extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
+
+    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+
+    //System.out.println("Printing fullUrl" + fullUrl);
+
+    requestTimedout.setIsSatisfied(false);
+    Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
+    timer.start();
+    HttpGet request = new HttpGet(fullUrl);
+    for (int i = 0; i < headers.length; i = i + 2) {
+      request.setHeader(headers[i], headers[i + 1]);
+    }
+    if (useAuth) {
+      request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
+    }
+
+    CloseableHttpResponse response = null;
+    boolean docFound = false;
+    String lastseq = null;
+
+    int repeatCounter = 1000;
+    while (!docFound) {
+      repeatCounter--;
+      if (repeatCounter <= 0) {
+        response.close();
+        restClient.close();
+        System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! by repeatCounter for " + changesFeedEndpoint);
+        throw new TimeoutException();
+      }
+      try {
+        response = restClient.execute(request);
+      } catch (java.net.SocketTimeoutException ex) {
+        response.close();
+        restClient.close();
+        System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! by Socket ex for " + changesFeedEndpoint
+            + " " + ex.getStackTrace());
+        throw new TimeoutException();
+      }
+      HttpEntity responseEntity = response.getEntity();
+      if (responseEntity != null) {
+        InputStream stream = responseEntity.getContent();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+        StringBuffer responseContent = new StringBuffer();
+        String line = "";
+        while ((line = reader.readLine()) != null) {
+          if (requestTimedout.isSatisfied()) {
+            // Must avoid memory leak.
+            reader.close();
+            stream.close();
+            EntityUtils.consumeQuietly(responseEntity);
+            response.close();
+            restClient.close();
+            throw new TimeoutException();
+          }
+          if (lookForDocID(line, key)) {
+            docFound = true;
+            String[] arrOfstr = line.split(":", 2);
+            String[] arrOfstr2 = arrOfstr[1].split(",", 2);
+            lastseq = arrOfstr2[0];
+          }
+          responseContent.append(line);
+        }
+        timer.interrupt();
+        stream.close();
+      }
+      if (requestTimedout.isSatisfied()) {
+        EntityUtils.consumeQuietly(responseEntity);
+        response.close();
+        restClient.close();
+        throw new TimeoutException();
+      }
+      EntityUtils.consumeQuietly(responseEntity);
+      response.close();
+    }
+    restClient.close();
+
+    return lastseq;
+  }
+
+
+  private String waitForDocInChangeFeed3(String sequenceSince, String channel, String key) throws IOException {
+    String port = (useAuth) ? portPublic : portAdmin;
+    String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
+        "&filter=sync_gateway/bychannel&channels=" + channel;
 
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
 
@@ -959,6 +1060,22 @@ public class SyncGatewayClient extends DB {
     } else {
       channelsNode.add(getChannelForUser());
     }
+
+    root.set("channels", channelsNode);
+
+    values.forEach((k, v) -> {
+        root.put(k, v.toString());
+      });
+    return root.toString();
+  }
+
+  private String buildDocumentWithChannel(String key, HashMap<String, ByteIterator> values, String channel) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    ArrayNode channelsNode = factory.arrayNode();
+    root.put("_id", key);
+
+    channelsNode.add(channel);
 
     root.set("channels", channelsNode);
 
