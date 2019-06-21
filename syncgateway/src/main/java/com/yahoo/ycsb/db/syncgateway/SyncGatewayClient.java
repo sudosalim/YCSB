@@ -438,7 +438,7 @@ public class SyncGatewayClient extends DB {
     String requestBody;
     String fullUrl;
 
-    String channel =  getChannelNameByKey(key);
+    String channel = getChannelNameByTotalChannels();
     System.out.println("channel name at the begining " + channel);
 
     if (insertMode == SG_INSERT_MODE_BYKEY) {
@@ -1087,6 +1087,11 @@ public class SyncGatewayClient extends DB {
 
   private String getChannelNameByKey(String key) {
     int channelId = Math.abs(key.hashCode() % totalChannels);
+    return DEFAULT_CHANNEL_PREFIX + channelId;
+  }
+
+  private String getChannelNameByTotalChannels() {
+    int channelId = (int)(Math.random() * totalChannels) + 1;
     return DEFAULT_CHANNEL_PREFIX + channelId;
   }
 
