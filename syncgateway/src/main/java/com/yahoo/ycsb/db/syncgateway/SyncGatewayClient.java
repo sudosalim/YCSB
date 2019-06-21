@@ -439,7 +439,7 @@ public class SyncGatewayClient extends DB {
     String fullUrl;
 
     String channel = getChannelNameByTotalChannels();
-    System.out.println("channel name at the begining " + channel);
+    //System.out.println("channel name at the begining " + channel);
 
     if (insertMode == SG_INSERT_MODE_BYKEY) {
       System.out.println("entered buildDocumentWithChannel since its SG_INSERT_MODE_BYKEY ");
@@ -484,9 +484,9 @@ public class SyncGatewayClient extends DB {
         }
         try {
           if (insertMode == SG_INSERT_MODE_BYKEY) {
-            System.out.println("entering waitForDocInChangeFeed3 since its SG_INSERT_MODE_BYKEY " + channel);
+            //System.out.println("entering waitForDocInChangeFeed3 since its SG_INSERT_MODE_BYKEY " + channel);
             lastseq = waitForDocInChangeFeed3(lastSequence, channel, key);
-            System.out.println("chanel and last seq " + lastseq);
+            //System.out.println("chanel and last seq " + lastseq);
           } else {
             lastseq = waitForDocInChangeFeed2(lastSequence, key);
           }
