@@ -689,6 +689,12 @@ public class SyncGatewayClient extends DB {
     return lastseq;
   }
 
+  private String buildFullUrl(String sequenceSince, String channel, String key){
+    String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
+        "&filter=sync_gateway/bychannel&channels=" + channel;
+    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    return fillUrl;
+  }
 
   private String waitForDocInChangeFeed3(String sequenceSince, String channel, String key) throws IOException {
     String port = (useAuth) ? portPublic : portAdmin;
@@ -715,7 +721,11 @@ public class SyncGatewayClient extends DB {
     String lastseq = null;
 
     int repeatCounter = 1000;
+
+    String templastseq = null;
+
     while (!docFound) {
+
       repeatCounter--;
       if (repeatCounter <= 0) {
         response.close();
@@ -1037,6 +1047,7 @@ public class SyncGatewayClient extends DB {
       saveChannelForUser(userName, "*");
     } else if (channelsPerUser == 1){
       String channelName = DEFAULT_CHANNEL_PREFIX + id;
+      channels.add(channelName);
       saveChannelForUser(userName, channelName);
     } else {
       String[] channelsSet = getSetOfRandomChannels();
