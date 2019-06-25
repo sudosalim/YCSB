@@ -1036,7 +1036,7 @@ public class SyncGatewayClient extends DB {
     if (starChannel) {
       channels.add("*");
       saveChannelForUser(userName, "*");
-    } else if (channelsPerUser == 1){
+    } else if ((totalChannels == totalUsers) && (channelsPerUser == 1)){
       String channelName = DEFAULT_CHANNEL_PREFIX + id;
       channels.add(channelName);
       saveChannelForUser(userName, channelName);
