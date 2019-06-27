@@ -71,6 +71,17 @@ public class Couchbase3Client extends DB {
     Properties props = getProperties();
     String bucketName = props.getProperty("couchbase.bucket", "ycsb");
 
+    // durability options
+    String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
+    if (rawDurabilityLevel == null) {
+      persistTo = parsePersistTo(props.getProperty("couchbase.persistTo", "0"));
+      replicateTo = parseReplicateTo(props.getProperty("couchbase.replicateTo", "0"));
+      useDurabilityLevels = false;
+    } else {
+      durabilityLevel = parseDurabilityLevel(rawDurabilityLevel);
+      useDurabilityLevels = true;
+    }
+
     synchronized (INIT_COORDINATOR) {
       if (environment == null) {
         String hostname = props.getProperty("couchbase.host", "127.0.0.1");
@@ -79,20 +90,7 @@ public class Couchbase3Client extends DB {
         boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
 
         long kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "10000"));
-
-        // durability options
-        String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
-        if (rawDurabilityLevel == null) {
-          persistTo = parsePersistTo(props.getProperty("couchbase.persistTo", "0"));
-          replicateTo = parseReplicateTo(props.getProperty("couchbase.replicateTo", "0"));
-          useDurabilityLevels = false;
-        } else {
-          durabilityLevel = parseDurabilityLevel(rawDurabilityLevel);
-          useDurabilityLevels = true;
-        }
-
         int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
-
         environment = ClusterEnvironment
             .builder(hostname, username, password)
             .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
