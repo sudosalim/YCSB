@@ -57,51 +57,55 @@ public class Couchbase3Client extends DB {
   private static volatile ClusterEnvironment environment;
   private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
 
-  private volatile Cluster cluster;
-  private volatile Collection collection;
+  private static final Object INIT_COORDINATOR = new Object();
+
+  private static volatile Cluster cluster;
+  private static volatile Collection collection;
   private volatile DurabilityLevel durabilityLevel;
   private volatile PersistTo persistTo;
   private volatile ReplicateTo replicateTo;
   private volatile boolean useDurabilityLevels;
 
   @Override
-  public synchronized void init() throws DBException {
+  public void init() throws DBException {
     Properties props = getProperties();
     String bucketName = props.getProperty("couchbase.bucket", "ycsb");
 
-    if (environment == null) {
-      String hostname = props.getProperty("couchbase.host", "127.0.0.1");
-      String username = props.getProperty("couchbase.username", "Administrator");
-      String password = props.getProperty("couchbase.password", "password");
-      boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
+    synchronized (INIT_COORDINATOR) {
+      if (environment == null) {
+        String hostname = props.getProperty("couchbase.host", "127.0.0.1");
+        String username = props.getProperty("couchbase.username", "Administrator");
+        String password = props.getProperty("couchbase.password", "password");
+        boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
 
-      long kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "10000"));
+        long kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "10000"));
 
-      // durability options
-      String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
-      if (rawDurabilityLevel == null) {
-        persistTo = parsePersistTo(props.getProperty("couchbase.persistTo", "0"));
-        replicateTo = parseReplicateTo(props.getProperty("couchbase.replicateTo", "0"));
-        useDurabilityLevels = false;
-      } else {
-        durabilityLevel = parseDurabilityLevel(rawDurabilityLevel);
-        useDurabilityLevels = true;
+        // durability options
+        String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
+        if (rawDurabilityLevel == null) {
+          persistTo = parsePersistTo(props.getProperty("couchbase.persistTo", "0"));
+          replicateTo = parseReplicateTo(props.getProperty("couchbase.replicateTo", "0"));
+          useDurabilityLevels = false;
+        } else {
+          durabilityLevel = parseDurabilityLevel(rawDurabilityLevel);
+          useDurabilityLevels = true;
+        }
+
+        int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
+
+        environment = ClusterEnvironment
+            .builder(hostname, username, password)
+            .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
+            .ioConfig(IoConfig.mutationTokensEnabled(enableMutationToken))
+            .serviceConfig(ServiceConfig.keyValueServiceConfig(KeyValueServiceConfig.builder().endpoints(kvEndpoints)))
+            .build();
+
+        cluster = Cluster.connect(environment);
+        Bucket bucket = cluster.bucket(bucketName);
+        collection = bucket.defaultCollection();
+        OPEN_CLIENTS.incrementAndGet();
       }
-
-      int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
-
-      environment = ClusterEnvironment
-          .builder(hostname, username, password)
-          .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
-          .ioConfig(IoConfig.mutationTokensEnabled(enableMutationToken))
-          .serviceConfig(ServiceConfig.keyValueServiceConfig(KeyValueServiceConfig.builder().endpoints(kvEndpoints)))
-          .build();
     }
-
-    cluster = Cluster.connect(environment);
-    Bucket bucket = cluster.bucket(bucketName);
-    collection = bucket.defaultCollection();
-    OPEN_CLIENTS.incrementAndGet();
   }
 
   private static ReplicateTo parseReplicateTo(final String property) throws DBException {
