@@ -19,6 +19,7 @@ package com.yahoo.ycsb.db.couchbase3;
 
 import com.couchbase.client.core.env.ServiceConfig;
 import com.couchbase.client.core.env.IoConfig;
+import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.service.KeyValueServiceConfig;
 import com.couchbase.client.java.Bucket;
 import com.couchbase.client.java.Cluster;
@@ -28,7 +29,6 @@ import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.java.kv.GetResult;
 
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
-import static com.couchbase.client.java.kv.GetOptions.getOptions;
 import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
 import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
 import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
@@ -59,11 +59,10 @@ public class Couchbase3Client extends DB {
 
   private volatile Cluster cluster;
   private volatile Collection collection;
-  private DurabilityLevel durabilityLevel;
-  private PersistTo persistTo;
-  private ReplicateTo replicateTo;
-  private boolean useDurabilityLevels;
-  private int kvTimeoutMillis;
+  private volatile DurabilityLevel durabilityLevel;
+  private volatile PersistTo persistTo;
+  private volatile ReplicateTo replicateTo;
+  private volatile boolean useDurabilityLevels;
 
   @Override
   public synchronized void init() throws DBException {
@@ -74,9 +73,9 @@ public class Couchbase3Client extends DB {
       String hostname = props.getProperty("couchbase.host", "127.0.0.1");
       String username = props.getProperty("couchbase.username", "Administrator");
       String password = props.getProperty("couchbase.password", "password");
-      boolean enableMutationToken = props.getProperty("couchbase.enableMutationToken", "false").equals("true");
+      boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
 
-      kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "10000"));
+      long kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "10000"));
 
       // durability options
       String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
@@ -93,6 +92,7 @@ public class Couchbase3Client extends DB {
 
       environment = ClusterEnvironment
           .builder(hostname, username, password)
+          .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
           .ioConfig(IoConfig.mutationTokensEnabled(enableMutationToken))
           .serviceConfig(ServiceConfig.keyValueServiceConfig(KeyValueServiceConfig.builder().endpoints(kvEndpoints)))
           .build();
@@ -167,8 +167,7 @@ public class Couchbase3Client extends DB {
   @Override
   public Status read(final String table, final String key, final Set<String> fields,
                      final Map<String, ByteIterator> result) {
-    Optional<GetResult> document = collection.get(formatId(table, key),
-        getOptions().timeout(Duration.ofMillis(kvTimeoutMillis)));
+    Optional<GetResult> document = collection.get(formatId(table, key));
     if (!document.isPresent()) {
       return Status.NOT_FOUND;
     }
@@ -191,15 +190,9 @@ public class Couchbase3Client extends DB {
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
       if (useDurabilityLevels) {
-        collection.replace(formatId(table, key), encode(values),
-            replaceOptions()
-                .durabilityLevel(durabilityLevel)
-                .timeout(Duration.ofMillis(kvTimeoutMillis)));
+        collection.replace(formatId(table, key), encode(values), replaceOptions().durabilityLevel(durabilityLevel));
       } else {
-        collection.replace(formatId(table, key), encode(values),
-            replaceOptions()
-                .durability(persistTo, replicateTo)
-                .timeout(Duration.ofMillis(kvTimeoutMillis)));
+        collection.replace(formatId(table, key), encode(values), replaceOptions().durability(persistTo, replicateTo));
       }
       return Status.OK;
     } catch (Throwable t) {
@@ -211,15 +204,9 @@ public class Couchbase3Client extends DB {
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
       if (useDurabilityLevels) {
-        collection.insert(formatId(table, key), encode(values),
-            insertOptions()
-                .durabilityLevel(durabilityLevel)
-                .timeout(Duration.ofMillis(kvTimeoutMillis)));
+        collection.insert(formatId(table, key), encode(values), insertOptions().durabilityLevel(durabilityLevel));
       } else {
-        collection.insert(formatId(table, key), encode(values),
-            insertOptions()
-                .durability(persistTo, replicateTo)
-                .timeout(Duration.ofMillis(kvTimeoutMillis)));
+        collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
       }
 
       return Status.OK;
@@ -246,15 +233,9 @@ public class Couchbase3Client extends DB {
   public Status delete(final String table, final String key) {
     try {
       if (useDurabilityLevels) {
-        collection.remove(formatId(table, key),
-            removeOptions()
-                .durabilityLevel(durabilityLevel)
-                .timeout(Duration.ofMillis(kvTimeoutMillis)));
+        collection.remove(formatId(table, key), removeOptions().durabilityLevel(durabilityLevel));
       } else {
-        collection.remove(formatId(table, key),
-            removeOptions()
-                .durability(persistTo, replicateTo)
-                .timeout(Duration.ofMillis(kvTimeoutMillis)));
+        collection.remove(formatId(table, key), removeOptions().durability(persistTo, replicateTo));
       }
 
       return Status.OK;
