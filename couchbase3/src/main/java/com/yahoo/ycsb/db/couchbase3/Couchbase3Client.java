@@ -54,7 +54,7 @@ public class Couchbase3Client extends DB {
 
   private static final String KEY_SEPARATOR = ":";
 
-  private static volatile ClusterEnvironment ENVIRONMENT;
+  private static volatile ClusterEnvironment environment;
   private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
 
   private volatile Cluster cluster;
@@ -70,7 +70,7 @@ public class Couchbase3Client extends DB {
     Properties props = getProperties();
     String bucketName = props.getProperty("couchbase.bucket", "ycsb");
 
-    if (ENVIRONMENT == null) {
+    if (environment == null) {
       String hostname = props.getProperty("couchbase.host", "127.0.0.1");
       String username = props.getProperty("couchbase.username", "Administrator");
       String password = props.getProperty("couchbase.password", "password");
@@ -91,14 +91,14 @@ public class Couchbase3Client extends DB {
 
       int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
 
-      ENVIRONMENT = ClusterEnvironment
+      environment = ClusterEnvironment
           .builder(hostname, username, password)
           .ioConfig(IoConfig.mutationTokensEnabled(enableMutationToken))
           .serviceConfig(ServiceConfig.keyValueServiceConfig(KeyValueServiceConfig.builder().endpoints(kvEndpoints)))
           .build();
     }
 
-    cluster = Cluster.connect(ENVIRONMENT);
+    cluster = Cluster.connect(environment);
     Bucket bucket = cluster.bucket(bucketName);
     collection = bucket.defaultCollection();
     OPEN_CLIENTS.incrementAndGet();
@@ -158,9 +158,9 @@ public class Couchbase3Client extends DB {
   public synchronized void cleanup() {
     cluster.shutdown();
     OPEN_CLIENTS.decrementAndGet();
-    if (OPEN_CLIENTS.get() == 0 && ENVIRONMENT != null) {
-      ENVIRONMENT.shutdown();
-      ENVIRONMENT = null;
+    if (OPEN_CLIENTS.get() == 0 && environment != null) {
+      environment.shutdown();
+      environment = null;
     }
   }
 
