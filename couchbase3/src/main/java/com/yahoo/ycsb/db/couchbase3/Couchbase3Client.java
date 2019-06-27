@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright (c) 2019 Yahoo! Inc. All rights reserved.
  * <p>
  * Licensed under the Apache License, Version 2.0 (the "License"); you
@@ -45,6 +45,7 @@ import com.yahoo.ycsb.StringByteIterator;
 import java.time.Duration;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Full YCSB implementation based on the new Couchbase Java SDK 3.x.
@@ -53,7 +54,9 @@ public class Couchbase3Client extends DB {
 
   private static final String KEY_SEPARATOR = ":";
 
-  private volatile ClusterEnvironment environment;
+  private static volatile ClusterEnvironment ENVIRONMENT;
+  private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
+
   private volatile Cluster cluster;
   private volatile Collection collection;
   private DurabilityLevel durabilityLevel;
@@ -64,14 +67,14 @@ public class Couchbase3Client extends DB {
 
   @Override
   public synchronized void init() throws DBException {
-    if (environment == null) {
-      Properties props = getProperties();
+    Properties props = getProperties();
+    String bucketName = props.getProperty("couchbase.bucket", "ycsb");
 
+    if (ENVIRONMENT == null) {
       String hostname = props.getProperty("couchbase.host", "127.0.0.1");
-      String bucketName = props.getProperty("couchbase.bucket", "ycsb");
       String username = props.getProperty("couchbase.username", "Administrator");
       String password = props.getProperty("couchbase.password", "password");
-      Boolean enableMutationToken = props.getProperty("couchbase.enableMutationToken", "false").equals("true");
+      boolean enableMutationToken = props.getProperty("couchbase.enableMutationToken", "false").equals("true");
 
       kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "10000"));
 
@@ -88,15 +91,17 @@ public class Couchbase3Client extends DB {
 
       int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
 
-      environment = ClusterEnvironment
+      ENVIRONMENT = ClusterEnvironment
           .builder(hostname, username, password)
           .ioConfig(IoConfig.mutationTokensEnabled(enableMutationToken))
           .serviceConfig(ServiceConfig.keyValueServiceConfig(KeyValueServiceConfig.builder().endpoints(kvEndpoints)))
           .build();
-      cluster = Cluster.connect(environment);
-      Bucket bucket = cluster.bucket(bucketName);
-      collection = bucket.defaultCollection();
     }
+
+    cluster = Cluster.connect(ENVIRONMENT);
+    Bucket bucket = cluster.bucket(bucketName);
+    collection = bucket.defaultCollection();
+    OPEN_CLIENTS.incrementAndGet();
   }
 
   private static ReplicateTo parseReplicateTo(final String property) throws DBException {
@@ -151,10 +156,11 @@ public class Couchbase3Client extends DB {
 
   @Override
   public synchronized void cleanup() {
-    if (environment != null) {
-      cluster.shutdown();
-      environment.shutdown();
-      environment = null;
+    cluster.shutdown();
+    OPEN_CLIENTS.decrementAndGet();
+    if (OPEN_CLIENTS.get() == 0 && ENVIRONMENT != null) {
+      ENVIRONMENT.shutdown();
+      ENVIRONMENT = null;
     }
   }
 
