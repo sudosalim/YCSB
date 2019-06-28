@@ -169,12 +169,17 @@ public class Couchbase3Client extends DB {
   @Override
   public Status read(final String table, final String key, final Set<String> fields,
                      final Map<String, ByteIterator> result) {
-    Optional<GetResult> document = collection.get(formatId(table, key));
-    if (!document.isPresent()) {
-      return Status.NOT_FOUND;
+    try {
+      Optional<GetResult> document = collection.get(formatId(table, key));
+      if (!document.isPresent()) {
+        return Status.NOT_FOUND;
+      }
+      extractFields(document.get().contentAsObject(), fields, result);
+      return Status.OK;
+    } catch (Throwable t) {
+      t.printStackTrace();
+      return Status.ERROR;
     }
-    extractFields(document.get().contentAsObject(), fields, result);
-    return Status.OK;
   }
 
   private static void extractFields(final JsonObject content, Set<String> fields,
@@ -198,6 +203,7 @@ public class Couchbase3Client extends DB {
       }
       return Status.OK;
     } catch (Throwable t) {
+      t.printStackTrace();
       return Status.ERROR;
     }
   }
@@ -213,6 +219,7 @@ public class Couchbase3Client extends DB {
 
       return Status.OK;
     } catch (Throwable t) {
+      t.printStackTrace();
       return Status.ERROR;
     }
   }
@@ -242,6 +249,7 @@ public class Couchbase3Client extends DB {
 
       return Status.OK;
     } catch (Throwable t) {
+      t.printStackTrace();
       return Status.ERROR;
     }
   }
