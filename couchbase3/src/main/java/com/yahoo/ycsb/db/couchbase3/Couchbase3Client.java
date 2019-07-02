@@ -89,7 +89,7 @@ public class Couchbase3Client extends DB {
         String password = props.getProperty("couchbase.password", "password");
         boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
 
-        long kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "10000"));
+        long kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "60000"));
         int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
         environment = ClusterEnvironment
             .builder(hostname, username, password)
@@ -101,9 +101,10 @@ public class Couchbase3Client extends DB {
         cluster = Cluster.connect(environment);
         Bucket bucket = cluster.bucket(bucketName);
         collection = bucket.defaultCollection();
-        OPEN_CLIENTS.incrementAndGet();
+
       }
     }
+    OPEN_CLIENTS.incrementAndGet();
   }
 
   private static ReplicateTo parseReplicateTo(final String property) throws DBException {
@@ -158,9 +159,9 @@ public class Couchbase3Client extends DB {
 
   @Override
   public synchronized void cleanup() {
-    cluster.shutdown();
     OPEN_CLIENTS.decrementAndGet();
     if (OPEN_CLIENTS.get() == 0 && environment != null) {
+      cluster.shutdown();
       environment.shutdown();
       environment = null;
     }
