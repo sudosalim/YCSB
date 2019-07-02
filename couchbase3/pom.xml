@@ -35,12 +35,12 @@ LICENSE file.
         <dependency>
             <groupId>com.couchbase.client</groupId>
             <artifactId>java-client</artifactId>
-            <version>3.0.0-alpha.3</version>
+            <version>3.0.0-alpha.4</version>
         </dependency>
       <dependency>
-        <groupId>com.couchbase.transactions</groupId>
+        <groupId>com.couchbase.client</groupId>
         <artifactId>couchbase-transactions</artifactId>
-        <version>1.0.0-alpha.4</version>
+        <version>1.0.0-alpha.5-SNAPSHOT</version>
       </dependency>
         <dependency>
             <groupId>com.yahoo.ycsb</groupId>
@@ -76,6 +76,14 @@ LICENSE file.
       <id>couchbase</id>
       <name>Couchbase Preview Repository</name>
       <url>http://files.couchbase.com/maven2</url>
+    </repository>
+    <repository>
+      <id>oss-sonatype</id>
+      <name>oss-sonatype</name>
+      <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
     </repository>
   </repositories>
 
