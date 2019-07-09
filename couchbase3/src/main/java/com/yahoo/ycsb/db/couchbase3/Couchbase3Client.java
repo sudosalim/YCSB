@@ -65,12 +65,12 @@ public class Couchbase3Client extends DB {
   private volatile PersistTo persistTo;
   private volatile ReplicateTo replicateTo;
   private volatile boolean useDurabilityLevels;
+  private  volatile  HashSet errors = new HashSet<Throwable>();
 
   @Override
   public void init() throws DBException {
     Properties props = getProperties();
     String bucketName = props.getProperty("couchbase.bucket", "ycsb");
-
     // durability options
     String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
     if (rawDurabilityLevel == null) {
@@ -164,6 +164,10 @@ public class Couchbase3Client extends DB {
       cluster.shutdown();
       environment.shutdown();
       environment = null;
+      Iterator<Throwable> it = errors.iterator();
+      while(it.hasNext()){
+        it.next().printStackTrace();
+      }
     }
   }
 
@@ -178,7 +182,7 @@ public class Couchbase3Client extends DB {
       extractFields(document.get().contentAsObject(), fields, result);
       return Status.OK;
     } catch (Throwable t) {
-      t.printStackTrace();
+      errors.add(t);
       return Status.ERROR;
     }
   }
@@ -204,7 +208,7 @@ public class Couchbase3Client extends DB {
       }
       return Status.OK;
     } catch (Throwable t) {
-      t.printStackTrace();
+      errors.add(t);
       return Status.ERROR;
     }
   }
@@ -220,7 +224,7 @@ public class Couchbase3Client extends DB {
 
       return Status.OK;
     } catch (Throwable t) {
-      t.printStackTrace();
+      errors.add(t);
       return Status.ERROR;
     }
   }
@@ -250,7 +254,7 @@ public class Couchbase3Client extends DB {
 
       return Status.OK;
     } catch (Throwable t) {
-      t.printStackTrace();
+      errors.add(t);
       return Status.ERROR;
     }
   }
