@@ -27,6 +27,13 @@ import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.java.kv.GetResult;
 import com.couchbase.transactions.*;
 
+import com.couchbase.client.core.msg.kv.DurabilityLevel;
+import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
+import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
+import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
+
+import com.yahoo.ycsb.DBException;
+
 import com.couchbase.transactions.config.TransactionConfigBuilder;
 import com.couchbase.transactions.error.TransactionFailed;
 import com.couchbase.transactions.log.LogDefer;
@@ -51,6 +58,8 @@ public class Couchbase3Client extends DB {
   private static boolean transactionEnabled;
   private int[] transactionKeys;
 
+  private DurabilityLevel durabilityLevel;
+
   @Override
   public synchronized void init() {
     if (environment == null) {
@@ -62,6 +71,11 @@ public class Couchbase3Client extends DB {
       String password = props.getProperty("couchbase.password", "password");
       int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
       transactionEnabled = Boolean.parseBoolean(props.getProperty("couchbase.transactionsEnabled", "false"));
+      try {
+        durabilityLevel = parseDurabilityLevel(props.getProperty("couchbase.durability", "0"));
+      } catch (DBException e) {
+        System.out.println("someting");
+      }
 
       environment = ClusterEnvironment
           .builder(hostname, username, password)
@@ -75,6 +89,24 @@ public class Couchbase3Client extends DB {
             .durabilityLevel(TransactionDurabilityLevel.NONE)
             .build());
       }
+    }
+  }
+
+  private static DurabilityLevel parseDurabilityLevel(final String property) throws DBException {
+
+    int value = Integer.parseInt(property);
+
+    switch(value){
+    case 0:
+      return DurabilityLevel.NONE;
+    case 1:
+      return DurabilityLevel.MAJORITY;
+    case 2:
+      return DurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER;
+    case 3:
+      return DurabilityLevel.PERSIST_TO_MAJORITY;
+    default :
+      throw new DBException("\"couchbase.durability\" must be between 0 and 3");
     }
   }
 
@@ -112,7 +144,8 @@ public class Couchbase3Client extends DB {
   @Override
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
-      collection.replace(formatId(table, key), encode(values));
+      collection.replace(formatId(table, key), encode(values),
+          replaceOptions().durabilityLevel(durabilityLevel));
       return Status.OK;
     } catch (Throwable t) {
       return Status.ERROR;
@@ -123,7 +156,8 @@ public class Couchbase3Client extends DB {
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
 
-      collection.insert(formatId(table, key), encode(values));
+      collection.insert(formatId(table, key), encode(values),
+          insertOptions().durabilityLevel(durabilityLevel));
       return Status.OK;
     } catch (Throwable t) {
       return Status.ERROR;
@@ -231,7 +265,8 @@ public class Couchbase3Client extends DB {
   @Override
   public Status delete(final String table, final String key) {
     try {
-      collection.remove(formatId(table, key));
+      collection.remove(formatId(table, key),
+          removeOptions().durabilityLevel(durabilityLevel));
       return Status.OK;
     } catch (Throwable t) {
       return Status.ERROR;
