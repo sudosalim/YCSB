@@ -60,6 +60,8 @@ public class Couchbase3Client extends DB {
 
   private DurabilityLevel durabilityLevel;
 
+  private TransactionDurabilityLevel transDurabilityLevel;
+
   @Override
   public synchronized void init() {
     if (environment == null) {
@@ -77,6 +79,12 @@ public class Couchbase3Client extends DB {
         System.out.println("someting");
       }
 
+      try {
+        transDurabilityLevel = parsetransactionDurabilityLevel(props.getProperty("couchbase.durability", "0"));
+      } catch (DBException e) {
+        System.out.println("someting");
+      }
+
       environment = ClusterEnvironment
           .builder(hostname, username, password)
           .serviceConfig(ServiceConfig.keyValueServiceConfig(KeyValueServiceConfig.builder().endpoints(kvEndpoints)))
@@ -86,7 +94,7 @@ public class Couchbase3Client extends DB {
       collection = bucket.defaultCollection();
       if ((transactions == null) && transactionEnabled) {
         transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
-            .durabilityLevel(TransactionDurabilityLevel.PERSIST_TO_MAJORITY)
+            .durabilityLevel(transDurabilityLevel)
             .build());
       }
     }
@@ -105,6 +113,24 @@ public class Couchbase3Client extends DB {
       return DurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER;
     case 3:
       return DurabilityLevel.PERSIST_TO_MAJORITY;
+    default :
+      throw new DBException("\"couchbase.durability\" must be between 0 and 3");
+    }
+  }
+
+  private static TransactionDurabilityLevel parsetransactionDurabilityLevel(final String property) throws DBException {
+
+    int value = Integer.parseInt(property);
+
+    switch(value){
+    case 0:
+      return TransactionDurabilityLevel.NONE;
+    case 1:
+      return TransactionDurabilityLevel.MAJORITY;
+    case 2:
+      return TransactionDurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER;
+    case 3:
+      return TransactionDurabilityLevel.PERSIST_TO_MAJORITY;
     default :
       throw new DBException("\"couchbase.durability\" must be between 0 and 3");
     }
