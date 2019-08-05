@@ -17,6 +17,8 @@
 
 package com.yahoo.ycsb.db.couchbase3;
 
+import com.couchbase.client.core.error.KeyNotFoundException;
+
 import com.couchbase.client.core.env.ServiceConfig;
 import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
@@ -175,12 +177,11 @@ public class Couchbase3Client extends DB {
   public Status read(final String table, final String key, final Set<String> fields,
                      final Map<String, ByteIterator> result) {
     try {
-      Optional<GetResult> document = collection.get(formatId(table, key));
-      if (!document.isPresent()) {
-        return Status.NOT_FOUND;
-      }
-      extractFields(document.get().contentAsObject(), fields, result);
+      GetResult document = collection.get(formatId(table, key));
+      extractFields(document.contentAsObject(), fields, result);
       return Status.OK;
+    } catch (KeyNotFoundException e) {
+      return Status.NOT_FOUND;
     } catch (Throwable t) {
       errors.add(t);
       return Status.ERROR;
