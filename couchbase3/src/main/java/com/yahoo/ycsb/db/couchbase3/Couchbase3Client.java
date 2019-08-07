@@ -44,6 +44,12 @@ import com.yahoo.ycsb.StringByteIterator;
 
 import java.util.*;
 
+import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
+
+import com.couchbase.client.core.error.KeyNotFoundException;
+
+
 /**
  * Full YCSB implementation based on the new Couchbase Java SDK 3.x.
  */
@@ -61,6 +67,7 @@ public class Couchbase3Client extends DB {
   private DurabilityLevel durabilityLevel;
 
   private TransactionDurabilityLevel transDurabilityLevel;
+  //private  volatile  HashSet errors = new HashSet<Throwable>();
 
   @Override
   public synchronized void init() {
@@ -76,13 +83,13 @@ public class Couchbase3Client extends DB {
       try {
         durabilityLevel = parseDurabilityLevel(props.getProperty("couchbase.durability", "0"));
       } catch (DBException e) {
-        System.out.println("someting");
+        System.out.println("Failed to parse Durability Level");
       }
 
       try {
         transDurabilityLevel = parsetransactionDurabilityLevel(props.getProperty("couchbase.durability", "0"));
       } catch (DBException e) {
-        System.out.println("someting");
+        System.out.println("Failed to parse TransactionDurability Level");
       }
 
       environment = ClusterEnvironment
@@ -148,12 +155,19 @@ public class Couchbase3Client extends DB {
   @Override
   public Status read(final String table, final String key, final Set<String> fields,
                      final Map<String, ByteIterator> result) {
-    Optional<GetResult> document = collection.get(formatId(table, key));
-    if (!document.isPresent()) {
+    try {
+      GetResult document = collection.get(formatId(table, key));
+      //if (!document.isPresent()) {
+      //  return Status.NOT_FOUND;
+      //}
+      extractFields(document.contentAsObject(), fields, result);
+      return Status.OK;
+    } catch (KeyNotFoundException e) {
+      System.out.println("Key NOT_FOUND");
       return Status.NOT_FOUND;
+    } catch (Throwable e){
+      return Status.ERROR;
     }
-    extractFields(document.get().contentAsObject(), fields, result);
-    return Status.OK;
   }
 
   private static void extractFields(final JsonObject content, Set<String> fields,
@@ -209,11 +223,19 @@ public class Couchbase3Client extends DB {
       for (int i=0; i<transationKeys.length; i++) {
         switch (transationOperations[i]) {
         case "TRREAD":
-          Optional<GetResult> document = collection.get(formatId(table, transationKeys[i]));
-          if (!document.isPresent()) {
+          try {
+            GetResult document = collection.get(formatId(table, transationKeys[i]));
+            //if (!document.isPresent()) {
+            //  return Status.NOT_FOUND;
+            //}
+            System.out.println("calling transaction read");
+            extractFields(document.contentAsObject(), fields, result);
+          } catch (KeyNotFoundException e) {
+            System.out.println("Key NOT_FOUND");
             return Status.NOT_FOUND;
+          } catch (Throwable e){
+            return Status.ERROR;
           }
-          extractFields(document.get().contentAsObject(), fields, result);
           break;
         case "TRUPDATE":
           collection.replace(formatId(table, transationKeys[i]), encode(transationValues[i]));
@@ -263,10 +285,12 @@ public class Couchbase3Client extends DB {
           ctx.commit();
         });
     } catch (TransactionFailed e) {
+      Logger logger = LoggerFactory.getLogger(getClass().getName() + ".bad");
+      System.err.println("Transaction failed " + e.result().transactionId() + " " +
+          e.result().timeTaken().toMillis() + "msecs");
       for (LogDefer err : e.result().log().logs()) {
-        // Optionally, log the result to your own logger
-        System.out.println("Transaction logger:" + err.toString());
-
+        String s = err.toString();
+        logger.warn("Transaction failed:" + s);
       }
       return Status.ERROR;
     }
