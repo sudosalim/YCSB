@@ -79,7 +79,7 @@ public class Couchbase3Client extends DB {
       String username = props.getProperty("couchbase.username", "Administrator");
       String password = props.getProperty("couchbase.password", "password");
       int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
-      int num_atrs = Integer.parseInt(props.getProperty("couchbase.atrs", "1024"));
+      int numATRS = Integer.parseInt(props.getProperty("couchbase.atrs", "1024"));
       transactionEnabled = Boolean.parseBoolean(props.getProperty("couchbase.transactionsEnabled", "false"));
       try {
         durabilityLevel = parseDurabilityLevel(props.getProperty("couchbase.durability", "0"));
@@ -103,7 +103,7 @@ public class Couchbase3Client extends DB {
       if ((transactions == null) && transactionEnabled) {
         transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
             .durabilityLevel(transDurabilityLevel)
-            .numATRs(num_atrs)
+            .numATRs(numATRS)
             .build());
       }
     }
