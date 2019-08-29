@@ -248,7 +248,6 @@ public class MongoDbClient extends DB {
                 .withReadPreference(readPreference)
                 .withWriteConcern(writeConcern);
 
-
         /**  if (transactionEnabled){
 
          // ADD some Code to enable transaction during initiation
@@ -304,7 +303,7 @@ public class MongoDbClient extends DB {
     TransactionOptions txnOptions = TransactionOptions.builder()
         .readPreference(ReadPreference.primary())
         .readConcern(ReadConcern.LOCAL)
-        .writeConcern(WriteConcern.MAJORITY)
+        .writeConcern(writeConcern)
         .build();
 
     TransactionBody txnBody = new TransactionBody<String>() {
@@ -350,7 +349,7 @@ public class MongoDbClient extends DB {
       clientSession.withTransaction(txnBody, txnOptions);
     } catch (RuntimeException e) {
       // some error handling
-      //System.err.println("some exception in TRY block" + e);
+      System.err.println("Transaction Failed : Some exception in transaction TRY block" + e);
     } finally {
       //System.err.println("entered finally block");
       clientSession.close();
