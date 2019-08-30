@@ -302,7 +302,7 @@ public class MongoDbClient extends DB {
 
     TransactionOptions txnOptions = TransactionOptions.builder()
         .readPreference(ReadPreference.primary())
-        .readConcern(ReadConcern.LOCAL)
+        .readConcern(ReadConcern.MAJORITY)
         .writeConcern(writeConcern)
         .build();
 

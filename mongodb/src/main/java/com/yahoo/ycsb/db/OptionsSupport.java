@@ -39,6 +39,9 @@ public final class OptionsSupport {
    * @return The updated URL.
    */
   public static String updateUrl(String url, Properties props) {
+
+    //System.err.println("ENTERED THE UPDATE URL METHOD IN OPTIONSUPPORT and value of url IN the BEGINING" + url);
+
     String result = url;
 
     // max connections.
@@ -61,8 +64,12 @@ public final class OptionsSupport {
     }
 
     // write concern
+    String writeConcernJournal =
+        props.getProperty("mongodb.journal", "false");
+
     String writeConcernType =
         props.getProperty("mongodb.writeConcern", UNAVAILABLE).toLowerCase();
+    //System.err.println("WRITE CONCERN WITHIN OPTIONS SUPPORT" + writeConcernType);
     if (!UNAVAILABLE.equals(writeConcernType)) {
       if ("errors_ignored".equals(writeConcernType)) {
         result = addUrlOption(result, "w", "0");
@@ -70,13 +77,6 @@ public final class OptionsSupport {
         result = addUrlOption(result, "w", "0");
       } else if ("acknowledged".equals(writeConcernType)) {
         result = addUrlOption(result, "w", "1");
-      } else if ("journaled".equals(writeConcernType)) {
-        result = addUrlOption(result, "journal", "true"); // this is the
-        // documented option
-        // name
-        result = addUrlOption(result, "j", "true"); // but keep this until
-        // MongoDB Java driver
-        // supports "journal" option
       } else if ("replica_acknowledged".equals(writeConcernType)) {
         result = addUrlOption(result, "w", "2");
       } else if ("majority".equals(writeConcernType)) {
@@ -88,6 +88,8 @@ public final class OptionsSupport {
             + "journaled | replica_acknowledged | majority ]");
       }
     }
+
+    result = result + "&" + "j=" +  writeConcernJournal;
 
     // read preference
     String readPreferenceType =
@@ -110,6 +112,8 @@ public final class OptionsSupport {
             + "secondary | secondary_preferred | nearest ]");
       }
     }
+
+    System.err.println("ENTERED THE UPDATE URL METHOD IN OPTIONSUPPORT at the END" + result);
 
     return result;
   }
