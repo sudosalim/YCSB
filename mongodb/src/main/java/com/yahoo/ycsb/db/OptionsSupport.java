@@ -63,9 +63,9 @@ public final class OptionsSupport {
               threadsAllowedToBlockForConnectionMultiplier);
     }
 
-    // write concern
+    // write concern journal
     String writeConcernJournal =
-        props.getProperty("mongodb.journal", "false");
+        props.getProperty("mongodb.journal", UNAVAILABLE);
 
     String writeConcernType =
         props.getProperty("mongodb.writeConcern", UNAVAILABLE).toLowerCase();
@@ -89,7 +89,9 @@ public final class OptionsSupport {
       }
     }
 
-    result = result + "&" + "j=" +  writeConcernJournal;
+    if (!UNAVAILABLE.equals(writeConcernJournal)) {
+      result = result + "&" + "journal=" +  writeConcernJournal;
+    }
 
     // read preference
     String readPreferenceType =
