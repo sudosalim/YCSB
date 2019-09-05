@@ -266,11 +266,11 @@ public class Couchbase3Client extends DB {
             final String formattedDocId = formatId(table, transationKeys[i]);
             switch (transationOperations[i]) {
             case "TRREAD":
-              TransactionJsonDocument doc = ctx.getOrError(collection, formattedDocId);
+              TransactionGetResult doc = ctx.get(collection, formattedDocId);
               extractFields(doc.contentAs(JsonObject.class), fields, result);
               break;
             case "TRUPDATE":
-              TransactionJsonDocument docToReplace = ctx.getOrError(collection, formattedDocId);
+              TransactionGetResult docToReplace = ctx.get(collection, formattedDocId);
               JsonObject content = docToReplace.contentAs(JsonObject.class);
               for (Map.Entry<String, String> entry: encode(transationValues[i]).entrySet()){
                 content.put(entry.getKey(), entry.getValue());
