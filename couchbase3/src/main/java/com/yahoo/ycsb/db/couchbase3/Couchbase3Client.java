@@ -187,7 +187,7 @@ public class Couchbase3Client extends DB {
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
       collection.replace(formatId(table, key), encode(values),
-          replaceOptions().durabilityLevel(durabilityLevel));
+          replaceOptions().durability(durabilityLevel));
       return Status.OK;
     } catch (Throwable t) {
       return Status.ERROR;
@@ -199,7 +199,7 @@ public class Couchbase3Client extends DB {
     try {
 
       collection.insert(formatId(table, key), encode(values),
-          insertOptions().durabilityLevel(durabilityLevel));
+          insertOptions().durability(durabilityLevel));
       return Status.OK;
     } catch (Throwable t) {
       return Status.ERROR;
@@ -318,7 +318,7 @@ public class Couchbase3Client extends DB {
   public Status delete(final String table, final String key) {
     try {
       collection.remove(formatId(table, key),
-          removeOptions().durabilityLevel(durabilityLevel));
+          removeOptions().durability(durabilityLevel));
       return Status.OK;
     } catch (Throwable t) {
       return Status.ERROR;
