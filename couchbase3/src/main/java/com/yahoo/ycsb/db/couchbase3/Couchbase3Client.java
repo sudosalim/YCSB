@@ -18,6 +18,7 @@
 package com.yahoo.ycsb.db.couchbase3;
 
 import com.couchbase.client.core.error.KeyNotFoundException;
+import com.couchbase.client.core.error.RequestCanceledException;
 
 import com.couchbase.client.core.env.ServiceConfig;
 import com.couchbase.client.core.env.IoConfig;
@@ -34,6 +35,7 @@ import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
 import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
 import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
+import com.couchbase.client.core.retry.FailFastRetryStrategy;
 
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.ReplicateTo;
@@ -68,10 +70,15 @@ public class Couchbase3Client extends DB {
   private volatile ReplicateTo replicateTo;
   private volatile boolean useDurabilityLevels;
   private  volatile  HashSet errors = new HashSet<Throwable>();
+  private volatile boolean withRetry;
+  private volatile int retryDelay;
 
   @Override
   public void init() throws DBException {
     Properties props = getProperties();
+
+    withRetry = Boolean.parseBoolean(props.getProperty("couchbase.withRetry", "false"));
+    retryDelay = Integer.parseInt(props.getProperty("couchbase.retryDelay", "1"));
     String bucketName = props.getProperty("couchbase.bucket", "ycsb");
     // durability options
     String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
@@ -203,9 +210,26 @@ public class Couchbase3Client extends DB {
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
       if (useDurabilityLevels) {
-        collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
+        if (withRetry) {
+          while (true) {
+            try {
+              collection.replace(formatId(table, key), encode(values), replaceOptions()
+                  .retryStrategy(FailFastRetryStrategy.INSTANCE)
+                  .durability(durabilityLevel));
+              break;
+            } catch (RequestCanceledException r) {
+              Thread.sleep(retryDelay);
+            }
+          }
+        } else {
+          collection.replace(formatId(table, key), encode(values), replaceOptions()
+              .retryStrategy(FailFastRetryStrategy.INSTANCE)
+              .durability(durabilityLevel));
+        }
       } else {
-        collection.replace(formatId(table, key), encode(values), replaceOptions().durability(persistTo, replicateTo));
+        collection.replace(formatId(table, key), encode(values), replaceOptions()
+            .retryStrategy(FailFastRetryStrategy.INSTANCE)
+            .durability(persistTo, replicateTo));
       }
       return Status.OK;
     } catch (Throwable t) {
@@ -218,9 +242,26 @@ public class Couchbase3Client extends DB {
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
       if (useDurabilityLevels) {
-        collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
+        if (withRetry) {
+          while (true) {
+            try {
+              collection.insert(formatId(table, key), encode(values), insertOptions()
+                  .retryStrategy(FailFastRetryStrategy.INSTANCE)
+                  .durability(persistTo, replicateTo));
+              break;
+            } catch (RequestCanceledException r) {
+              Thread.sleep(retryDelay);
+            }
+          }
+        } else {
+          collection.insert(formatId(table, key), encode(values), insertOptions()
+              .retryStrategy(FailFastRetryStrategy.INSTANCE)
+              .durability(persistTo, replicateTo));
+        }
       } else {
-        collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
+        collection.insert(formatId(table, key), encode(values), insertOptions()
+            .retryStrategy(FailFastRetryStrategy.INSTANCE)
+            .durability(persistTo, replicateTo));
       }
 
       return Status.OK;
@@ -248,9 +289,26 @@ public class Couchbase3Client extends DB {
   public Status delete(final String table, final String key) {
     try {
       if (useDurabilityLevels) {
-        collection.remove(formatId(table, key), removeOptions().durability(durabilityLevel));
+        if (withRetry) {
+          while (true) {
+            try {
+              collection.remove(formatId(table, key), removeOptions()
+                  .retryStrategy(FailFastRetryStrategy.INSTANCE)
+                  .durability(persistTo, replicateTo));
+              break;
+            } catch (RequestCanceledException r) {
+              Thread.sleep(retryDelay);
+            }
+          }
+        } else {
+          collection.remove(formatId(table, key), removeOptions()
+              .retryStrategy(FailFastRetryStrategy.INSTANCE)
+              .durability(persistTo, replicateTo));
+        }
       } else {
-        collection.remove(formatId(table, key), removeOptions().durability(persistTo, replicateTo));
+        collection.remove(formatId(table, key), removeOptions()
+            .retryStrategy(FailFastRetryStrategy.INSTANCE)
+            .durability(persistTo, replicateTo));
       }
 
       return Status.OK;
