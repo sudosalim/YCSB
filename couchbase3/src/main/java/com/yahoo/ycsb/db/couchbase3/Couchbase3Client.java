@@ -18,7 +18,7 @@
 package com.yahoo.ycsb.db.couchbase3;
 
 import com.couchbase.client.core.error.KeyNotFoundException;
-import com.couchbase.client.core.error.RequestCanceledException;
+//import com.couchbase.client.core.error.RequestCanceledException;
 
 import com.couchbase.client.core.env.ServiceConfig;
 import com.couchbase.client.core.env.IoConfig;
@@ -36,6 +36,8 @@ import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
 import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
 import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
 import com.couchbase.client.core.retry.FailFastRetryStrategy;
+import com.couchbase.client.core.retry.BestEffortRetryStrategy;
+import com.couchbase.client.core.retry.RetryStrategy;
 
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.ReplicateTo;
@@ -69,16 +71,24 @@ public class Couchbase3Client extends DB {
   private volatile PersistTo persistTo;
   private volatile ReplicateTo replicateTo;
   private volatile boolean useDurabilityLevels;
-  private  volatile  HashSet errors = new HashSet<Throwable>();
-  private volatile boolean withRetry;
-  private volatile int retryDelay;
+  private volatile  HashSet errors = new HashSet<Throwable>();
+  private static int retryLower;
+  private static int retryUpper;
+  private static int retryFactor;
+  private RetryStrategy retryStratgey;
+
 
   @Override
   public void init() throws DBException {
     Properties props = getProperties();
 
-    withRetry = Boolean.parseBoolean(props.getProperty("couchbase.withRetry", "false"));
-    retryDelay = Integer.parseInt(props.getProperty("couchbase.retryDelay", "1"));
+    String retryStrategyType = props.getProperty("couchbase.retryStrategy", "default");
+
+    retryLower = Integer.parseInt(props.getProperty("couchbase.retryLower", "1"));
+    retryUpper = Integer.parseInt(props.getProperty("couchbase.retryUpper", "500"));
+    retryFactor = Integer.parseInt(props.getProperty("couchbase.retryFactor", "2"));
+    retryStratgey = parseRetryStrategy(retryStrategyType);
+
     String bucketName = props.getProperty("couchbase.bucket", "ycsb");
     // durability options
     String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
@@ -114,6 +124,20 @@ public class Couchbase3Client extends DB {
       }
     }
     OPEN_CLIENTS.incrementAndGet();
+  }
+
+  private static RetryStrategy parseRetryStrategy(final String retryStrategy) throws DBException {
+    switch (retryStrategy) {
+    case "default":
+      return BestEffortRetryStrategy.INSTANCE;
+    case "failFast":
+      return FailFastRetryStrategy.INSTANCE;
+    case "custom":
+      return BestEffortRetryStrategy
+            .withExponentialBackoff(Duration.ofMillis(retryLower), Duration.ofMillis(retryUpper), retryFactor);
+    default:
+      throw new DBException("\"couchbase.replicateTo\" must be between 0 and 3");
+    }
   }
 
   private static ReplicateTo parseReplicateTo(final String property) throws DBException {
@@ -210,25 +234,12 @@ public class Couchbase3Client extends DB {
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
       if (useDurabilityLevels) {
-        if (withRetry) {
-          while (true) {
-            try {
-              collection.replace(formatId(table, key), encode(values), replaceOptions()
-                  .retryStrategy(FailFastRetryStrategy.INSTANCE)
-                  .durability(durabilityLevel));
-              break;
-            } catch (RequestCanceledException r) {
-              Thread.sleep(retryDelay);
-            }
-          }
-        } else {
-          collection.replace(formatId(table, key), encode(values), replaceOptions()
-              .retryStrategy(FailFastRetryStrategy.INSTANCE)
-              .durability(durabilityLevel));
-        }
+        collection.replace(formatId(table, key), encode(values), replaceOptions()
+            .retryStrategy(retryStratgey)
+            .durability(durabilityLevel));
       } else {
         collection.replace(formatId(table, key), encode(values), replaceOptions()
-            .retryStrategy(FailFastRetryStrategy.INSTANCE)
+            .retryStrategy(retryStratgey)
             .durability(persistTo, replicateTo));
       }
       return Status.OK;
@@ -242,25 +253,12 @@ public class Couchbase3Client extends DB {
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
       if (useDurabilityLevels) {
-        if (withRetry) {
-          while (true) {
-            try {
-              collection.insert(formatId(table, key), encode(values), insertOptions()
-                  .retryStrategy(FailFastRetryStrategy.INSTANCE)
-                  .durability(persistTo, replicateTo));
-              break;
-            } catch (RequestCanceledException r) {
-              Thread.sleep(retryDelay);
-            }
-          }
-        } else {
-          collection.insert(formatId(table, key), encode(values), insertOptions()
-              .retryStrategy(FailFastRetryStrategy.INSTANCE)
-              .durability(persistTo, replicateTo));
-        }
+        collection.insert(formatId(table, key), encode(values), insertOptions()
+            .retryStrategy(retryStratgey)
+            .durability(persistTo, replicateTo));
       } else {
         collection.insert(formatId(table, key), encode(values), insertOptions()
-            .retryStrategy(FailFastRetryStrategy.INSTANCE)
+            .retryStrategy(retryStratgey)
             .durability(persistTo, replicateTo));
       }
 
@@ -289,25 +287,12 @@ public class Couchbase3Client extends DB {
   public Status delete(final String table, final String key) {
     try {
       if (useDurabilityLevels) {
-        if (withRetry) {
-          while (true) {
-            try {
-              collection.remove(formatId(table, key), removeOptions()
-                  .retryStrategy(FailFastRetryStrategy.INSTANCE)
-                  .durability(persistTo, replicateTo));
-              break;
-            } catch (RequestCanceledException r) {
-              Thread.sleep(retryDelay);
-            }
-          }
-        } else {
-          collection.remove(formatId(table, key), removeOptions()
-              .retryStrategy(FailFastRetryStrategy.INSTANCE)
-              .durability(persistTo, replicateTo));
-        }
+        collection.remove(formatId(table, key), removeOptions()
+            .retryStrategy(retryStratgey)
+            .durability(persistTo, replicateTo));
       } else {
         collection.remove(formatId(table, key), removeOptions()
-            .retryStrategy(FailFastRetryStrategy.INSTANCE)
+            .retryStrategy(retryStratgey)
             .durability(persistTo, replicateTo));
       }
 
