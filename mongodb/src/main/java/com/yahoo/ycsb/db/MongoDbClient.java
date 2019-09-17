@@ -246,6 +246,7 @@ public class MongoDbClient extends DB {
         database =
             mongoClient.getDatabase(databaseName)
                 .withReadPreference(readPreference)
+                .withReadConcern(ReadConcern.MAJORITY)
                 .withWriteConcern(writeConcern);
 
         /**  if (transactionEnabled){
