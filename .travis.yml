@@ -20,10 +20,8 @@
 language: java
 
 jdk:
-  - oraclejdk8
   - oraclejdk9
-  - oraclejdk10
-  - oraclejdk11
+  - oraclejdk8
 
 addons:
   hosts:
@@ -37,7 +35,7 @@ script: mvn test -q
 
 # Services to start for tests.
 services:
-  - ignite
+
   - mongodb
 # temporarily disable riak. failing, docs offline.
 #  - riak
