@@ -58,19 +58,19 @@ public class OneMeasurementHdrHistogram extends OneMeasurement {
   /**
    * The name of the property for determining if we should print out the buckets.
    */
-  public static final String VERBOSE_PROPERTY = "measurement.histogram.verbose";
+  //public static final String VERBOSE_PROPERTY = "measurement.histogram.verbose";
 
   /**
    * Whether or not to emit the histogram buckets.
    */
-  private final boolean verbose;
+  //private final boolean verbose;
   
   private final List<Double> percentiles;
 
   public OneMeasurementHdrHistogram(String name, Properties props) {
     super(name);
     percentiles = getPercentileValues(props.getProperty(PERCENTILES_PROPERTY, PERCENTILES_PROPERTY_DEFAULT));
-    verbose = Boolean.valueOf(props.getProperty(VERBOSE_PROPERTY, String.valueOf(false)));
+    //verbose = Boolean.valueOf(props.getProperty(VERBOSE_PROPERTY, String.valueOf(false)));
     boolean shouldLog = Boolean.parseBoolean(props.getProperty("hdrhistogram.fileoutput", "false"));
     if (!shouldLog) {
       log = null;
@@ -126,18 +126,18 @@ public class OneMeasurementHdrHistogram extends OneMeasurement {
     exportStatusCounts(exporter);
 
     // also export totalHistogram
-    if (verbose) {
-      for (HistogramIterationValue v : totalHistogram.recordedValues()) {
-        int value;
-        if (v.getValueIteratedTo() > (long)Integer.MAX_VALUE) {
-          value = Integer.MAX_VALUE;
-        } else {
-          value = (int)v.getValueIteratedTo();
-        }
-  
-        exporter.write(getName(), Integer.toString(value), (double)v.getCountAtValueIteratedTo());
+    //if (verbose) {
+    for (HistogramIterationValue v : totalHistogram.recordedValues()) {
+      int value;
+      if (v.getValueIteratedTo() > (long)Integer.MAX_VALUE) {
+        value = Integer.MAX_VALUE;
+      } else {
+        value = (int)v.getValueIteratedTo();
       }
+  
+      exporter.write(getName(), Integer.toString(value), (double)v.getCountAtValueIteratedTo());
     }
+    //}
   }
 
   /**

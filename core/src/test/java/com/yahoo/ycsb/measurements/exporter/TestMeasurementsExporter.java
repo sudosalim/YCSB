@@ -18,7 +18,7 @@ package com.yahoo.ycsb.measurements.exporter;
 
 import com.yahoo.ycsb.generator.ZipfianGenerator;
 import com.yahoo.ycsb.measurements.Measurements;
-import com.yahoo.ycsb.measurements.OneMeasurementHistogram;
+//import com.yahoo.ycsb.measurements.OneMeasurementHistogram;
 
 import org.codehaus.jackson.JsonNode;
 import org.codehaus.jackson.map.ObjectMapper;
@@ -36,7 +36,7 @@ public class TestMeasurementsExporter {
     public void testJSONArrayMeasurementsExporter() throws IOException {
         Properties props = new Properties();
         props.put(Measurements.MEASUREMENT_TYPE_PROPERTY, "histogram");
-        props.put(OneMeasurementHistogram.VERBOSE_PROPERTY, "true");
+        //props.put(OneMeasurementHistogram.VERBOSE_PROPERTY, "true");
         Measurements mm = new Measurements(props);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         JSONArrayMeasurementsExporter export = new JSONArrayMeasurementsExporter(out);
