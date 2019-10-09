@@ -192,35 +192,27 @@ if $DISTRIBUTION; then
 # Source checkout
 else
   # Check for some basic libraries to see if the source has been built.
-  if ! ls "$YCSB_HOME"/core/target/*.jar 1> /dev/null 2>&1 || \
-     ! ls "$YCSB_HOME"/"$BINDING_DIR"/target/*.jar 1>/dev/null 2>&1; then
-    # Call mvn to build source checkout.
-    if [ "$BINDING_NAME" = "basic" ] ; then
-      MVN_PROJECT=core
-    else
-      MVN_PROJECT="$BINDING_DIR"-binding
-    fi
+  for f in "$YCSB_HOME"/"$BINDING_DIR"/target/*.jar ; do
 
-    echo "[WARN] YCSB libraries not found.  Attempting to build..."
-    if mvn -Psource-run -pl com.yahoo.ycsb:"$MVN_PROJECT" -am package -DskipTests; then
-      echo "[ERROR] Error trying to build project. Exiting."
-      exit 1;
-    fi
-  fi
+   # Call mvn to build source checkout.
+   if [ ! -e "$f" ] ; then
+     if [ "$BINDING_NAME" = "basic" ] ; then
+       MVN_PROJECT=core
+     else
+       MVN_PROJECT="$BINDING_DIR"-binding
+     fi
 
-  # Core libraries
-  for f in "$YCSB_HOME"/core/target/*.jar ; do
-    if [ -r "$f" ] ; then
-      CLASSPATH="$CLASSPATH:$f"
-    fi
+     echo "[WARN] YCSB libraries not found.  Attempting to build..."
+     mvn -pl com.yahoo.ycsb:"$MVN_PROJECT" -am package -DskipTests
+     if [ "$?" -ne 0 ] ; then
+       echo "[ERROR] Error trying to build project. Exiting."
+       exit 1;
+     fi
+   fi
+
+
   done
 
-  # Core dependency libraries
-  for f in "$YCSB_HOME"/core/target/dependency/*.jar ; do
-    if [ -r "$f" ] ; then
-      CLASSPATH="$CLASSPATH:$f"
-    fi
-  done
 
   # Database conf (need to find because location is not consistent)
   CLASSPATH_CONF=$(find "$YCSB_HOME"/$BINDING_DIR -name "conf" | while IFS="" read -r file; do echo ":$file"; done)
