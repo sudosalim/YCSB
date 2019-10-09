@@ -40,8 +40,6 @@ LICENSE file.
   <properties>
     <!-- See the test-on-jdk9 profile below. Default to 'jdk9 works' -->
     <skipJDK9Tests>false</skipJDK9Tests>
-    <skipJDK10Tests>false</skipJDK10Tests>
-    <skipJDK11Tests>false</skipJDK11Tests>
   </properties>
 
   <build>
