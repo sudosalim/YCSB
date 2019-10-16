@@ -198,7 +198,7 @@ public class Couchbase2Client extends DB {
 
           EventLoopGroup group = epoll ? new EpollEventLoopGroup(poolSize, threadFactory, factory)
               : new NioEventLoopGroup(poolSize, threadFactory, SelectorProvider.provider(), factory);
-          builder.ioPool(group, new IoPoolShutdownHook(group));
+          //builder.ioPool(group, new IoPoolShutdownHook(group));
 
           env = builder.build();
           logParams();
