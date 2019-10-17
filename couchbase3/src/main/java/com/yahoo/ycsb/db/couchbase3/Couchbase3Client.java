@@ -114,7 +114,6 @@ public class Couchbase3Client extends DB {
 
       }
     }
-    OPEN_CLIENTS.incrementAndGet();
   }
 
   private static ReplicateTo parseReplicateTo(final String property) throws DBException {
