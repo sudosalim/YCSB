@@ -59,7 +59,7 @@ public class Couchbase3Client extends DB {
 
   private static volatile ClusterEnvironment environment;
 
-  private ClusterOptions clusterOptions;
+  private static volatile ClusterOptions clusterOptions;
 
   private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
 
@@ -89,15 +89,17 @@ public class Couchbase3Client extends DB {
       useDurabilityLevels = true;
     }
 
+    String hostname = props.getProperty("couchbase.host", "127.0.0.1");
+    String username = props.getProperty("couchbase.username", "Administrator");
+    String password = props.getProperty("couchbase.password", "password");
+    boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
+
+    long kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "60000"));
+    int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
+
     synchronized (INIT_COORDINATOR) {
       if (environment == null) {
-        String hostname = props.getProperty("couchbase.host", "127.0.0.1");
-        String username = props.getProperty("couchbase.username", "Administrator");
-        String password = props.getProperty("couchbase.password", "password");
-        boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
 
-        long kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "60000"));
-        int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
         environment = ClusterEnvironment
             .builder()
             .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
@@ -108,12 +110,13 @@ public class Couchbase3Client extends DB {
         clusterOptions = ClusterOptions.clusterOptions(username, password);
         clusterOptions.environment(environment);
 
-        cluster = Cluster.connect(hostname, clusterOptions);
-        bucket = cluster.bucket(bucketName);
-        collection = bucket.defaultCollection();
-
       }
     }
+
+    cluster = Cluster.connect(hostname, clusterOptions);
+    bucket = cluster.bucket(bucketName);
+    collection = bucket.defaultCollection();
+
   }
 
   private static ReplicateTo parseReplicateTo(final String property) throws DBException {
