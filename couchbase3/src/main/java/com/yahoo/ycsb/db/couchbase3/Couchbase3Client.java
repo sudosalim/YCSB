@@ -59,14 +59,15 @@ public class Couchbase3Client extends DB {
 
   private static volatile ClusterEnvironment environment;
 
-  private static volatile ClusterOptions clusterOptions;
+  private ClusterOptions clusterOptions;
 
   private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
 
   private static final Object INIT_COORDINATOR = new Object();
 
-  private static volatile Cluster cluster;
-  private static volatile Collection collection;
+  private Cluster cluster;
+  private Collection collection;
+  private Bucket bucket;
   private volatile DurabilityLevel durabilityLevel;
   private volatile PersistTo persistTo;
   private volatile ReplicateTo replicateTo;
@@ -108,7 +109,7 @@ public class Couchbase3Client extends DB {
         clusterOptions.environment(environment);
 
         cluster = Cluster.connect(hostname, clusterOptions);
-        Bucket bucket = cluster.bucket(bucketName);
+        bucket = cluster.bucket(bucketName);
         collection = bucket.defaultCollection();
 
       }
