@@ -59,7 +59,7 @@ public class Couchbase3Client extends DB {
 
   private static volatile ClusterEnvironment environment;
 
-  private static volatile ClusterOptions clusterOptions;
+  private ClusterOptions clusterOptions;
 
   private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
 
@@ -107,11 +107,11 @@ public class Couchbase3Client extends DB {
             .serviceConfig(ServiceConfig.keyValueServiceConfig(KeyValueServiceConfig.builder().endpoints(kvEndpoints)))
             .build();
 
-        clusterOptions = ClusterOptions.clusterOptions(username, password);
-        clusterOptions.environment(environment);
-
       }
     }
+    
+    clusterOptions = ClusterOptions.clusterOptions(username, password);
+    clusterOptions.environment(environment);
 
     cluster = Cluster.connect(hostname, clusterOptions);
     bucket = cluster.bucket(bucketName);
