@@ -18,7 +18,7 @@
 package com.yahoo.ycsb.db.couchbase2;
 
 import com.couchbase.client.core.env.DefaultCoreEnvironment;
-import com.couchbase.client.core.env.resources.IoPoolShutdownHook;
+//import com.couchbase.client.core.env.resources.IoPoolShutdownHook;
 import com.couchbase.client.core.logging.CouchbaseLogger;
 import com.couchbase.client.core.logging.CouchbaseLoggerFactory;
 import com.couchbase.client.core.metrics.DefaultLatencyMetricsCollectorConfig;
@@ -30,11 +30,11 @@ import com.couchbase.client.deps.com.fasterxml.jackson.core.JsonGenerator;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.JsonNode;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.node.ObjectNode;
 import com.couchbase.client.deps.io.netty.channel.DefaultSelectStrategyFactory;
-import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
+//import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 import com.couchbase.client.deps.io.netty.channel.SelectStrategy;
 import com.couchbase.client.deps.io.netty.channel.SelectStrategyFactory;
-import com.couchbase.client.deps.io.netty.channel.epoll.EpollEventLoopGroup;
-import com.couchbase.client.deps.io.netty.channel.nio.NioEventLoopGroup;
+//import com.couchbase.client.deps.io.netty.channel.epoll.EpollEventLoopGroup;
+//import com.couchbase.client.deps.io.netty.channel.nio.NioEventLoopGroup;
 import com.couchbase.client.deps.io.netty.util.IntSupplier;
 import com.couchbase.client.deps.io.netty.util.concurrent.DefaultThreadFactory;
 import com.couchbase.client.java.Bucket;
@@ -64,7 +64,7 @@ import rx.functions.Func1;
 
 import java.io.StringWriter;
 import java.io.Writer;
-import java.nio.channels.spi.SelectorProvider;
+//import java.nio.channels.spi.SelectorProvider;
 import java.util.*;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
@@ -113,9 +113,9 @@ public class Couchbase2Client extends DB {
 
   private static volatile CouchbaseEnvironment env = null;
 
-  private Cluster cluster;
-  private Bucket bucket;
-  private String bucketName;
+  private static volatile Cluster cluster;
+  private static volatile Bucket bucket;
+  private static volatile String bucketName;
   private boolean upsert;
   private PersistTo persistTo;
   private ReplicateTo replicateTo;
@@ -180,8 +180,8 @@ public class Couchbase2Client extends DB {
               .queryEndpoints(queryEndpoints)
               .callbacksOnIoPool(true)
               .mutationTokensEnabled(true)
-              .runtimeMetricsCollectorConfig(runtimeConfig)
-              .networkLatencyMetricsCollectorConfig(latencyConfig)
+              //.runtimeMetricsCollectorConfig(runtimeConfig)
+              //.networkLatencyMetricsCollectorConfig(latencyConfig)
               .socketConnectTimeout(10000) // 10 secs socket connect timeout
               .connectTimeout(30000) // 30 secs overall bucket open timeout
               .kvTimeout(10000) // 10 instead of 2.5s for KV ops
@@ -196,9 +196,9 @@ public class Couchbase2Client extends DB {
           );
           ThreadFactory threadFactory = new DefaultThreadFactory("cb-io", true);
 
-          EventLoopGroup group = epoll ? new EpollEventLoopGroup(poolSize, threadFactory, factory)
-              : new NioEventLoopGroup(poolSize, threadFactory, SelectorProvider.provider(), factory);
-          builder.ioPool(group, new IoPoolShutdownHook(group));
+          //EventLoopGroup group = epoll ? new EpollEventLoopGroup(poolSize, threadFactory, factory)
+          //    : new NioEventLoopGroup(poolSize, threadFactory, SelectorProvider.provider(), factory);
+          //builder.ioPool(group, new IoPoolShutdownHook(group));
 
           env = builder.build();
           logParams();
