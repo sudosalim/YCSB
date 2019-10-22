@@ -68,6 +68,7 @@ import java.io.Writer;
 import java.util.*;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 
 /**
@@ -109,6 +110,7 @@ public class Couchbase2Client extends DB {
 
   private static final String SEPARATOR = ":";
   private static final CouchbaseLogger LOGGER = CouchbaseLoggerFactory.getInstance(Couchbase2Client.class);
+  private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
   private static final Object INIT_COORDINATOR = new Object();
 
   private static volatile CouchbaseEnvironment env = null;
@@ -116,23 +118,23 @@ public class Couchbase2Client extends DB {
   private static volatile Cluster cluster;
   private static volatile Bucket bucket;
   private static volatile String bucketName;
-  private boolean upsert;
-  private PersistTo persistTo;
-  private ReplicateTo replicateTo;
-  private boolean syncMutResponse;
-  private boolean epoll;
-  private long kvTimeout;
-  private boolean adhoc;
-  private boolean kv;
-  private int maxParallelism;
-  private String host;
-  private int kvEndpoints;
-  private int queryEndpoints;
-  private int boost;
-  private int networkMetricsInterval;
-  private int runtimeMetricsInterval;
-  private String scanAllQuery;
-  private int documentExpiry;
+  private static volatile boolean upsert;
+  private static volatile PersistTo persistTo;
+  private static volatile ReplicateTo replicateTo;
+  private static volatile boolean syncMutResponse;
+  private static volatile boolean epoll;
+  private static volatile long kvTimeout;
+  private static volatile boolean adhoc;
+  private static volatile boolean kv;
+  private static volatile int maxParallelism;
+  private static volatile String host;
+  private static volatile int kvEndpoints;
+  private static volatile int queryEndpoints;
+  private static volatile int boost;
+  private static volatile int networkMetricsInterval;
+  private static volatile int runtimeMetricsInterval;
+  private static volatile String scanAllQuery;
+  private static volatile int documentExpiry;
   
   @Override
   public void init() throws DBException {
@@ -201,13 +203,17 @@ public class Couchbase2Client extends DB {
           //builder.ioPool(group, new IoPoolShutdownHook(group));
 
           env = builder.build();
+
+          cluster = CouchbaseCluster.create(env, host);
+          bucket = cluster.openBucket(bucketName, bucketPassword);
+          kvTimeout = env.kvTimeout();
+
           logParams();
+
         }
       }
 
-      cluster = CouchbaseCluster.create(env, host);
-      bucket = cluster.openBucket(bucketName, bucketPassword);
-      kvTimeout = env.kvTimeout();
+
     } catch (Exception ex) {
       throw new DBException("Could not connect to Couchbase Bucket.", ex);
     }
@@ -215,6 +221,7 @@ public class Couchbase2Client extends DB {
     if (!kv && !syncMutResponse) {
       throw new DBException("Not waiting for N1QL responses on mutations not yet implemented.");
     }
+    OPEN_CLIENTS.incrementAndGet();
   }
 
   /**
