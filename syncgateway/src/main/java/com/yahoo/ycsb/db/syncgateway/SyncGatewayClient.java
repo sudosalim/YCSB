@@ -108,6 +108,8 @@ public class SyncGatewayClient extends DB {
 
   private static final int SG_READ_MODE_DOCUMENTS = 0;
   private static final int SG_READ_MODE_DOCUMENTS_WITH_REV = 1;
+  private static final String SG_REPLICATOR2 = "syncgateway.replicator2";
+
   private static final int SG_READ_MODE_CHANGES = 2;
   private static final int SG_READ_MODE_ALLCHANGES = 3;
   private static final int SG_READ_MODE_200CHANGES = 4;
@@ -126,6 +128,7 @@ public class SyncGatewayClient extends DB {
   private boolean roudTripWrite;
   private int loadMode;
   private int readMode;
+  private boolean isSgReplicator2;
   private int totalUsers;
   private int totalChannels;
   private int channelsPerUser;
@@ -200,6 +203,7 @@ public class SyncGatewayClient extends DB {
     totalUsers = Integer.valueOf(props.getProperty(SG_TOTAL_USERS, "1000"));
     totalChannels = Integer.valueOf(props.getProperty(SG_TOTAL_CHANNELS, "100"));
     roudTripWrite = props.getProperty(SG_ROUND_TRIP_WRITE, "false").equals("true");
+    isSgReplicator2 = props.getProperty(SG_REPLICATOR2, "false").equals("true");
     initUsers = props.getProperty(SG_INIT_USERS, "true").equals("true");
     channelsPerUser = Integer.valueOf(props.getProperty(SG_CHANNELS_PER_USER, "10"));
     channelsPerDocument = Integer.valueOf(props.getProperty(SG_CHANNELS_PER_DOCUMENT, "1"));
@@ -309,9 +313,21 @@ public class SyncGatewayClient extends DB {
   private Status readSingle(String key, HashMap<String, ByteIterator> result) {
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
-    if (readMode == SG_READ_MODE_DOCUMENTS_WITH_REV) {
+    if (readMode == SG_READ_MODE_DOCUMENTS_WITH_REV && !isSgReplicator2) {
       fullUrl += "?rev=" + getRevision(key);
+
     }
+
+    if(isSgReplicator2 && readMode == SG_READ_MODE_DOCUMENTS_WITH_REV){
+      fullUrl += "?rev=" + getRevision(key);
+      fullUrl += "&replicator2=true";
+
+    }
+
+    if(isSgReplicator2 && readMode != SG_READ_MODE_DOCUMENTS_WITH_REV){
+      fullUrl += "?replicator2=true";
+    }
+
 
     int responseCode;
     try {
@@ -454,6 +470,10 @@ public class SyncGatewayClient extends DB {
 
     //System.out.println("printing the body " + requestBody);
     fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
+
+    if(isSgReplicator2){
+      fullUrl += "?replicator2=true";
+    }
 
     String currentSequence = getLocalSequenceGlobal();
     String lastSequence = getLastSequenceGlobal();
