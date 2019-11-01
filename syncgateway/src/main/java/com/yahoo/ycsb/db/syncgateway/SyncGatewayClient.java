@@ -76,6 +76,7 @@ public class SyncGatewayClient extends DB {
   private static final String SG_PORT_ADMIN = "syncgateway.port.admin";
   private static final String SG_PORT_PUBLIC = "syncgateway.port.public";
   private static final String SG_AUTH = "syncgateway.auth";
+  private static final String SG_BASIC_AUTH = "syncgateway.basic_auth";
   private static final String SG_STAR_CHANNEL = "syncgateway.starchannel";
   private static final String SG_LOAD_MODE = "syncgateway.loadmode";
   private static final String SG_READ_MODE = "syncgateway.readmode";
@@ -125,6 +126,7 @@ public class SyncGatewayClient extends DB {
   private String portAdmin;
   private String portPublic;
   private boolean useAuth;
+  private boolean basicAuth;
   private boolean roudTripWrite;
   private int loadMode;
   private int readMode;
@@ -180,6 +182,7 @@ public class SyncGatewayClient extends DB {
     portAdmin = props.getProperty(SG_PORT_ADMIN, "4985");
     portPublic = props.getProperty(SG_PORT_PUBLIC, "4984");
     useAuth = props.getProperty(SG_AUTH, "false").equals("true");
+    basicAuth = props.getProperty(SG_BASIC_AUTH, "false").equals("true");
     starChannel = props.getProperty(SG_STAR_CHANNEL, "false").equals("true");
     loadMode = (props.getProperty(SG_LOAD_MODE, "documents").equals("users")) ?
         SG_LOAD_MODE_USERS : SG_LOAD_MODE_DOCUMENTS;
@@ -312,16 +315,37 @@ public class SyncGatewayClient extends DB {
 
   private Status readSingle(String key, HashMap<String, ByteIterator> result) {
     String port = (useAuth) ? portPublic : portAdmin;
-    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
-    if (readMode == SG_READ_MODE_DOCUMENTS_WITH_REV && !isSgReplicator2) {
-      fullUrl += "?rev=" + getRevision(key);
+
+    String fullUrl;
+
+    if (basicAuth) {
+      int id = sgUserInsertCounter.nextValue();
+      String userName = DEFAULT_USERNAME_PREFIX + id;
+      fullUrl = "http://" + userName + ":" + DEFAULT_USER_PASSWORD + "@" + getRandomHost()
+          + ":" + port + documentEndpoint + key;
+    } else {
+      fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
 
     }
 
-    if(isSgReplicator2 && readMode == SG_READ_MODE_DOCUMENTS_WITH_REV){
-      fullUrl += "?rev=" + getRevision(key);
-      fullUrl += "&replicator2=true";
+    if (readMode == SG_READ_MODE_DOCUMENTS_WITH_REV && !isSgReplicator2) {
+      //System.err.println("Get");
 
+      String revisionID = getRevision(key);
+      if (revisionID == null){
+        System.out.println("RevisionID not found for key :" + key);
+      }
+      fullUrl += "?rev=" + revisionID;
+    }
+
+    if(isSgReplicator2 && readMode == SG_READ_MODE_DOCUMENTS_WITH_REV){
+
+      String revisionID = getRevision(key);
+      if (revisionID == null){
+        System.out.println("RevisionID not found for key :" + key);
+      }
+      fullUrl += "?rev=" + revisionID;
+      fullUrl += "&replicator2=true";
     }
 
     if(isSgReplicator2 && readMode != SG_READ_MODE_DOCUMENTS_WITH_REV){
@@ -335,7 +359,6 @@ public class SyncGatewayClient extends DB {
     } catch (Exception e) {
       responseCode = handleExceptions(e, fullUrl, "GET");
     }
-
     return getStatus(responseCode);
   }
 
@@ -469,7 +492,14 @@ public class SyncGatewayClient extends DB {
     //System.out.println("channel name at the begining " + channel);
 
     //System.out.println("printing the body " + requestBody);
-    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
+    if (basicAuth) {
+      int id = sgUserInsertCounter.nextValue();
+      String userName = DEFAULT_USERNAME_PREFIX + id;
+      fullUrl = "http://" + userName + ":" + DEFAULT_USER_PASSWORD + "@" + getRandomHost() + ":"
+          + port + documentEndpoint;
+    } else {
+      fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
+    }
 
     if(isSgReplicator2){
       fullUrl += "?replicator2=true";
@@ -861,7 +891,7 @@ public class SyncGatewayClient extends DB {
   private int httpExecute(HttpEntityEnclosingRequestBase request, String data)
       throws IOException {
 
-    if (useAuth) {
+    if (useAuth && !basicAuth) {
       request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
     }
 
@@ -887,6 +917,7 @@ public class SyncGatewayClient extends DB {
       StringBuffer responseContent = new StringBuffer();
       String line = "";
       while ((line = reader.readLine()) != null) {
+        //System.err.println("repsonse line :" + line);
         storeRevisions(line, currentIterationUser);
         responseGenericValidation = validateHttpResponse(line);
         if (requestTimedout.isSatisfied()) {
@@ -925,7 +956,7 @@ public class SyncGatewayClient extends DB {
       request.setHeader(headers[i], headers[i + 1]);
     }
 
-    if (useAuth) {
+    if (useAuth && !basicAuth) {
       request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
     }
 
@@ -1287,10 +1318,19 @@ public class SyncGatewayClient extends DB {
   }
 
   private void storeRevisions(String responseWithRevision, String userName) {
+    //System.err.println("responseWithRevision:" + responseWithRevision);
     Pattern pattern = Pattern.compile("\\\"id\\\".\\\"([^\\\"]*).*\\\"rev\\\".\\\"([^\\\"]*)");
     Matcher matcher = pattern.matcher(responseWithRevision);
     while (matcher.find()) {
-      memcachedClient.set(matcher.group(1), 0, matcher.group(2));
+      //System.err.println("matcher 1 " + matcher.group(1));
+      //System.err.println("matcher 2 " + matcher.group(2));
+      if (matcher.group(2) == null) {
+        System.err.println("Did not find revision id for user " + matcher.group(1)
+            + ": response line" + responseWithRevision);
+      }
+      if (matcher.group(2) != null) {
+        memcachedClient.set(matcher.group(1), 0, matcher.group(2));
+      }
     }
   }
 
