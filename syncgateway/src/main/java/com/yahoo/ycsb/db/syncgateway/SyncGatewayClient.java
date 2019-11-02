@@ -1318,7 +1318,7 @@ public class SyncGatewayClient extends DB {
   }
 
   private void storeRevisions(String responseWithRevision, String userName) {
-    //System.err.println("responseWithRevision:" + responseWithRevision);
+    System.err.println("responseWithRevision for validation :" + responseWithRevision);
     Pattern pattern = Pattern.compile("\\\"id\\\".\\\"([^\\\"]*).*\\\"rev\\\".\\\"([^\\\"]*)");
     Matcher matcher = pattern.matcher(responseWithRevision);
     while (matcher.find()) {
