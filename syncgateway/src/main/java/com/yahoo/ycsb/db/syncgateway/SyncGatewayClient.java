@@ -1318,19 +1318,13 @@ public class SyncGatewayClient extends DB {
   }
 
   private void storeRevisions(String responseWithRevision, String userName) {
-    System.err.println("responseWithRevision for validation :" + responseWithRevision);
+    //System.err.println("responseWithRevision for validation :" + responseWithRevision);
     Pattern pattern = Pattern.compile("\\\"id\\\".\\\"([^\\\"]*).*\\\"rev\\\".\\\"([^\\\"]*)");
     Matcher matcher = pattern.matcher(responseWithRevision);
     while (matcher.find()) {
-      //System.err.println("matcher 1 " + matcher.group(1));
-      //System.err.println("matcher 2 " + matcher.group(2));
-      if (matcher.group(2) == null) {
-        System.err.println("Did not find revision id for user " + matcher.group(1)
-            + ": response line" + responseWithRevision);
-      }
-      if (matcher.group(2) != null) {
-        memcachedClient.set(matcher.group(1), 0, matcher.group(2));
-      }
+
+      memcachedClient.set(matcher.group(1), 0, matcher.group(2));
+
     }
   }
 
