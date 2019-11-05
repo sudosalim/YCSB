@@ -319,9 +319,9 @@ public class SyncGatewayClient extends DB {
     String fullUrl;
 
     if (basicAuth) {
-      int id = sgUserInsertCounter.nextValue();
-      String userName = DEFAULT_USERNAME_PREFIX + id;
-      fullUrl = "http://" + userName + ":" + DEFAULT_USER_PASSWORD + "@" + getRandomHost()
+      //int id = sgUserInsertCounter.nextValue();
+      //String userName = DEFAULT_USERNAME_PREFIX + id;
+      fullUrl = "http://" + currentIterationUser + ":" + DEFAULT_USER_PASSWORD + "@" + getRandomHost()
           + ":" + port + documentEndpoint + key;
     } else {
       fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
@@ -493,9 +493,9 @@ public class SyncGatewayClient extends DB {
 
     //System.out.println("printing the body " + requestBody);
     if (basicAuth) {
-      int id = sgUserInsertCounter.nextValue();
-      String userName = DEFAULT_USERNAME_PREFIX + id;
-      fullUrl = "http://" + userName + ":" + DEFAULT_USER_PASSWORD + "@" + getRandomHost() + ":"
+      //int id = sgUserInsertCounter.nextValue();
+      //String userName = DEFAULT_USERNAME_PREFIX + id;
+      fullUrl = "http://" + currentIterationUser + ":" + DEFAULT_USER_PASSWORD + "@" + getRandomHost() + ":"
           + port + documentEndpoint;
     } else {
       fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
