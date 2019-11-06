@@ -319,17 +319,16 @@ public class SyncGatewayClient extends DB {
     String fullUrl;
 
     if (basicAuth) {
-      //int id = sgUserInsertCounter.nextValue();
-      //String userName = DEFAULT_USERNAME_PREFIX + id;
+
       fullUrl = "http://" + currentIterationUser + ":" + DEFAULT_USER_PASSWORD + "@" + getRandomHost()
           + ":" + port + documentEndpoint + key;
+      System.err.println("fullUrl : " + fullUrl);
     } else {
       fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
 
     }
 
     if (readMode == SG_READ_MODE_DOCUMENTS_WITH_REV && !isSgReplicator2) {
-      //System.err.println("Get");
 
       String revisionID = getRevision(key);
       if (revisionID == null){
@@ -489,12 +488,8 @@ public class SyncGatewayClient extends DB {
 
     requestBody = buildDocumentWithChannel(key, values, channel);
 
-    //System.out.println("channel name at the begining " + channel);
-
-    //System.out.println("printing the body " + requestBody);
     if (basicAuth) {
-      //int id = sgUserInsertCounter.nextValue();
-      //String userName = DEFAULT_USERNAME_PREFIX + id;
+
       fullUrl = "http://" + currentIterationUser + ":" + DEFAULT_USER_PASSWORD + "@" + getRandomHost() + ":"
           + port + documentEndpoint;
     } else {
