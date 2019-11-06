@@ -51,6 +51,7 @@ import com.yahoo.ycsb.StringByteIterator;
 import java.time.Duration;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -72,8 +73,8 @@ public class Couchbase3Client extends DB {
   private volatile ReplicateTo replicateTo;
   private volatile boolean useDurabilityLevels;
   private volatile  HashSet errors = new HashSet<Throwable>();
-  private static int retryLower;
-  private static int retryUpper;
+  private static long retryLower;
+  private static long retryUpper;
   private static int retryFactor;
   private RetryStrategy retryStratgey;
 
@@ -84,8 +85,9 @@ public class Couchbase3Client extends DB {
 
     String retryStrategyType = props.getProperty("couchbase.retryStrategy", "default");
 
-    retryLower = Integer.parseInt(props.getProperty("couchbase.retryLower", "1"));
-    retryUpper = Integer.parseInt(props.getProperty("couchbase.retryUpper", "500"));
+    // default to lower: 1ms, Upper 500ms .. unit in microseconds
+    retryLower = TimeUnit.MICROSECONDS.toNanos(Integer.parseInt(props.getProperty("couchbase.retryLower", "1000")));
+    retryUpper = TimeUnit.MICROSECONDS.toNanos(Integer.parseInt(props.getProperty("couchbase.retryUpper", "500000")));
     retryFactor = Integer.parseInt(props.getProperty("couchbase.retryFactor", "2"));
     retryStratgey = parseRetryStrategy(retryStrategyType);
 
@@ -134,7 +136,7 @@ public class Couchbase3Client extends DB {
       return FailFastRetryStrategy.INSTANCE;
     case "custom":
       return BestEffortRetryStrategy
-            .withExponentialBackoff(Duration.ofMillis(retryLower), Duration.ofMillis(retryUpper), retryFactor);
+            .withExponentialBackoff(Duration.ofNanos(retryLower), Duration.ofNanos(retryUpper), retryFactor);
     default:
       throw new DBException("\"couchbase.replicateTo\" must be between 0 and 3");
     }
