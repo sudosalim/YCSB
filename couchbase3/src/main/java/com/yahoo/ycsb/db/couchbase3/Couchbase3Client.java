@@ -29,6 +29,12 @@ import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.env.ClusterEnvironment;
 import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.java.kv.GetResult;
+import com.couchbase.transactions.*;
+
+import com.couchbase.transactions.config.TransactionConfigBuilder;
+import com.couchbase.transactions.error.TransactionFailed;
+import com.couchbase.transactions.log.LogDefer;
+
 import com.couchbase.client.java.ClusterOptions;
 
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
@@ -50,6 +56,13 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
+
+
+//import com.couchbase.client.core.error.KeyNotFoundException;
+
+
 /**
  * Full YCSB implementation based on the new Couchbase Java SDK 3.x.
  */
@@ -65,6 +78,12 @@ public class Couchbase3Client extends DB {
   private static volatile Cluster cluster;
   private static volatile ClusterOptions clusterOptions;
   private static volatile Collection collection;
+  private static Transactions transactions;
+  private static boolean transactionEnabled;
+  private static int[] transactionKeys;
+
+  private volatile TransactionDurabilityLevel transDurabilityLevel;
+
   private volatile DurabilityLevel durabilityLevel;
   private volatile PersistTo persistTo;
   private volatile ReplicateTo replicateTo;
@@ -95,6 +114,21 @@ public class Couchbase3Client extends DB {
 
         long kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "60000"));
         int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
+
+        int numATRS = Integer.parseInt(props.getProperty("couchbase.atrs", "20480"));
+        transactionEnabled = Boolean.parseBoolean(props.getProperty("couchbase.transactionsEnabled", "false"));
+        try {
+          durabilityLevel = parseDurabilityLevel(props.getProperty("couchbase.durability", "0"));
+        } catch (DBException e) {
+          System.out.println("Failed to parse Durability Level");
+        }
+
+        try {
+          transDurabilityLevel = parsetransactionDurabilityLevel(props.getProperty("couchbase.durability", "0"));
+        } catch (DBException e) {
+          System.out.println("Failed to parse TransactionDurability Level");
+        }
+
         environment = ClusterEnvironment
             .builder()
             .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
@@ -107,6 +141,12 @@ public class Couchbase3Client extends DB {
         cluster = Cluster.connect(hostname, clusterOptions);
         Bucket bucket = cluster.bucket(bucketName);
         collection = bucket.defaultCollection();
+        if ((transactions == null) && transactionEnabled) {
+          transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
+              .durabilityLevel(transDurabilityLevel)
+              .numATRs(numATRS)
+              .build());
+        }
 
       }
     }
@@ -147,9 +187,29 @@ public class Couchbase3Client extends DB {
     }
   }
 
-  private static DurabilityLevel parseDurabilityLevel(final String property) throws DBException {
+  private static TransactionDurabilityLevel parsetransactionDurabilityLevel(final String property) throws DBException {
+
     int value = Integer.parseInt(property);
-    switch (value) {
+
+    switch(value){
+    case 0:
+      return TransactionDurabilityLevel.NONE;
+    case 1:
+      return TransactionDurabilityLevel.MAJORITY;
+    case 2:
+      return TransactionDurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER;
+    case 3:
+      return TransactionDurabilityLevel.PERSIST_TO_MAJORITY;
+    default :
+      throw new DBException("\"couchbase.durability\" must be between 0 and 3");
+    }
+  }
+
+  private static DurabilityLevel parseDurabilityLevel(final String property) throws DBException {
+
+    int value = Integer.parseInt(property);
+
+    switch(value){
     case 0:
       return DurabilityLevel.NONE;
     case 1:
@@ -158,7 +218,7 @@ public class Couchbase3Client extends DB {
       return DurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER;
     case 3:
       return DurabilityLevel.PERSIST_TO_MAJORITY;
-    default:
+    default :
       throw new DBException("\"couchbase.durability\" must be between 0 and 3");
     }
   }
@@ -233,6 +293,102 @@ public class Couchbase3Client extends DB {
       return Status.ERROR;
     }
   }
+
+
+  @Override
+  public Status transaction(String table, String[] transationKeys, Map<String, ByteIterator>[] transationValues,
+                            String[] transationOperations, Set<String> fields, Map<String, ByteIterator> result) {
+    if (transactionEnabled) {
+      return transactionContext(table, transationKeys, transationValues, transationOperations, fields, result);
+    }
+    return simpleCustomSequense(table, transationKeys, transationValues, transationOperations, fields, result);
+
+  }
+
+
+  public Status simpleCustomSequense(String table, String[] transationKeys,
+                                     Map<String, ByteIterator>[] transationValues, String[] transationOperations,
+                                     Set<String> fields, Map<String, ByteIterator> result) {
+
+    try {
+      for (int i = 0; i < transationKeys.length; i++) {
+        switch (transationOperations[i]) {
+        case "TRREAD":
+          try {
+            GetResult document = collection.get(formatId(table, transationKeys[i]));
+            //if (!document.isPresent()) {
+            //  return Status.NOT_FOUND;
+            //}
+            System.out.println("calling transaction read");
+            extractFields(document.contentAsObject(), fields, result);
+          } catch (KeyNotFoundException e) {
+            System.out.println("Key NOT_FOUND");
+            return Status.NOT_FOUND;
+          } catch (Throwable e) {
+            return Status.ERROR;
+          }
+          break;
+        case "TRUPDATE":
+          collection.replace(formatId(table, transationKeys[i]), encode(transationValues[i]));
+          break;
+        case "TRINSERT":
+          collection.upsert(formatId(table, transationKeys[i]), encode(transationValues[i]));
+          break;
+        default:
+          break;
+        }
+      }
+      return Status.OK;
+    } catch (Throwable t) {
+      return Status.ERROR;
+    }
+  }
+
+  public Status transactionContext(String table, String[] transationKeys, Map<String,
+                                   ByteIterator>[] transationValues,
+                                   String[] transationOperations, Set<String> fields,
+                                   Map<String, ByteIterator> result) {
+
+    try {
+      transactions.run((ctx) -> {
+        // Init and Start transaction here
+          for (int i = 0; i < transationKeys.length; i++) {
+            final String formattedDocId = formatId(table, transationKeys[i]);
+            switch (transationOperations[i]) {
+            case "TRREAD":
+              TransactionGetResult doc = ctx.get(collection, formattedDocId);
+              extractFields(doc.contentAs(JsonObject.class), fields, result);
+              break;
+            case "TRUPDATE":
+              TransactionGetResult docToReplace = ctx.get(collection, formattedDocId);
+              JsonObject content = docToReplace.contentAs(JsonObject.class);
+              for (Map.Entry<String, String> entry: encode(transationValues[i]).entrySet()){
+                content.put(entry.getKey(), entry.getValue());
+              }
+              ctx.replace(docToReplace, content);
+              break;
+            case "TRINSERT":
+              ctx.insert(collection, formattedDocId, encode(transationValues[i]));
+              break;
+            default:
+              break;
+            }
+          }
+          ctx.commit();
+        });
+    } catch (TransactionFailed e) {
+      Logger logger = LoggerFactory.getLogger(getClass().getName() + ".bad");
+      System.err.println("Transaction failed " + e.result().transactionId() + " " +
+          e.result().timeTaken().toMillis() + "msecs");
+      for (LogDefer err : e.result().log().logs()) {
+        String s = err.toString();
+        logger.warn("Transaction failed:" + s);
+      }
+      return Status.ERROR;
+    }
+    return Status.OK;
+  }
+
 
   /**
    * Helper method to turn the passed in iterator values into a map we can encode to json.
