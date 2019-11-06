@@ -322,7 +322,7 @@ public class SyncGatewayClient extends DB {
 
       fullUrl = "http://" + currentIterationUser + ":" + DEFAULT_USER_PASSWORD + "@" + getRandomHost()
           + ":" + port + documentEndpoint + key;
-      System.err.println("fullUrl : " + fullUrl);
+      //System.err.println("fullUrl : " + fullUrl);
     } else {
       fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
 
@@ -945,7 +945,7 @@ public class SyncGatewayClient extends DB {
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
-    int responseCode = 200;
+    //int responseCode = 200;
     HttpGet request = new HttpGet(endpoint);
     for (int i = 0; i < headers.length; i = i + 2) {
       request.setHeader(headers[i], headers[i + 1]);
@@ -956,7 +956,8 @@ public class SyncGatewayClient extends DB {
     }
 
     CloseableHttpResponse response = restClient.execute(request);
-    responseCode = response.getStatusLine().getStatusCode();
+    int responseCode = response.getStatusLine().getStatusCode();
+    System.err.println("responseCode for request : " + responseCode + ":" + endpoint);
     HttpEntity responseEntity = response.getEntity();
     // If null entity don't bother about connection release.
     if (responseEntity != null) {
