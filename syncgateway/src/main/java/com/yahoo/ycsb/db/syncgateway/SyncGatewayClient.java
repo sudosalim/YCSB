@@ -1052,6 +1052,8 @@ public class SyncGatewayClient extends DB {
     int rc = responseCode / 100;
     if (responseCode == 400) {
       return Status.BAD_REQUEST;
+    } else if (responseCode == 401) {
+      return Status.LOGIN_REQUIRED;
     } else if (responseCode == 403) {
       return Status.FORBIDDEN;
     } else if (responseCode == 404) {
