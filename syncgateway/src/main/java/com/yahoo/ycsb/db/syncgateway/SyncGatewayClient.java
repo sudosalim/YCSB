@@ -23,7 +23,9 @@ import com.yahoo.ycsb.*;
 import com.yahoo.ycsb.generator.CounterGenerator;
 import net.spy.memcached.FailureMode;
 import net.spy.memcached.MemcachedClient;
+import org.apache.commons.codec.binary.Base64;
 import org.apache.http.HttpEntity;
+import org.apache.http.HttpHeaders;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpEntityEnclosingRequestBase;
@@ -38,6 +40,7 @@ import org.apache.http.util.EntityUtils;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.nio.charset.Charset;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -316,17 +319,7 @@ public class SyncGatewayClient extends DB {
   private Status readSingle(String key, HashMap<String, ByteIterator> result) {
     String port = (useAuth) ? portPublic : portAdmin;
 
-    String fullUrl;
-
-    if (basicAuth) {
-
-      fullUrl = "http://" + currentIterationUser + ":" + DEFAULT_USER_PASSWORD + "@" + getRandomHost()
-          + ":" + port + documentEndpoint + key;
-      //System.err.println("fullUrl : " + fullUrl);
-    } else {
-      fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
-
-    }
+    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
 
     if (readMode == SG_READ_MODE_DOCUMENTS_WITH_REV && !isSgReplicator2) {
 
@@ -488,13 +481,7 @@ public class SyncGatewayClient extends DB {
 
     requestBody = buildDocumentWithChannel(key, values, channel);
 
-    if (basicAuth) {
-
-      fullUrl = "http://" + currentIterationUser + ":" + DEFAULT_USER_PASSWORD + "@" + getRandomHost() + ":"
-          + port + documentEndpoint;
-    } else {
-      fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
-    }
+    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
 
     if(isSgReplicator2){
       fullUrl += "?replicator2=true";
@@ -886,6 +873,14 @@ public class SyncGatewayClient extends DB {
   private int httpExecute(HttpEntityEnclosingRequestBase request, String data)
       throws IOException {
 
+
+    if (basicAuth) {
+      String auth = currentIterationUser + ":" + DEFAULT_USER_PASSWORD;
+      byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
+      String authHeader = "Basic " + new String(encodedAuth);
+      request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
+    }
+
     if (useAuth && !basicAuth) {
       request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
     }
@@ -946,9 +941,17 @@ public class SyncGatewayClient extends DB {
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
     //int responseCode = 200;
+
     HttpGet request = new HttpGet(endpoint);
     for (int i = 0; i < headers.length; i = i + 2) {
       request.setHeader(headers[i], headers[i + 1]);
+    }
+
+    if (basicAuth) {
+      String auth = currentIterationUser + ":" + DEFAULT_USER_PASSWORD;
+      byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
+      String authHeader = "Basic " + new String(encodedAuth);
+      request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
     }
 
     if (useAuth && !basicAuth) {
@@ -956,8 +959,9 @@ public class SyncGatewayClient extends DB {
     }
 
     CloseableHttpResponse response = restClient.execute(request);
+
     int responseCode = response.getStatusLine().getStatusCode();
-    System.err.println("responseCode for request : " + responseCode + ":" + endpoint);
+
     HttpEntity responseEntity = response.getEntity();
     // If null entity don't bother about connection release.
     if (responseEntity != null) {
