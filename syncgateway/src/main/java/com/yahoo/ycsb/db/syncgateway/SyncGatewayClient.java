@@ -387,6 +387,11 @@ public class SyncGatewayClient extends DB {
     int responseCode;
 
     fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
+
+    if(isSgReplicator2){
+      fullUrl += "&replicator2=true";
+    }
+
     HttpPut httpPutRequest = new HttpPut(fullUrl);
 
     try {
@@ -729,6 +734,10 @@ public class SyncGatewayClient extends DB {
 
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
 
+    if(isSgReplicator2){
+      fullUrl += "?replicator2=true";
+    }
+
     //System.out.println("Printing fullUrl" + fullUrl);
 
     requestTimedout.setIsSatisfied(false);
@@ -738,9 +747,17 @@ public class SyncGatewayClient extends DB {
     for (int i = 0; i < headers.length; i = i + 2) {
       request.setHeader(headers[i], headers[i + 1]);
     }
-    if (useAuth) {
+    if (useAuth && !basicAuth) {
       request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
     }
+
+    if (basicAuth) {
+      String auth = currentIterationUser + ":" + DEFAULT_USER_PASSWORD;
+      byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
+      String authHeader = "Basic " + new String(encodedAuth);
+      request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
+    }
+
 
     CloseableHttpResponse response = null;
     boolean docFound = false;
@@ -814,6 +831,10 @@ public class SyncGatewayClient extends DB {
 
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
 
+    if(isSgReplicator2){
+      fullUrl += "?replicator2=true";
+    }
+
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -821,8 +842,15 @@ public class SyncGatewayClient extends DB {
     for (int i = 0; i < headers.length; i = i + 2) {
       request.setHeader(headers[i], headers[i + 1]);
     }
-    if (useAuth) {
+    if (useAuth && !basicAuth) {
       request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
+    }
+
+    if (basicAuth) {
+      String auth = currentIterationUser + ":" + DEFAULT_USER_PASSWORD;
+      byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
+      String authHeader = "Basic " + new String(encodedAuth);
+      request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
     }
 
     int counter = 10;
