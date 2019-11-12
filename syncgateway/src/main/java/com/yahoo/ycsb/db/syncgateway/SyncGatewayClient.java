@@ -927,6 +927,7 @@ public class SyncGatewayClient extends DB {
     request.setEntity(reqEntity);
     CloseableHttpResponse response = restClient.execute(request);
     responseCode = response.getStatusLine().getStatusCode();
+    System.err.println("printing response code for all post requests" + responseCode);
     if (responseCode != 200){
       System.err.println("Doc Insert failed for request :" + request);
       System.err.println("Printing response message if responseCode not 200 :" + response);
