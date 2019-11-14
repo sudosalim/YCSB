@@ -734,11 +734,6 @@ public class SyncGatewayClient extends DB {
 
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
 
-    if(isSgReplicator2){
-      fullUrl += "?replicator2=true";
-    }
-
-    //System.out.println("Printing fullUrl" + fullUrl);
 
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
@@ -830,10 +825,6 @@ public class SyncGatewayClient extends DB {
         "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
 
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
-
-    if(isSgReplicator2){
-      fullUrl += "?replicator2=true";
-    }
 
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
@@ -927,7 +918,7 @@ public class SyncGatewayClient extends DB {
     request.setEntity(reqEntity);
     CloseableHttpResponse response = restClient.execute(request);
     responseCode = response.getStatusLine().getStatusCode();
-    System.err.println("printing response code for all post requests" + responseCode);
+    //System.err.println("printing response code for all post requests" + responseCode);
     if (responseCode != 200){
       System.err.println("Doc Insert failed for request :" + request);
       System.err.println("Printing response message if responseCode not 200 :" + response);
