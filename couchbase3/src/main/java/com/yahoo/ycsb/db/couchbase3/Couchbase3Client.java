@@ -93,6 +93,9 @@ public class Couchbase3Client extends DB {
   @Override
   public void init() throws DBException {
     Properties props = getProperties();
+
+    System.setProperty("com.couchbase.unorderedExecutionEnabled", "true");
+
     String bucketName = props.getProperty("couchbase.bucket", "ycsb");
     // durability options
     String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
