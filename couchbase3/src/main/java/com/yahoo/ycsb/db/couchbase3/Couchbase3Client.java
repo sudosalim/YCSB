@@ -17,12 +17,10 @@
 
 package com.yahoo.ycsb.db.couchbase3;
 
-import com.couchbase.client.core.error.KeyNotFoundException;
 
-import com.couchbase.client.core.env.ServiceConfig;
 import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
-import com.couchbase.client.core.service.KeyValueServiceConfig;
+import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.java.Bucket;
 import com.couchbase.client.java.Cluster;
 import com.couchbase.client.java.Collection;
@@ -58,9 +56,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
-
-
-//import com.couchbase.client.core.error.KeyNotFoundException;
 
 
 /**
@@ -132,8 +127,7 @@ public class Couchbase3Client extends DB {
         environment = ClusterEnvironment
             .builder()
             .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
-            .ioConfig(IoConfig.mutationTokensEnabled(enableMutationToken))
-            .serviceConfig(ServiceConfig.keyValueServiceConfig(KeyValueServiceConfig.builder().endpoints(kvEndpoints)))
+            .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints))
             .build();
 
         clusterOptions = ClusterOptions.clusterOptions(username, password);
@@ -244,7 +238,7 @@ public class Couchbase3Client extends DB {
       GetResult document = collection.get(formatId(table, key));
       extractFields(document.contentAsObject(), fields, result);
       return Status.OK;
-    } catch (KeyNotFoundException e) {
+    } catch (DocumentNotFoundException e) {
       return Status.NOT_FOUND;
     } catch (Throwable t) {
       errors.add(t);
@@ -321,7 +315,7 @@ public class Couchbase3Client extends DB {
             //}
             System.out.println("calling transaction read");
             extractFields(document.contentAsObject(), fields, result);
-          } catch (KeyNotFoundException e) {
+          } catch (DocumentNotFoundException e) {
             System.out.println("Key NOT_FOUND");
             return Status.NOT_FOUND;
           } catch (Throwable e) {
