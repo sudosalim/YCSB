@@ -887,7 +887,6 @@ public class SyncGatewayClient extends DB {
       String line = "";
       while ((line = reader.readLine()) != null) {
         if (!docFound){
-
           if (requestTimedout.isSatisfied()) {
             long timetaken =  endTime - startTime;
             System.err.println("change request timed out | request : " + request +
@@ -916,6 +915,11 @@ public class SyncGatewayClient extends DB {
 
         }
         responseContent.append(line);
+      }
+      if(!docFound){
+        System.err.println("doc not found for this _change request :"
+            + request + " | response:" + response + " | channel:"
+            + channel + " | looking for key:" + key);
       }
       timer.interrupt();
       stream.close();
