@@ -870,6 +870,8 @@ public class SyncGatewayClient extends DB {
 
     long endTime = System.nanoTime();
 
+    boolean docFound = false;
+
     HttpEntity responseEntity = response.getEntity();
     if (responseEntity != null) {
       InputStream stream = responseEntity.getContent();
@@ -877,25 +879,34 @@ public class SyncGatewayClient extends DB {
       StringBuffer responseContent = new StringBuffer();
       String line = "";
       while ((line = reader.readLine()) != null) {
-        if (requestTimedout.isSatisfied()) {
-          long timetaken =  endTime - startTime;
-          System.err.println("change request timed out | request : " + request +
-              " | response :" + response + " | responseContent :"
-              + responseContent + " | line : " + line + " | start time :" + startTime
-              + " | endTime: " + endTime +  "  | time taken : " +  timetaken);
+        if (!docFound){
 
-          // Must avoid memory leak.
-          reader.close();
-          stream.close();
-          EntityUtils.consumeQuietly(responseEntity);
-          response.close();
-          restClient.close();
-          throw new TimeoutException();
+          if (requestTimedout.isSatisfied()) {
+            long timetaken =  endTime - startTime;
+            System.err.println("change request timed out | request : " + request +
+                " | response :" + response + " | responseContent :"
+                + responseContent + " | line : " + line + " | start time :" + startTime
+                + " | endTime: " + endTime +  "  | time taken : " +  timetaken);
+
+            // Must avoid memory leak.
+            reader.close();
+            stream.close();
+            EntityUtils.consumeQuietly(responseEntity);
+            response.close();
+            restClient.close();
+            throw new TimeoutException();
+          }
+
+          if (lookForDocID(line, key)) {
+            docFound = true;
+          }
         }
-        if (lookForDocID(line, key)) {
+
+        if(line.contains("last_seq") && docFound){
           String[] arrOfstr = line.split(":", 2);
-          String[] arrOfstr2 = arrOfstr[1].split(",", 2);
-          lastseq = arrOfstr2[0];
+          String[] arrOfstr2 = arrOfstr[1].split("\"");
+          lastseq = arrOfstr2[1];
+
         }
         responseContent.append(line);
       }
