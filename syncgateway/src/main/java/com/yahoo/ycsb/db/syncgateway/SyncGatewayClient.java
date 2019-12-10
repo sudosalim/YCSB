@@ -918,7 +918,7 @@ public class SyncGatewayClient extends DB {
       }
       if(!docFound){
         System.err.println("doc not found for this _change request :"
-            + request + " | response:" + response + " | channel:"
+            + request + " | responseContent:" + responseContent + " | channel:"
             + channel + " | looking for key:" + key);
       }
       timer.interrupt();
