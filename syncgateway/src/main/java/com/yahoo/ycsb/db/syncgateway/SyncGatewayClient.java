@@ -525,7 +525,11 @@ public class SyncGatewayClient extends DB {
         }
         try {
           //System.out.println("entering waitForDocInChangeFeed3 since its SG_INSERT_MODE_BYKEY " + channel);
-          lastseq = waitForDocInChangeFeed3(lastSequence, channel, key);
+          if (feedMode.equals("longpoll")){
+            lastseq = waitForDocInChangeFeed4(lastSequence, channel, key);
+          } else {
+            lastseq = waitForDocInChangeFeed3(lastSequence, channel, key);
+          }
           //System.out.println("chanel and last seq " + lastseq);
           //System.out.println("lastseq from waitForDocInChangeFeed2" + lastseq);
           incrementLocalSequenceGlobal();
@@ -816,6 +820,91 @@ public class SyncGatewayClient extends DB {
       EntityUtils.consumeQuietly(responseEntity);
       response.close();
     }
+    restClient.close();
+
+    return lastseq;
+  }
+
+
+  private String waitForDocInChangeFeed4(String sequenceSince, String channel, String key) throws IOException {
+    String port = (useAuth) ? portPublic : portAdmin;
+    String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
+        "&filter=sync_gateway/bychannel&channels=" + channel;
+
+    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+
+    requestTimedout.setIsSatisfied(false);
+    Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
+    timer.start();
+    HttpGet request = new HttpGet(fullUrl);
+    for (int i = 0; i < headers.length; i = i + 2) {
+      request.setHeader(headers[i], headers[i + 1]);
+    }
+    if (useAuth && !basicAuth) {
+      request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
+    }
+
+    if (basicAuth) {
+      String auth = currentIterationUser + ":" + DEFAULT_USER_PASSWORD;
+      byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
+      String authHeader = "Basic " + new String(encodedAuth);
+      request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
+    }
+
+    CloseableHttpResponse response = null;
+    String lastseq = null;
+
+    long startTime = System.nanoTime();
+
+    try {
+      response = restClient.execute(request);
+    } catch (Exception e) {
+      System.err.println("_change Request Failed with exception " + e);
+      response.close();
+      restClient.close();
+      return lastseq;
+      //System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! by Socket ex for " + changesFeedEndpoint
+      //    + " " + ex.getStackTrace());
+      //throw new TimeoutException();
+    }
+
+    long endTime = System.nanoTime();
+
+    HttpEntity responseEntity = response.getEntity();
+    if (responseEntity != null) {
+      InputStream stream = responseEntity.getContent();
+      BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+      StringBuffer responseContent = new StringBuffer();
+      String line = "";
+      while ((line = reader.readLine()) != null) {
+        if (requestTimedout.isSatisfied()) {
+          long timetaken =  endTime - startTime;
+          System.err.println("change request timed out | request : " + request +
+              " | response :" + response + " | responseContent :"
+              + responseContent + " | line : " + line + " | start time :" + startTime
+              + " | endTime: " + endTime +  "  | time taken : " +  timetaken);
+
+          // Must avoid memory leak.
+          reader.close();
+          stream.close();
+          EntityUtils.consumeQuietly(responseEntity);
+          response.close();
+          restClient.close();
+          throw new TimeoutException();
+        }
+        if (lookForDocID(line, key)) {
+          String[] arrOfstr = line.split(":", 2);
+          String[] arrOfstr2 = arrOfstr[1].split(",", 2);
+          lastseq = arrOfstr2[0];
+        }
+        responseContent.append(line);
+      }
+      timer.interrupt();
+      stream.close();
+    }
+
+    EntityUtils.consumeQuietly(responseEntity);
+    response.close();
     restClient.close();
 
     return lastseq;
