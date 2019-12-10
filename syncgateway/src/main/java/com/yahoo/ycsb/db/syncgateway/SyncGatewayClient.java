@@ -531,6 +531,9 @@ public class SyncGatewayClient extends DB {
           incrementLocalSequenceGlobal();
           setLastSequenceGlobally(lastseq);
         } catch (Exception e) {
+          System.err.println("Failed to sync lastSeq value  | lastseq : "
+              + lastseq + " | fullUrl : " + fullUrl + " | lastSequence :"
+              + lastSequence + " | key: " + key + " | channel" + channel);
           syncronizeSequencesForUser(currentIterationUser);
           return Status.UNEXPECTED_STATE;
         }
