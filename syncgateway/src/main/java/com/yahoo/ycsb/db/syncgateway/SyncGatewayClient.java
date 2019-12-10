@@ -872,7 +872,14 @@ public class SyncGatewayClient extends DB {
 
     boolean docFound = false;
 
+    int responseCode = response.getStatusLine().getStatusCode();
+    if(responseCode != 200){
+      System.err.println("responseCode not 200 for _changes request :"
+          + request + " | response :" + response);
+    }
+
     HttpEntity responseEntity = response.getEntity();
+
     if (responseEntity != null) {
       InputStream stream = responseEntity.getContent();
       BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
