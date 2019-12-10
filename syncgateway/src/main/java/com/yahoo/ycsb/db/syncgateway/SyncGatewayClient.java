@@ -916,7 +916,9 @@ public class SyncGatewayClient extends DB {
         ContentType.APPLICATION_FORM_URLENCODED);
     reqEntity.setChunked(true);
     request.setEntity(reqEntity);
+    long startTime = System.nanoTime();
     CloseableHttpResponse response = restClient.execute(request);
+    long endTime = System.nanoTime();
     responseCode = response.getStatusLine().getStatusCode();
     //System.err.println("printing response code for all post requests" + responseCode);
     if (responseCode != 200){
@@ -935,9 +937,13 @@ public class SyncGatewayClient extends DB {
         storeRevisions(line, currentIterationUser);
         responseGenericValidation = validateHttpResponse(line);
         if (requestTimedout.isSatisfied()) {
+
+          long timetaken = endTime - startTime;
+
           System.err.println("request timing out | request : " + request +
               " | response :" + response + " | responseContent :"
-              + responseContent + " | line : " + line);
+              + responseContent + " | line : " + line + " | start time :" + startTime
+              + " | endTime: " + endTime +  "  | time taken : " +  timetaken);
           reader.close();
           stream.close();
           EntityUtils.consumeQuietly(responseEntity);
