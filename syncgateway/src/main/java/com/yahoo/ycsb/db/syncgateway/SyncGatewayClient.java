@@ -478,10 +478,9 @@ public class SyncGatewayClient extends DB {
 
     if (insertMode == SG_INSERT_MODE_BYKEY) {
       channel = getChannelNameByTotalChannels();
-      //requestBody = buildDocumentWithChannel(key, values, channel);
+
     } else {
       channel = getChannelForUser();
-      //requestBody = buildDocumentFromMap(key, values);
     }
 
     requestBody = buildDocumentWithChannel(key, values, channel);
@@ -494,25 +493,20 @@ public class SyncGatewayClient extends DB {
 
     String currentSequence = getLocalSequenceGlobal();
     String lastSequence = getLastSequenceGlobal();
-    //System.out.println("Printing it here before saving" + lastSequence);
-    //System.out.println("Printing it for key " + key);
+
+    String lastSeqChannel = getLastSequenceChannel(channel);
 
     String lastseq = null;
 
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
-    //System.out.println("before INSERT: User " + currentIterationUser + " just inserted doc " + key
-    //+ " SG seq before insert was " + currentSequence);
 
     try {
       responseCode = httpExecute(httpPostRequest, requestBody);
-      //System.out.println("printing the responseCode " + responseCode);
+
     } catch (Exception e) {
       responseCode = handleExceptions(e, fullUrl, "POST");
     }
-
-    //System.out.println("INSERT: User " + currentIterationUser + " just inserted doc " + key
-    //+ " SG seq before insert was " + currentSequence);
 
     Status result = getStatus(responseCode);
     if (result == Status.OK) {
@@ -524,16 +518,15 @@ public class SyncGatewayClient extends DB {
           return Status.BAD_REQUEST;
         }
         try {
-          //System.out.println("entering waitForDocInChangeFeed3 since its SG_INSERT_MODE_BYKEY " + channel);
+
           if (feedMode.equals("longpoll")){
-            lastseq = waitForDocInChangeFeed4(lastSequence, channel, key);
+            lastseq = waitForDocInChangeFeed5(lastSeqChannel, channel, key);
           } else {
-            lastseq = waitForDocInChangeFeed3(lastSequence, channel, key);
+            lastseq = waitForDocInChangeFeed3(lastSeqChannel, channel, key);
           }
-          //System.out.println("chanel and last seq " + lastseq);
-          //System.out.println("lastseq from waitForDocInChangeFeed2" + lastseq);
           incrementLocalSequenceGlobal();
-          setLastSequenceGlobally(lastseq);
+          //setLastSequenceGlobally(lastseq);
+          setLastSequenceChannel(lastseq, channel);
         } catch (Exception e) {
           System.err.println("Failed to sync lastSeq value  | lastseq : "
               + lastseq + " | fullUrl : " + fullUrl + " | lastSequence :"
@@ -931,6 +924,119 @@ public class SyncGatewayClient extends DB {
 
     return lastseq;
   }
+
+
+  private String waitForDocInChangeFeed5(String sequenceSince, String channel, String key) throws IOException {
+    String port = (useAuth) ? portPublic : portAdmin;
+    String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
+        "&filter=sync_gateway/bychannel&channels=" + channel;
+
+    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+
+    requestTimedout.setIsSatisfied(false);
+    Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
+    timer.start();
+    HttpGet request = new HttpGet(fullUrl);
+    for (int i = 0; i < headers.length; i = i + 2) {
+      request.setHeader(headers[i], headers[i + 1]);
+    }
+    if (useAuth && !basicAuth) {
+      request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
+    }
+
+    if (basicAuth) {
+      String auth = currentIterationUser + ":" + DEFAULT_USER_PASSWORD;
+      byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
+      String authHeader = "Basic " + new String(encodedAuth);
+      request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
+    }
+
+    CloseableHttpResponse response = null;
+    String lastseq = null;
+
+    long startTime = System.nanoTime();
+
+    try {
+      response = restClient.execute(request);
+    } catch (Exception e) {
+      System.err.println("_change Request Failed with exception " + e);
+      response.close();
+      restClient.close();
+      return lastseq;
+      //System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! by Socket ex for " + changesFeedEndpoint
+      //    + " " + ex.getStackTrace());
+      //throw new TimeoutException();
+    }
+
+    long endTime = System.nanoTime();
+
+    boolean docFound = false;
+
+    int responseCode = response.getStatusLine().getStatusCode();
+    if(responseCode != 200){
+      System.err.println("responseCode not 200 for _changes request :"
+          + request + " | response :" + response);
+    }
+
+    HttpEntity responseEntity = response.getEntity();
+
+    if (responseEntity != null) {
+      InputStream stream = responseEntity.getContent();
+      BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+      StringBuffer responseContent = new StringBuffer();
+      String line = "";
+      while ((line = reader.readLine()) != null) {
+        if (!docFound){
+          if (requestTimedout.isSatisfied()) {
+            long timetaken =  endTime - startTime;
+            System.err.println("change request timed out | request : " + request +
+                " | response :" + response + " | responseContent :"
+                + responseContent + " | line : " + line + " | start time :" + startTime
+                + " | endTime: " + endTime +  "  | time taken : " +  timetaken);
+
+            // Must avoid memory leak.
+            reader.close();
+            stream.close();
+            EntityUtils.consumeQuietly(responseEntity);
+            response.close();
+            restClient.close();
+            throw new TimeoutException();
+          }
+
+          if (lookForDocID(line, key)) {
+            docFound = true;
+          }
+        }
+
+        if(line.contains("last_seq")){
+          String[] arrOfstr = line.split(":", 2);
+          String[] arrOfstr2 = arrOfstr[1].split("\"");
+          lastseq = arrOfstr2[1];
+        }
+        responseContent.append(line);
+      }
+      if(!docFound){
+        System.err.println("doc not found for this _change request :"
+            + request + " | responseContent:" + responseContent + " | channel:"
+            + channel + " | looking for key:" + key);
+
+        lastseq = waitForDocInChangeFeed5("0", channel, key);
+
+        while(!docFound){
+          lastseq = waitForDocInChangeFeed5(lastseq, channel, key);
+        }
+      }
+      timer.interrupt();
+      stream.close();
+    }
+
+    EntityUtils.consumeQuietly(responseEntity);
+    response.close();
+    restClient.close();
+
+    return lastseq;
+  }
+
 
 
   private void waitForDocInChangeFeed(String sequenceSince, String key) throws IOException {
@@ -1354,6 +1460,10 @@ public class SyncGatewayClient extends DB {
     memcachedClient.set("_lastsequenceCounterGlobal", 0, seq);
   }
 
+  private void setLastSequenceChannel(String seq, String channel) {
+    memcachedClient.set("_lastseq_" + channel, 0, seq);
+  }
+
   private String getLastSequenceGlobal() {
     Object localSegObj = memcachedClient.get("_lastsequenceCounterGlobal");
     String lastseq = null;
@@ -1368,6 +1478,22 @@ public class SyncGatewayClient extends DB {
       return memcachedClient.get("_lastsequenceCounterGlobal").toString();
     }
     //System.out.println("printing last sequence from getLastSequenceGlobal" + localSegObj.toString());
+    return localSegObj.toString();
+  }
+
+  private String getLastSequenceChannel(String channel) {
+    Object localSegObj = memcachedClient.get("_lastseq_" + channel);
+    String lastseq = null;
+    if (localSegObj == null) {
+      //System.out.println("entered this since its localseqobj is zero");
+      try {
+        lastseq = getlastSequenceFromSG();
+      } catch (Exception e) {
+        System.err.println(e);
+      }
+      setLastSequenceChannel(lastseq, channel);
+      return memcachedClient.get("_lastseq_" + channel).toString();
+    }
     return localSegObj.toString();
   }
 
@@ -1433,6 +1559,7 @@ public class SyncGatewayClient extends DB {
   private void incrementLocalSequenceGlobal(){
     memcachedClient.incr("_sequenceCounterGlobal", 1);
   }
+
 
   private String getLocalSequenceForUser(String userName) {
     Object localSegObj = memcachedClient.get("_sequenceCounter_" + userName);
