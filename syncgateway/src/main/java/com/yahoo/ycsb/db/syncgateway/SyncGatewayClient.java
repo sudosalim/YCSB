@@ -920,8 +920,8 @@ public class SyncGatewayClient extends DB {
     responseCode = response.getStatusLine().getStatusCode();
     //System.err.println("printing response code for all post requests" + responseCode);
     if (responseCode != 200){
-      System.err.println("Doc Insert failed for request :" + request);
-      System.err.println("Printing response message if responseCode not 200 :" + response);
+      //System.err.println("Doc Insert failed for request :" + request);
+      //System.err.println("Printing response message if responseCode not 200 :" + response);
     }
     HttpEntity responseEntity = response.getEntity();
     boolean responseGenericValidation = true;
@@ -935,6 +935,9 @@ public class SyncGatewayClient extends DB {
         storeRevisions(line, currentIterationUser);
         responseGenericValidation = validateHttpResponse(line);
         if (requestTimedout.isSatisfied()) {
+          System.err.println("request timing out | request : " + request +
+              " | response :" + response + " | responseContent :"
+              + responseContent + " | line : " + line);
           reader.close();
           stream.close();
           EntityUtils.consumeQuietly(responseEntity);
