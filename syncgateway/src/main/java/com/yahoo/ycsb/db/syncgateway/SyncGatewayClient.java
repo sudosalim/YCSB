@@ -913,6 +913,7 @@ public class SyncGatewayClient extends DB {
         System.err.println("doc not found for this _change request :"
             + request + " | responseContent:" + responseContent + " | channel:"
             + channel + " | looking for key:" + key);
+
       }
       timer.interrupt();
       stream.close();
@@ -1020,7 +1021,7 @@ public class SyncGatewayClient extends DB {
             + request + " | responseContent:" + responseContent + " | channel:"
             + channel + " | looking for key:" + key);
 
-        lastseq = waitForDocInChangeFeed5("0", channel, key);
+        lastseq = waitForDocInChangeFeed5(lastseq, channel, key);
 
         while(!docFound){
           lastseq = waitForDocInChangeFeed5(lastseq, channel, key);
