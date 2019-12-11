@@ -987,13 +987,13 @@ public class SyncGatewayClient extends DB {
       StringBuffer responseContent = new StringBuffer();
       String line = "";
       while ((line = reader.readLine()) != null) {
-        if (!docFound){
+        if (!docFound) {
           if (requestTimedout.isSatisfied()) {
-            long timetaken =  endTime - startTime;
+            long timetaken = endTime - startTime;
             System.err.println("change request timed out | request : " + request +
                 " | response :" + response + " | responseContent :"
                 + responseContent + " | line : " + line + " | start time :" + startTime
-                + " | endTime: " + endTime +  "  | time taken : " +  timetaken);
+                + " | endTime: " + endTime + "  | time taken : " + timetaken);
 
             // Must avoid memory leak.
             reader.close();
@@ -1011,38 +1011,49 @@ public class SyncGatewayClient extends DB {
             String[] arrOfstr2 = arrOfstr[1].split(",", 2);
             lastseq = arrOfstr2[0];
 
+            timer.interrupt();
+            stream.close();
+
+            EntityUtils.consumeQuietly(responseEntity);
+            response.close();
+            restClient.close();
+
+            return lastseq;
+
           }
         }
 
-        if(line.contains("last_seq") && !docFound){
+        if (line.contains("last_seq") && !docFound) {
           String[] arrOfstr = line.split(":", 2);
           String[] arrOfstr2 = arrOfstr[1].split("\"");
           lastseq = arrOfstr2[1];
+
+          System.err.println("doc not found for this _change request :"
+              + request + "| responseContent:" + responseContent + " | channel:"
+              + channel + " | looking for key:" + key);
         }
         responseContent.append(line);
       }
-      if(!docFound){
-        System.err.println("doc not found for this _change request :"
-            + request + " | responseContent:" + responseContent + " | channel:"
-            + channel + " | looking for key:" + key);
 
-        int intlastseq = Integer.parseInt(lastseq);
-        if (intlastseq > 15001){
-          intlastseq = intlastseq - 15000;
-        } else {
-          intlastseq = 0;
-        }
-        lastseq = Integer.toString(intlastseq);
-        lastseq = waitForDocInChangeFeed5(lastseq, channel, key);
-
-      }
       timer.interrupt();
       stream.close();
+      EntityUtils.consumeQuietly(responseEntity);
+      response.close();
+      restClient.close();
     }
 
-    EntityUtils.consumeQuietly(responseEntity);
-    response.close();
-    restClient.close();
+    if(!docFound){
+
+      int intlastseq = Integer.parseInt(lastseq);
+      if (intlastseq > 15001){
+        intlastseq = intlastseq - 15000;
+      } else {
+        intlastseq = 0;
+      }
+      lastseq = Integer.toString(intlastseq);
+      lastseq = waitForDocInChangeFeed5(lastseq, channel, key);
+
+    }
 
     return lastseq;
   }
