@@ -1006,10 +1006,15 @@ public class SyncGatewayClient extends DB {
 
           if (lookForDocID(line, key)) {
             docFound = true;
+
+            String[] arrOfstr = line.split(":", 2);
+            String[] arrOfstr2 = arrOfstr[1].split(",", 2);
+            lastseq = arrOfstr2[0];
+
           }
         }
 
-        if(line.contains("last_seq")){
+        if(line.contains("last_seq") && !docFound){
           String[] arrOfstr = line.split(":", 2);
           String[] arrOfstr2 = arrOfstr[1].split("\"");
           lastseq = arrOfstr2[1];
@@ -1021,11 +1026,15 @@ public class SyncGatewayClient extends DB {
             + request + " | responseContent:" + responseContent + " | channel:"
             + channel + " | looking for key:" + key);
 
+        int intlastseq = Integer.parseInt(lastseq);
+        if (intlastseq > 15001){
+          intlastseq = intlastseq - 15000;
+        } else {
+          intlastseq = 0;
+        }
+        lastseq = Integer.toString(intlastseq);
         lastseq = waitForDocInChangeFeed5(lastseq, channel, key);
 
-        while(!docFound){
-          lastseq = waitForDocInChangeFeed5(lastseq, channel, key);
-        }
       }
       timer.interrupt();
       stream.close();
