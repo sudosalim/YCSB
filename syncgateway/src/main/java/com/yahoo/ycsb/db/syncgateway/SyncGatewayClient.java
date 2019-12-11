@@ -1044,13 +1044,13 @@ public class SyncGatewayClient extends DB {
 
     if(!docFound){
 
-      int intlastseq = Integer.parseInt(lastseq);
-      if (intlastseq > 15001){
-        intlastseq = intlastseq - 15000;
-      } else {
-        intlastseq = 0;
-      }
-      lastseq = Integer.toString(intlastseq);
+      //int intlastseq = Integer.parseInt(lastseq);
+      //if (intlastseq > 15001){
+      //  intlastseq = intlastseq - 15000;
+      //} else {
+      //  intlastseq = 0;
+      //}
+      //lastseq = Integer.toString(lastseq);
       lastseq = waitForDocInChangeFeed5(lastseq, channel, key);
 
     }
