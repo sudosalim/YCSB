@@ -819,114 +819,6 @@ public class SyncGatewayClient extends DB {
   }
 
 
-  private String waitForDocInChangeFeed4(String sequenceSince, String channel, String key) throws IOException {
-    String port = (useAuth) ? portPublic : portAdmin;
-    String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
-        "&filter=sync_gateway/bychannel&channels=" + channel;
-
-    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
-
-    requestTimedout.setIsSatisfied(false);
-    Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
-    timer.start();
-    HttpGet request = new HttpGet(fullUrl);
-    for (int i = 0; i < headers.length; i = i + 2) {
-      request.setHeader(headers[i], headers[i + 1]);
-    }
-    if (useAuth && !basicAuth) {
-      request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
-    }
-
-    if (basicAuth) {
-      String auth = currentIterationUser + ":" + DEFAULT_USER_PASSWORD;
-      byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
-      String authHeader = "Basic " + new String(encodedAuth);
-      request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
-    }
-
-    CloseableHttpResponse response = null;
-    String lastseq = null;
-
-    long startTime = System.nanoTime();
-
-    try {
-      response = restClient.execute(request);
-    } catch (Exception e) {
-      System.err.println("_change Request Failed with exception " + e);
-      response.close();
-      restClient.close();
-      return lastseq;
-      //System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! by Socket ex for " + changesFeedEndpoint
-      //    + " " + ex.getStackTrace());
-      //throw new TimeoutException();
-    }
-
-    long endTime = System.nanoTime();
-
-    boolean docFound = false;
-
-    int responseCode = response.getStatusLine().getStatusCode();
-    if(responseCode != 200){
-      System.err.println("responseCode not 200 for _changes request :"
-          + request + " | response :" + response);
-    }
-
-    HttpEntity responseEntity = response.getEntity();
-
-    if (responseEntity != null) {
-      InputStream stream = responseEntity.getContent();
-      BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
-      StringBuffer responseContent = new StringBuffer();
-      String line = "";
-      while ((line = reader.readLine()) != null) {
-        if (!docFound){
-          if (requestTimedout.isSatisfied()) {
-            long timetaken =  endTime - startTime;
-            System.err.println("change request timed out | request : " + request +
-                " | response :" + response + " | responseContent :"
-                + responseContent + " | line : " + line + " | start time :" + startTime
-                + " | endTime: " + endTime +  "  | time taken : " +  timetaken);
-
-            // Must avoid memory leak.
-            reader.close();
-            stream.close();
-            EntityUtils.consumeQuietly(responseEntity);
-            response.close();
-            restClient.close();
-            throw new TimeoutException();
-          }
-
-          if (lookForDocID(line, key)) {
-            docFound = true;
-          }
-        }
-
-        if(line.contains("last_seq") && docFound){
-          String[] arrOfstr = line.split(":", 2);
-          String[] arrOfstr2 = arrOfstr[1].split("\"");
-          lastseq = arrOfstr2[1];
-
-        }
-        responseContent.append(line);
-      }
-      if(!docFound){
-        System.err.println("doc not found for this _change request :"
-            + request + " | responseContent:" + responseContent + " | channel:"
-            + channel + " | looking for key:" + key);
-
-      }
-      timer.interrupt();
-      stream.close();
-    }
-
-    EntityUtils.consumeQuietly(responseEntity);
-    response.close();
-    restClient.close();
-
-    return lastseq;
-  }
-
-
   private String waitForDocInChangeFeed5(String sequenceSince, String channel, String key) throws IOException {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
@@ -964,9 +856,6 @@ public class SyncGatewayClient extends DB {
       response.close();
       restClient.close();
       return lastseq;
-      //System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! by Socket ex for " + changesFeedEndpoint
-      //    + " " + ex.getStackTrace());
-      //throw new TimeoutException();
     }
 
     long endTime = System.nanoTime();
@@ -990,10 +879,10 @@ public class SyncGatewayClient extends DB {
         if (!docFound) {
           if (requestTimedout.isSatisfied()) {
             long timetaken = endTime - startTime;
-            System.err.println("change request timed out | request : " + request +
-                " | response :" + response + " | responseContent :"
-                + responseContent + " | line : " + line + " | start time :" + startTime
-                + " | endTime: " + endTime + "  | time taken : " + timetaken);
+            //System.err.println("change request timed out | request : " + request +
+            //    " | response :" + response + " | responseContent :"
+            //    + responseContent + " | line : " + line + " | start time :" + startTime
+            //    + " | endTime: " + endTime + "  | time taken : " + timetaken);
 
             // Must avoid memory leak.
             reader.close();
@@ -1028,9 +917,9 @@ public class SyncGatewayClient extends DB {
           String[] arrOfstr2 = arrOfstr[1].split("\"");
           lastseq = arrOfstr2[1];
 
-          System.err.println("doc not found for this _change request :"
-              + request + "| responseContent:" + responseContent + " | channel:"
-              + channel + " | looking for key:" + key);
+          //System.err.println("doc not found for this _change request :"
+          //    + request + "| responseContent:" + responseContent + " | channel:"
+          //    + channel + " | looking for key:" + key);
         }
         responseContent.append(line);
       }
@@ -1044,13 +933,6 @@ public class SyncGatewayClient extends DB {
 
     if(!docFound){
 
-      //int intlastseq = Integer.parseInt(lastseq);
-      //if (intlastseq > 15001){
-      //  intlastseq = intlastseq - 15000;
-      //} else {
-      //  intlastseq = 0;
-      //}
-      //lastseq = Integer.toString(lastseq);
       lastseq = waitForDocInChangeFeed5(lastseq, channel, key);
 
     }
