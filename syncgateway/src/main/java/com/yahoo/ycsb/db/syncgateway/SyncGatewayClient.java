@@ -931,7 +931,7 @@ public class SyncGatewayClient extends DB {
     }
 
     if(!docFound){
-      
+
       lastseq = waitForDocInChangeFeed5(lastseq, channel, key);
 
     }
@@ -1045,8 +1045,8 @@ public class SyncGatewayClient extends DB {
     responseCode = response.getStatusLine().getStatusCode();
     //System.err.println("printing response code for all post requests" + responseCode);
     if (responseCode != 200){
-      //System.err.println("Doc Insert failed for request :" + request);
-      //System.err.println("Printing response message if responseCode not 200 :" + response);
+      System.err.println("Doc Insert failed for request :" + request);
+      System.err.println("Printing response message if responseCode not 200 :" + response);
     }
     HttpEntity responseEntity = response.getEntity();
     boolean responseGenericValidation = true;
