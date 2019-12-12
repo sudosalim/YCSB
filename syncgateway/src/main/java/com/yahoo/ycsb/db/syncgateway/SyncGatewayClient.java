@@ -494,7 +494,7 @@ public class SyncGatewayClient extends DB {
     String currentSequence = getLocalSequenceGlobal();
     String lastSequence = getLastSequenceGlobal();
 
-    String lastSeqChannel = getLastSequenceChannel(channel);
+    //String lastSeqChannel = getLastSequenceChannel(channel);
 
     String lastseq = null;
 
@@ -520,13 +520,13 @@ public class SyncGatewayClient extends DB {
         try {
 
           if (feedMode.equals("longpoll")){
-            lastseq = waitForDocInChangeFeed5(lastSeqChannel, channel, key);
+            lastseq = waitForDocInChangeFeed5(lastSequence, channel, key);
           } else {
-            lastseq = waitForDocInChangeFeed3(lastSeqChannel, channel, key);
+            lastseq = waitForDocInChangeFeed3(lastSequence, channel, key);
           }
           incrementLocalSequenceGlobal();
-          //setLastSequenceGlobally(lastseq);
-          setLastSequenceChannel(lastseq, channel);
+          setLastSequenceGlobally(lastseq);
+          //setLastSequenceChannel(lastseq, channel);
         } catch (Exception e) {
           System.err.println("Failed to sync lastSeq value  | lastseq : "
               + lastseq + " | fullUrl : " + fullUrl + " | lastSequence :"
@@ -879,10 +879,10 @@ public class SyncGatewayClient extends DB {
         if (!docFound) {
           if (requestTimedout.isSatisfied()) {
             long timetaken = endTime - startTime;
-            //System.err.println("change request timed out | request : " + request +
-            //    " | response :" + response + " | responseContent :"
-            //    + responseContent + " | line : " + line + " | start time :" + startTime
-            //    + " | endTime: " + endTime + "  | time taken : " + timetaken);
+            System.err.println("change request timed out | request : " + request +
+                " | response :" + response + " | responseContent :"
+                + responseContent + " | line : " + line + " | start time :" + startTime
+                + " | endTime: " + endTime + "  | time taken : " + timetaken);
 
             // Must avoid memory leak.
             reader.close();
@@ -894,7 +894,6 @@ public class SyncGatewayClient extends DB {
           }
 
           if (lookForDocID(line, key)) {
-            docFound = true;
 
             String[] arrOfstr = line.split(":", 2);
             String[] arrOfstr2 = arrOfstr[1].split(",", 2);
