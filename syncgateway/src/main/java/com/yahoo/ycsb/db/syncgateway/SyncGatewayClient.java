@@ -927,15 +927,16 @@ public class SyncGatewayClient extends DB {
       stream.close();
       EntityUtils.consumeQuietly(responseEntity);
       response.close();
-      restClient.close();
+
     }
 
     if(!docFound){
-
+      
       lastseq = waitForDocInChangeFeed5(lastseq, channel, key);
 
     }
 
+    restClient.close();
     return lastseq;
   }
 
