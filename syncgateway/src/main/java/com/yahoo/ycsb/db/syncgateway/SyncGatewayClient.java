@@ -890,6 +890,7 @@ public class SyncGatewayClient extends DB {
             EntityUtils.consumeQuietly(responseEntity);
             response.close();
             restClient.close();
+            timer.interrupt();
             throw new TimeoutException();
           }
 
@@ -900,8 +901,8 @@ public class SyncGatewayClient extends DB {
             lastseq = arrOfstr2[0];
 
             timer.interrupt();
+            reader.close();
             stream.close();
-
             EntityUtils.consumeQuietly(responseEntity);
             response.close();
             restClient.close();
@@ -924,10 +925,10 @@ public class SyncGatewayClient extends DB {
       }
 
       timer.interrupt();
+      reader.close();
       stream.close();
       EntityUtils.consumeQuietly(responseEntity);
       response.close();
-
     }
 
     if(!docFound){
