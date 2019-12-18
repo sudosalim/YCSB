@@ -18,6 +18,7 @@
 package com.yahoo.ycsb.db.couchbase3;
 
 
+import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.JsonNode;
 import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentNotFoundException;
@@ -25,6 +26,8 @@ import com.couchbase.client.java.Bucket;
 import com.couchbase.client.java.Cluster;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.env.ClusterEnvironment;
+import com.couchbase.client.java.json.JacksonTransformers;
+import com.couchbase.client.java.json.JsonArray;
 import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.java.kv.GetResult;
 import com.couchbase.transactions.*;
@@ -39,6 +42,7 @@ import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
 import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
 import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
+import static com.couchbase.client.java.query.QueryOptions.queryOptions;
 
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.ReplicateTo;
@@ -53,6 +57,8 @@ import java.time.Duration;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
@@ -85,6 +91,10 @@ public class Couchbase3Client extends DB {
   private volatile boolean useDurabilityLevels;
   private  volatile  HashSet errors = new HashSet<Throwable>();
 
+  private boolean adhoc;
+  private int maxParallelism;
+  private String scanAllQuery;
+
   @Override
   public void init() throws DBException {
     Properties props = getProperties();
@@ -99,6 +109,13 @@ public class Couchbase3Client extends DB {
       durabilityLevel = parseDurabilityLevel(rawDurabilityLevel);
       useDurabilityLevels = true;
     }
+
+    adhoc = props.getProperty("couchbase.adhoc", "false").equals("true");
+    maxParallelism = Integer.parseInt(props.getProperty("couchbase.maxParallelism", "1"));
+    scanAllQuery =  "SELECT RAW meta().id FROM `" + bucketName +
+        "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+
+
 
     synchronized (INIT_COORDINATOR) {
       if (environment == null) {
@@ -417,8 +434,73 @@ public class Couchbase3Client extends DB {
   @Override
   public Status scan(final String table, final String startkey, final int recordcount, final Set<String> fields,
                      final Vector<HashMap<String, ByteIterator>> result) {
-    return Status.NOT_IMPLEMENTED;
+    try {
+      if (fields == null || fields.isEmpty()) {
+        return scanAllFields(table, startkey, recordcount, result);
+      } else {
+        //return scanSpecificFields(table, startkey, recordcount, fields, result);
+        // need to implement
+        return Status.OK;
+      }
+    } catch (Exception ex) {
+      ex.printStackTrace();
+      return Status.ERROR;
+    }
   }
+
+  private Status scanAllFields(final String table, final String startkey, final int recordcount,
+                               final Vector<HashMap<String, ByteIterator>> result) {
+    final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
+
+    cluster.reactive().query(scanAllQuery, queryOptions()
+        .parameters(JsonArray.from(formatId(table, startkey), recordcount))
+        .adhoc(adhoc).maxParallelism(maxParallelism))
+        .flux()
+        .flatMap(res -> res.rowsAs(String.class))
+        .flatMap(id -> collection.reactive().get(id))
+        .map(new Function<GetResult, HashMap<String, ByteIterator>>() {
+          @Override
+          public HashMap<String, ByteIterator> apply(GetResult getResult) {
+            HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>();
+            //System.err.println("printingresult before decoding" + getResult.contentAsObject().toString());
+            decode(getResult.contentAsObject().toString(), null, tuple);
+            return tuple;
+          }
+        })
+        .toIterable()
+        .forEach(new Consumer<HashMap<String, ByteIterator>>() {
+          @Override
+          public void accept(HashMap<String, ByteIterator> stringByteIteratorHashMap) {
+            data.add(stringByteIteratorHashMap);
+          }
+        });
+
+    return Status.OK;
+  }
+
+
+  private void decode(final String source, final Set<String> fields,
+                      final Map<String, ByteIterator> dest) {
+    try {
+      JsonNode json = JacksonTransformers.MAPPER.readTree(source);
+      boolean checkFields = fields != null && !fields.isEmpty();
+      for (Iterator<Map.Entry<String, JsonNode>> jsonFields = json.fields(); jsonFields.hasNext();) {
+        Map.Entry<String, JsonNode> jsonField = jsonFields.next();
+        String name = jsonField.getKey();
+        if (checkFields && !fields.contains(name)) {
+          continue;
+        }
+        JsonNode jsonValue = jsonField.getValue();
+        if (jsonValue != null && !jsonValue.isNull()) {
+          dest.put(name, new StringByteIterator(jsonValue.asText()));
+        }
+      }
+    } catch (Exception e) {
+      throw new RuntimeException("Could not decode JSON");
+    }
+  }
+
+
 
   /**
    * Helper method to turn the prefix and key into a proper document ID.
