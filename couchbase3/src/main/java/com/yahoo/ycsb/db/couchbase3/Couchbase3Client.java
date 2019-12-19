@@ -30,6 +30,7 @@ import com.couchbase.client.java.json.JacksonTransformers;
 import com.couchbase.client.java.json.JsonArray;
 import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.java.kv.GetResult;
+import com.couchbase.client.java.query.QueryResult;
 import com.couchbase.transactions.*;
 
 import com.couchbase.transactions.config.TransactionConfigBuilder;
@@ -94,11 +95,12 @@ public class Couchbase3Client extends DB {
   private boolean adhoc;
   private int maxParallelism;
   private String scanAllQuery;
+  private String bucketName;
 
   @Override
   public void init() throws DBException {
     Properties props = getProperties();
-    String bucketName = props.getProperty("couchbase.bucket", "ycsb");
+    bucketName = props.getProperty("couchbase.bucket", "ycsb");
     // durability options
     String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
     if (rawDurabilityLevel == null) {
@@ -114,6 +116,7 @@ public class Couchbase3Client extends DB {
     maxParallelism = Integer.parseInt(props.getProperty("couchbase.maxParallelism", "1"));
     scanAllQuery =  "SELECT RAW meta().id FROM `" + bucketName +
         "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+    bucketName = props.getProperty("couchbase.bucket", "default");
 
 
 
@@ -438,9 +441,8 @@ public class Couchbase3Client extends DB {
       if (fields == null || fields.isEmpty()) {
         return scanAllFields(table, startkey, recordcount, result);
       } else {
-        //return scanSpecificFields(table, startkey, recordcount, fields, result);
+        return scanSpecificFields(table, startkey, recordcount, fields, result);
         // need to implement
-        return Status.OK;
       }
     } catch (Exception ex) {
       ex.printStackTrace();
@@ -478,6 +480,46 @@ public class Couchbase3Client extends DB {
     return Status.OK;
   }
 
+  /**
+   * Performs the {@link #scan(String, String, int, Set, Vector)} operation N1Ql only for a subset of the fields.
+   *
+   * @param table The name of the table
+   * @param startkey The record key of the first record to read.
+   * @param recordcount The number of records to read
+   * @param fields The list of fields to read, or null for all of them
+   * @param result A Vector of HashMaps, where each HashMap is a set field/value pairs for one record
+   * @return The result of the operation.
+   */
+  private Status scanSpecificFields(final String table, final String startkey, final int recordcount,
+                                    final Set<String> fields, final Vector<HashMap<String, ByteIterator>> result) {
+    String scanSpecQuery = "SELECT " + joinFields(fields) + " FROM `" + bucketName
+        + "` WHERE meta().id >= $1 LIMIT $2";
+
+    QueryResult queryResult = cluster.query(scanSpecQuery, queryOptions()
+        .parameters(JsonArray.from(formatId(table, startkey), recordcount))
+        .adhoc(adhoc).maxParallelism(maxParallelism));
+
+    boolean allFields = fields == null || fields.isEmpty();
+    result.ensureCapacity(recordcount);
+
+
+    for(JsonObject value : queryResult.rowsAs(JsonObject.class)) {
+
+      if (fields == null) {
+        value = value.getObject(bucketName);
+      }
+
+      Set<String> f = allFields ? value.getNames() : fields;
+      HashMap<String, ByteIterator> tuple =new HashMap<String, ByteIterator>(f.size());
+      for (String field : f){
+        tuple.put(field, new StringByteIterator(value.getString(field)));
+      }
+      result.add(tuple);
+    }
+
+    return Status.OK;
+  }
+
 
   private void decode(final String source, final Set<String> fields,
                       final Map<String, ByteIterator> dest) {
@@ -501,6 +543,23 @@ public class Couchbase3Client extends DB {
   }
 
 
+  /**
+   * Helper method to join the set of fields into a String suitable for N1QL.
+   *
+   * @param fields the fields to join.
+   * @return the joined fields as a String.
+   */
+  private static String joinFields(final Set<String> fields) {
+    if (fields == null || fields.isEmpty()) {
+      return "*";
+    }
+    StringBuilder builder = new StringBuilder();
+    for (String f : fields) {
+      builder.append("`").append(f).append("`").append(",");
+    }
+    String toReturn = builder.toString();
+    return toReturn.substring(0, toReturn.length() - 1);
+  }
 
   /**
    * Helper method to turn the prefix and key into a proper document ID.
