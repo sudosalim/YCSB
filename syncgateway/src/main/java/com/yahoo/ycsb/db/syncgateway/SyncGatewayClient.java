@@ -1044,7 +1044,7 @@ public class SyncGatewayClient extends DB {
     long endTime = System.nanoTime();
     int responseCode = response.getStatusLine().getStatusCode();
     //System.err.println("printing response code for all post requests" + responseCode);
-    if (responseCode != 200 || responseCode != 201){
+    if (responseCode != 200 && responseCode != 201){
       System.err.println("Doc Insert failed for request :" + request + "  request Code:" + responseCode);
       System.err.println(" response message if responseCode not 200 :" + response);
     }
