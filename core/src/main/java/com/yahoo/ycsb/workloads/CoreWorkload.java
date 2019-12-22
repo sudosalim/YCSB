@@ -300,7 +300,7 @@ public class CoreWorkload extends Workload {
    * How many times to retry when insertion of a single item to a DB fails.
    */
   public static final String INSERTION_RETRY_LIMIT = "core_workload_insertion_retry_limit";
-  public static final String INSERTION_RETRY_LIMIT_DEFAULT = "10";
+  public static final String INSERTION_RETRY_LIMIT_DEFAULT = "0";
 
   /**
    * On average, how long to wait between the retries, in seconds.
