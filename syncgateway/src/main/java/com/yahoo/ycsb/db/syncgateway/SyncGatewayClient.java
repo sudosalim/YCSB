@@ -1031,7 +1031,6 @@ public class SyncGatewayClient extends DB {
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
-    int responseCode = 200;
     for (int i = 0; i < headers.length; i = i + 2) {
       request.setHeader(headers[i], headers[i + 1]);
     }
@@ -1043,11 +1042,11 @@ public class SyncGatewayClient extends DB {
     long startTime = System.nanoTime();
     CloseableHttpResponse response = restClient.execute(request);
     long endTime = System.nanoTime();
-    responseCode = response.getStatusLine().getStatusCode();
+    int responseCode = response.getStatusLine().getStatusCode();
     //System.err.println("printing response code for all post requests" + responseCode);
-    if (responseCode != 200){
-      System.err.println("Doc Insert failed for request :" + request);
-      System.err.println("Printing response message if responseCode not 200 :" + response);
+    if (responseCode != 200 || responseCode != 201){
+      System.err.println("Doc Insert failed for request :" + request + "  request Code:" + responseCode);
+      System.err.println(" response message if responseCode not 200 :" + response);
     }
     HttpEntity responseEntity = response.getEntity();
     boolean responseGenericValidation = true;
