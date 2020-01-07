@@ -40,7 +40,7 @@ LICENSE file.
       <dependency>
         <groupId>com.couchbase.client</groupId>
         <artifactId>couchbase-transactions</artifactId>
-        <version>1.0.0-beta.4-SNAPSHOT</version>
+        <version>1.0.0-20200106.142950-6</version>
       </dependency>
         <dependency>
             <groupId>com.yahoo.ycsb</groupId>

@@ -211,7 +211,7 @@ public class Couchbase3Client extends DB {
     case 1:
       return TransactionDurabilityLevel.MAJORITY;
     case 2:
-      return TransactionDurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER;
+      return TransactionDurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE;
     case 3:
       return TransactionDurabilityLevel.PERSIST_TO_MAJORITY;
     default :
@@ -229,7 +229,7 @@ public class Couchbase3Client extends DB {
     case 1:
       return DurabilityLevel.MAJORITY;
     case 2:
-      return DurabilityLevel.MAJORITY_AND_PERSIST_ON_MASTER;
+      return DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE;
     case 3:
       return DurabilityLevel.PERSIST_TO_MAJORITY;
     default :
