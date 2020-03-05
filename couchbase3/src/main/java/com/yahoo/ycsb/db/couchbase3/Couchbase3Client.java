@@ -20,6 +20,7 @@ package com.yahoo.ycsb.db.couchbase3;
 
 import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.JsonNode;
 import com.couchbase.client.core.env.IoConfig;
+import com.couchbase.client.core.env.SeedNode;
 import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.java.Bucket;
@@ -123,6 +124,8 @@ public class Couchbase3Client extends DB {
     synchronized (INIT_COORDINATOR) {
       if (environment == null) {
         String hostname = props.getProperty("couchbase.host", "127.0.0.1");
+        int kvPort = Integer.parseInt(props.getProperty("couchbase.kvPort", "11210"));
+        int managerPort = Integer.parseInt(props.getProperty("couchbase.managerPort", "8091"));
         String username = props.getProperty("couchbase.username", "Administrator");
         String password = props.getProperty("couchbase.password", "password");
         boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
@@ -152,7 +155,13 @@ public class Couchbase3Client extends DB {
 
         clusterOptions = ClusterOptions.clusterOptions(username, password);
         clusterOptions.environment(environment);
-        cluster = Cluster.connect(hostname, clusterOptions);
+
+        Set<SeedNode> seedNodes = new HashSet<>(Arrays.asList(
+            SeedNode.create(hostname,
+                Optional.of(kvPort),
+                Optional.of(managerPort))));
+
+        cluster = Cluster.connect(seedNodes, clusterOptions);
         Bucket bucket = cluster.bucket(bucketName);
         collection = bucket.defaultCollection();
         if ((transactions == null) && transactionEnabled) {
