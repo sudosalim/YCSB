@@ -76,14 +76,16 @@ public class Couchbase3Client extends DB {
   private static volatile ClusterEnvironment environment;
   private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
 
+  private static final AtomicInteger COLLECTION_NUMBER = new AtomicInteger(0);
+
   private static final Object INIT_COORDINATOR = new Object();
 
-  private static volatile Cluster cluster;
-  private static volatile ClusterOptions clusterOptions;
-  private static volatile Collection collection;
-  private static Transactions transactions;
-  private static boolean transactionEnabled;
-  private static int[] transactionKeys;
+  private volatile Cluster cluster;
+  private volatile ClusterOptions clusterOptions;
+  private volatile Collection collection;
+  private Transactions transactions;
+  private boolean transactionEnabled;
+  private int[] transactionKeys;
 
   private volatile TransactionDurabilityLevel transDurabilityLevel;
 
@@ -97,6 +99,16 @@ public class Couchbase3Client extends DB {
   private int maxParallelism;
   private String scanAllQuery;
   private String bucketName;
+
+  private static boolean collectionenabled;
+
+  private static int collectionsPerInstance;
+
+  private static int collectionStart;
+
+  private static String collectionsparam;
+
+  private static String[] collections;
 
   @Override
   public void init() throws DBException {
@@ -119,21 +131,40 @@ public class Couchbase3Client extends DB {
         "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
     bucketName = props.getProperty("couchbase.bucket", "default");
 
+    int numATRS = Integer.parseInt(props.getProperty("couchbase.atrs", "20480"));
+
+    String hostname = props.getProperty("couchbase.host", "127.0.0.1");
+    int kvPort = Integer.parseInt(props.getProperty("couchbase.kvPort", "11210"));
+    int managerPort = Integer.parseInt(props.getProperty("couchbase.managerPort", "8091"));
+    String username = props.getProperty("couchbase.username", "Administrator");
+
+    String password = props.getProperty("couchbase.password", "password");
+
+    collectionenabled = props.getProperty("couchbase.collectionenabled", "false").equals("true");
+
+    //System.err.println("collectionenabled insdie couchbase3client" + collectionenabled);
+
+    collectionsPerInstance = Integer.parseInt(props.getProperty("couchbase.collectionsPerInstance", "1"));
+
+    collectionStart = Integer.parseInt(props.getProperty("couchbase.collectionStart", "1"));
+
+    collectionsparam =props.getProperty("couchbase.collectionsparam", "default");
+
+    //System.err.println("printing collectionsparam" + collectionsparam);
+
+    collections =  collectionsparam.split(",");
+
+    //System.err.println("printing collections array" + collections);
 
 
     synchronized (INIT_COORDINATOR) {
       if (environment == null) {
-        String hostname = props.getProperty("couchbase.host", "127.0.0.1");
-        int kvPort = Integer.parseInt(props.getProperty("couchbase.kvPort", "11210"));
-        int managerPort = Integer.parseInt(props.getProperty("couchbase.managerPort", "8091"));
-        String username = props.getProperty("couchbase.username", "Administrator");
-        String password = props.getProperty("couchbase.password", "password");
+
         boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
 
         long kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "60000"));
         int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
 
-        int numATRS = Integer.parseInt(props.getProperty("couchbase.atrs", "20480"));
         transactionEnabled = Boolean.parseBoolean(props.getProperty("couchbase.transactionsEnabled", "false"));
         try {
           durabilityLevel = parseDurabilityLevel(props.getProperty("couchbase.durability", "0"));
@@ -147,32 +178,68 @@ public class Couchbase3Client extends DB {
           System.out.println("Failed to parse TransactionDurability Level");
         }
 
+        //collectionArray = new String[collectionsPerInstance];
+
+        //for(int i = 0; i<=collectionsPerInstance-1; i++) {
+          //System.err.println("colllection start inside loop" + collectionStart);
+
+          //collectionArray[i] = "collection" + collectionStart;
+
+          //System.err.println("printing in loop" + collectionArray);
+          //collectionStart += COLLECTION_INCREMENT.incrementAndGet();
+
         environment = ClusterEnvironment
             .builder()
             .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
             .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints))
             .build();
 
-        clusterOptions = ClusterOptions.clusterOptions(username, password);
-        clusterOptions.environment(environment);
-
-        Set<SeedNode> seedNodes = new HashSet<>(Arrays.asList(
-            SeedNode.create(hostname,
-                Optional.of(kvPort),
-                Optional.of(managerPort))));
-
-        cluster = Cluster.connect(seedNodes, clusterOptions);
-        Bucket bucket = cluster.bucket(bucketName);
-        collection = bucket.defaultCollection();
-        if ((transactions == null) && transactionEnabled) {
-          transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
-              .durabilityLevel(transDurabilityLevel)
-              .numATRs(numATRS)
-              .build());
-        }
-
       }
     }
+
+    int indexNum = COLLECTION_NUMBER.incrementAndGet()-1;
+
+    if(indexNum > collections.length){
+
+      indexNum = indexNum - collections.length;
+
+    }
+
+    String collectionname = collections[indexNum];
+
+    clusterOptions = ClusterOptions.clusterOptions(username, password);
+    clusterOptions.environment(environment);
+
+    Set<SeedNode> seedNodes = new HashSet<>(Arrays.asList(
+        SeedNode.create(hostname,
+            Optional.of(kvPort),
+            Optional.of(managerPort))));
+
+    cluster = Cluster.connect(seedNodes, clusterOptions);
+    Bucket bucket = cluster.bucket(bucketName);
+
+    if (!collectionenabled){
+
+      //System.err.println("since collectionenabled false using default colelction");
+
+      collection = bucket.defaultCollection();
+    } else {
+
+      //System.err.println("since collectionenabled true using colelctions");
+
+      //System.err.println("printing collection name" + collectionname);
+
+      collection = bucket.scope("scope1").collection(collectionname);
+    }
+
+    if ((transactions == null) && transactionEnabled) {
+      transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
+          .durabilityLevel(transDurabilityLevel)
+          .numATRs(numATRS)
+          .build());
+
+    }
+
     OPEN_CLIENTS.incrementAndGet();
   }
 
@@ -263,6 +330,7 @@ public class Couchbase3Client extends DB {
   @Override
   public Status read(final String table, final String key, final Set<String> fields,
                      final Map<String, ByteIterator> result) {
+
     try {
       GetResult document = collection.get(formatId(table, key));
       extractFields(document.contentAsObject(), fields, result);
@@ -401,8 +469,8 @@ public class Couchbase3Client extends DB {
         });
     } catch (TransactionFailed e) {
       Logger logger = LoggerFactory.getLogger(getClass().getName() + ".bad");
-      System.err.println("Transaction failed " + e.result().transactionId() + " " +
-          e.result().timeTaken().toMillis() + "msecs");
+      //System.err.println("Transaction failed " + e.result().transactionId() + " " +
+          //e.result().timeTaken().toMillis() + "msecs");
       for (LogDefer err : e.result().log().logs()) {
         String s = err.toString();
         logger.warn("Transaction failed:" + s);

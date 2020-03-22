@@ -19,7 +19,6 @@ package com.yahoo.ycsb.workloads;
 
 import com.yahoo.ycsb.*;
 import com.yahoo.ycsb.generator.*;
-import com.yahoo.ycsb.generator.UniformLongGenerator;
 import com.yahoo.ycsb.measurements.Measurements;
 
 import java.io.IOException;
@@ -63,7 +62,8 @@ import java.util.*;
  * order ("hashed") (default: hashed)
  * </ul>
  */
-public class CoreWorkload extends Workload {
+public class CustomCollectionWorkload extends Workload {
+
   /**
    * The name of the database table to run queries against.
    */
@@ -334,6 +334,7 @@ public class CoreWorkload extends Workload {
   protected NumberGenerator keychooser;
   protected NumberGenerator fieldchooser;
   protected AcknowledgedCounterGenerator transactioninsertkeysequence;
+  protected AcknowledgedCounterGenerator transactioninsertkeysequenceskewed;
   protected NumberGenerator scanlength;
   protected boolean orderedinserts;
   protected long fieldcount;
@@ -341,6 +342,8 @@ public class CoreWorkload extends Workload {
   protected int zeropadding;
   protected int insertionRetryLimit;
   protected int insertionRetryInterval;
+  protected int collectiontestrecordcount;
+  protected boolean collectionenabled;
 
   private Measurements measurements = Measurements.getMeasurements();
 
@@ -378,7 +381,7 @@ public class CoreWorkload extends Workload {
    * Initialize the scenario.
    * Called once, in the main client thread, before any operations are started.
    */
-  @Override
+
   public void init(Properties p) throws WorkloadException {
     table = p.getProperty(TABLENAME_PROPERTY, TABLENAME_PROPERTY_DEFAULT);
 
@@ -388,13 +391,20 @@ public class CoreWorkload extends Workload {
     for (int i = 0; i < fieldcount; i++) {
       fieldnames.add("field" + i);
     }
-    fieldlengthgenerator = CoreWorkload.getFieldLengthGenerator(p);
+    fieldlengthgenerator = CustomCollectionWorkload.getFieldLengthGenerator(p);
 
     recordcount =
         Long.parseLong(p.getProperty(Client.RECORD_COUNT_PROPERTY, Client.DEFAULT_RECORD_COUNT));
     if (recordcount == 0) {
       recordcount = Integer.MAX_VALUE;
     }
+
+    collectiontestrecordcount = Integer.parseInt(p.getProperty(Client.COLLECTIONTEST_RECORD_COUNT_PROPERTY,
+        Client.COLLECTIONTEST_RECORD_COUNT_DEFAULT));
+
+    collectionenabled = Boolean.parseBoolean(p.getProperty(
+        Client.COLLECTION_ENABLED_PROPERTY, Client.COLLECTION_ENABLED_DEFAULT));
+
     String requestdistrib =
         p.getProperty(REQUEST_DISTRIBUTION_PROPERTY, REQUEST_DISTRIBUTION_PROPERTY_DEFAULT);
     int minscanlength =
@@ -406,12 +416,12 @@ public class CoreWorkload extends Workload {
 
     long insertstart =
         Long.parseLong(p.getProperty(INSERT_START_PROPERTY, INSERT_START_PROPERTY_DEFAULT));
-    //System.err.println("printing INSERT_START_PROPERTY within " +
-        //"Coreworkload init" + insertstart);
+    System.err.println("printing INSERT_START_PROPERTY within " +
+        "Coreworkload init" + insertstart);
     long insertcount=
         Integer.parseInt(p.getProperty(INSERT_COUNT_PROPERTY, String.valueOf(recordcount - insertstart)));
-    //System.err.println("printing INSERT_COUNT_PROPERTY within " +
-        //"Coreworkload init" + insertstart);
+    System.err.println("printing INSERT_COUNT_PROPERTY within " +
+        "Coreworkload init" + insertstart);
     // Confirm valid values for insertstart and insertcount in relation to recordcount
     if (recordcount < (insertstart + insertcount)) {
       System.err.println("Invalid combination of insertstart, insertcount and recordcount.");
@@ -451,10 +461,17 @@ public class CoreWorkload extends Workload {
       orderedinserts = true;
     }
 
-    keysequence = new CounterGenerator(insertstart);
+    keysequence = new CollectionCounterGenerator(insertstart);
     operationchooser = createOperationGenerator(p);
 
-    transactioninsertkeysequence = new AcknowledgedCounterGenerator(recordcount);
+    if(collectionenabled) {
+      transactioninsertkeysequence = new AcknowledgedCounterGenerator(collectiontestrecordcount);
+      transactioninsertkeysequenceskewed = new AcknowledgedCounterGenerator(recordcount);
+    } else {
+
+      transactioninsertkeysequence = new AcknowledgedCounterGenerator(recordcount);
+    }
+
     if (requestdistrib.compareTo("uniform") == 0) {
       keychooser = new UniformLongGenerator(insertstart, insertstart + insertcount - 1);
     } else if (requestdistrib.compareTo("sequential") == 0) {
@@ -476,7 +493,7 @@ public class CoreWorkload extends Workload {
 
       keychooser = new ScrambledZipfianGenerator(insertstart, insertstart + insertcount + expectednewkeys);
     } else if (requestdistrib.compareTo("latest") == 0) {
-      keychooser = new SkewedLatestGenerator(transactioninsertkeysequence);
+      keychooser = new SkewedLatestGenerator(transactioninsertkeysequenceskewed);
     } else if (requestdistrib.equals("hotspot")) {
       double hotsetfraction =
           Double.parseDouble(p.getProperty(HOTSPOT_DATA_FRACTION, HOTSPOT_DATA_FRACTION_DEFAULT));
@@ -580,9 +597,86 @@ public class CoreWorkload extends Workload {
    * for each other, and it will be difficult to reach the target throughput. Ideally, this function would
    * have no side effects other than DB operations.
    */
-  @Override
+
   public boolean doInsert(DB db, Object threadstate) {
+
     int keynum = keysequence.nextValue().intValue();
+    String dbkey = buildKeyName(keynum);
+
+    //System.err.println("keyname/dbkey value" + dbkey);
+
+    HashMap<String, ByteIterator> values = buildValues(dbkey);
+
+    Status status;
+    int numOfRetries = 0;
+    do {
+      status = db.insert(table, dbkey, values);
+      if (null != status && status.isOk()) {
+        break;
+      }
+      // Retry if configured. Without retrying, the load process will fail
+      // even if one single insertion fails. User can optionally configure
+      // an insertion retry limit (default is 0) to enable retry.
+      if (++numOfRetries <= insertionRetryLimit) {
+        System.err.println("Retrying insertion, retry count: " + numOfRetries);
+        try {
+          // Sleep for a random number between [0.8, 1.2)*insertionRetryInterval.
+          int sleepTime = (int) (1000 * insertionRetryInterval * (0.8 + 0.4 * Math.random()));
+          Thread.sleep(sleepTime);
+        } catch (InterruptedException e) {
+          break;
+        }
+
+      } else {
+        System.err.println("Error inserting, not retrying any more. number of attempts: " + numOfRetries +
+            "Insertion Retry Limit: " + insertionRetryLimit);
+        break;
+
+      }
+    } while (true);
+
+    return null != status && status.isOk();
+  }
+
+
+  public void doTransactionCollectionRead(DB db, int insertstart) {
+
+
+    // choose a random key
+    long keynum = nextKeynum();          /// use this for workloada or e
+    //long keynum = nextKeynumCollection(); /// use this only for workloadd
+
+    String keyname = buildKeyName(keynum);
+
+    //System.err.println("keyname/dbkey value" + keyname);
+
+    HashSet<String> fields = null;
+
+    if (!readallfields) {
+      // read a random field
+      String fieldname = fieldnames.get(fieldchooser.nextValue().intValue());
+
+      fields = new HashSet<String>();
+      fields.add(fieldname);
+    } else if (dataintegrity) {
+      // pass the full field list if dataintegrity is on for verification
+      fields = new HashSet<String>(fieldnames);
+    }
+
+    HashMap<String, ByteIterator> cells = new HashMap<String, ByteIterator>();
+    db.read(table, keyname, fields, cells);
+
+    if (dataintegrity) {
+      verifyRow(keyname, cells);
+    }
+  }
+
+
+  public boolean doInsertcollectoin(DB db, Object threadstate, int insertstart) {
+
+    //int keynum = keysequence.nextValue().intValue();
+
+    int keynum = insertstart;
     String dbkey = buildKeyName(keynum);
 
     //System.err.println("keyname/dbkey value" + dbkey);
@@ -626,6 +720,7 @@ public class CoreWorkload extends Workload {
    * for each other, and it will be difficult to reach the target throughput. Ideally, this function would
    * have no side effects other than DB operations.
    */
+
   @Override
   public boolean doTransaction(DB db, Object threadstate) {
     String operation = operationchooser.nextString();
@@ -653,6 +748,31 @@ public class CoreWorkload extends Workload {
     return true;
   }
 
+  public boolean doTransactionCollection(DB db, Object threadstate, int insertstart) {
+    String operation = operationchooser.nextString();
+    if(operation == null) {
+      return false;
+    }
+
+    switch (operation) {
+    case "READ":
+      doTransactionCollectionRead(db, insertstart);
+      break;
+    case "UPDATE":
+      doTransactionCollectionupdate(db, insertstart);
+      break;
+    case "INSERT":
+      doTransactionCollectionInsert(db);
+      break;
+    case "SCAN":
+      doTransactionCollectionScan(db);
+      break;
+    default:
+      doTransactionCollectionReadModifyWrite(db);
+    }
+
+    return true;
+  }
 
   /**
    * Results are reported in the first three buckets of the histogram under
@@ -694,9 +814,18 @@ public class CoreWorkload extends Workload {
     return keynum;
   }
 
-
-  public boolean doTransactionCollection(DB db, Object threadstate, int insertcollection){
-    return false;
+  long nextKeynumCollection() {
+    long keynum;
+    if (keychooser instanceof ExponentialGenerator) {
+      do {
+        keynum = transactioninsertkeysequenceskewed.lastValue() - keychooser.nextValue().intValue();
+      } while (keynum < 0);
+    } else {
+      do {
+        keynum = keychooser.nextValue().intValue();
+      } while (keynum > transactioninsertkeysequenceskewed.lastValue());
+    }
+    return keynum;
   }
 
   public void doTransactionRead(DB db) {
@@ -727,6 +856,7 @@ public class CoreWorkload extends Workload {
       verifyRow(keyname, cells);
     }
   }
+
 
   public void doTransactionReadModifyWrite(DB db) {
     // choose a random key
@@ -775,12 +905,78 @@ public class CoreWorkload extends Workload {
     measurements.measureIntended("READ-MODIFY-WRITE", (int) ((en - ist) / 1000));
   }
 
-  public boolean doInsertcollectoin(DB db, Object threadstate, int doInsertcollectoin) {
-    return false;
+  public void doTransactionCollectionReadModifyWrite(DB db) {
+    // choose a random key
+    long keynum = nextKeynum();
+
+    String keyname = buildKeyName(keynum);
+
+    HashSet<String> fields = null;
+
+    if (!readallfields) {
+      // read a random field
+      String fieldname = fieldnames.get(fieldchooser.nextValue().intValue());
+
+      fields = new HashSet<String>();
+      fields.add(fieldname);
+    }
+
+    HashMap<String, ByteIterator> values;
+
+    if (writeallfields) {
+      // new data for all the fields
+      values = buildValues(keyname);
+    } else {
+      // update a random field
+      values = buildSingleValue(keyname);
+    }
+
+    // do the transaction
+
+    HashMap<String, ByteIterator> cells = new HashMap<String, ByteIterator>();
+
+
+    long ist = measurements.getIntendedtartTimeNs();
+    long st = System.nanoTime();
+    db.read(table, keyname, fields, cells);
+
+    db.update(table, keyname, values);
+
+    long en = System.nanoTime();
+
+    if (dataintegrity) {
+      verifyRow(keyname, cells);
+    }
+
+    measurements.measure("READ-MODIFY-WRITE", (int) ((en - st) / 1000));
+    measurements.measureIntended("READ-MODIFY-WRITE", (int) ((en - ist) / 1000));
   }
 
 
   public void doTransactionScan(DB db) {
+    // choose a random key
+    long keynum = nextKeynum();
+
+    String startkeyname = buildKeyName(keynum);
+
+    // choose a random scan length
+    int len = scanlength.nextValue().intValue();
+
+    HashSet<String> fields = null;
+
+    if (!readallfields) {
+      // read a random field
+      String fieldname = fieldnames.get(fieldchooser.nextValue().intValue());
+
+      fields = new HashSet<String>();
+      fields.add(fieldname);
+    }
+
+    db.scan(table, startkeyname, len, fields, new Vector<HashMap<String, ByteIterator>>());
+  }
+
+
+  public void doTransactionCollectionScan(DB db) {
     // choose a random key
     long keynum = nextKeynum();
 
@@ -821,7 +1017,41 @@ public class CoreWorkload extends Workload {
     db.update(table, keyname, values);
   }
 
+  public void doTransactionCollectionupdate(DB db, int insertcollectoin) {
+    // choose a random key
+    long keynum = nextKeynum();
+
+    String keyname = buildKeyName(keynum);
+
+    HashMap<String, ByteIterator> values;
+
+    if (writeallfields) {
+      // new data for all the fields
+      values = buildValues(keyname);
+    } else {
+      // update a random field
+      values = buildSingleValue(keyname);
+    }
+
+    db.update(table, keyname, values);
+  }
+
   public void doTransactionInsert(DB db) {
+    // choose the next key
+    long keynum = transactioninsertkeysequence.nextValue();
+
+    try {
+      String dbkey = buildKeyName(keynum);
+
+      HashMap<String, ByteIterator> values = buildValues(dbkey);
+      db.insert(table, dbkey, values);
+    } finally {
+      transactioninsertkeysequence.acknowledge(keynum);
+    }
+  }
+
+
+  public void doTransactionCollectionInsert(DB db) {
     // choose the next key
     long keynum = transactioninsertkeysequence.nextValue();
 

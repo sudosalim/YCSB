@@ -239,6 +239,10 @@ public class RestWorkload extends CoreWorkload {
     return false;
   }
 
+  public boolean doInsertcollectoin(DB db, Object threadstate, int doInsertcollectoin) {
+    return false;
+  }
+
   @Override
   public boolean doTransaction(DB db, Object threadstate) {
     String operation = operationchooser.nextString();
