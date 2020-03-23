@@ -76,7 +76,7 @@ public class Couchbase3Client extends DB {
   private static volatile ClusterEnvironment environment;
   private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
 
-  private static final AtomicInteger COLLECTION_NUMBER = new AtomicInteger(0);
+  private static volatile AtomicInteger COLLECTION_NUMBER = new AtomicInteger(0);
 
   private static final Object INIT_COORDINATOR = new Object();
 
@@ -199,7 +199,7 @@ public class Couchbase3Client extends DB {
 
     int indexNum = COLLECTION_NUMBER.incrementAndGet()-1;
 
-    if(indexNum > collections.length){
+    if(indexNum >= collections.length){
 
       indexNum = indexNum - collections.length;
 
