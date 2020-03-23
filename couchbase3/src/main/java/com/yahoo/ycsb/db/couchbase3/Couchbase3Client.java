@@ -203,6 +203,8 @@ public class Couchbase3Client extends DB {
 
       indexNum = indexNum - collections.length;
 
+      COLLECTION_NUMBER.set(0);
+      
     }
 
     String collectionname = collections[indexNum];
