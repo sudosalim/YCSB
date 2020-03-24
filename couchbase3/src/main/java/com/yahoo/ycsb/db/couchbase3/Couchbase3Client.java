@@ -163,7 +163,7 @@ public class Couchbase3Client extends DB {
 
         cluster = Cluster.connect(seedNodes, clusterOptions);
         Bucket bucket = cluster.bucket(bucketName);
-        collection = bucket.defaultCollection();
+        collection = bucket.scope("scope1").collection("collection1");
         if ((transactions == null) && transactionEnabled) {
           transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
               .durabilityLevel(transDurabilityLevel)
