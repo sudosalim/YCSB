@@ -846,7 +846,7 @@ public class TimeSeriesWorkload extends Workload {
     db.scan(table, keyname, len, fields, results);
   }
 
-  public boolean doTransactionCollection(DB db, Object threadstate, int insertcollection){
+  public boolean doTransactionCollection(DB db, Object threadstate){
     return false;
   }
 

@@ -748,7 +748,7 @@ public class CustomCollectionWorkload extends Workload {
     return true;
   }
 
-  public boolean doTransactionCollection(DB db, Object threadstate, int insertstart) {
+  public boolean doTransactionCollection(DB db, Object threadstate) {
     String operation = operationchooser.nextString();
     if(operation == null) {
       return false;
@@ -756,10 +756,10 @@ public class CustomCollectionWorkload extends Workload {
 
     switch (operation) {
     case "READ":
-      doTransactionCollectionRead(db, insertstart);
+      doTransactionRead(db);
       break;
     case "UPDATE":
-      doTransactionCollectionupdate(db, insertstart);
+      doTransactionUpdate(db);
       break;
     case "INSERT":
       doTransactionCollectionInsert(db);

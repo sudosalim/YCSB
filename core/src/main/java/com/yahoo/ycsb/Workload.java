@@ -122,6 +122,6 @@ public abstract class Workload {
 
   public abstract boolean doInsertcollectoin(DB db, Object threadstate, int insertstart);
 
-  public abstract boolean doTransactionCollection(DB db, Object threadstate, int insertstart);
+  public abstract boolean doTransactionCollection(DB db, Object threadstate);
 
 }

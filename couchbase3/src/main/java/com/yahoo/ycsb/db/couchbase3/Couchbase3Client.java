@@ -197,17 +197,27 @@ public class Couchbase3Client extends DB {
       }
     }
 
-    int indexNum = COLLECTION_NUMBER.incrementAndGet()-1;
+    //int indexNum = COLLECTION_NUMBER.incrementAndGet()-1;
 
-    if(indexNum >= collections.length){
+    //if(indexNum >= collections.length){
 
-      indexNum = indexNum - collections.length;
+      //indexNum = indexNum - collections.length;
 
-      COLLECTION_NUMBER.set(0);
-      
+      //COLLECTION_NUMBER.set(0);
+
+    //}
+
+    String collectionname;
+    int collectionNum = COLLECTION_NUMBER.incrementAndGet();
+
+    if (collectionNum >= collectionStart && collectionNum<=collectionsPerInstance) {
+      collectionname = "collection" + collectionNum;
+    } else {
+      collectionNum = collectionNum - collectionsPerInstance;
+      collectionname = "collection" + collectionNum;
     }
 
-    String collectionname = collections[indexNum];
+    //String collectionname = collections[indexNum];
 
     clusterOptions = ClusterOptions.clusterOptions(username, password);
     clusterOptions.environment(environment);
@@ -221,16 +231,8 @@ public class Couchbase3Client extends DB {
     Bucket bucket = cluster.bucket(bucketName);
 
     if (!collectionenabled){
-
-      //System.err.println("since collectionenabled false using default colelction");
-
       collection = bucket.defaultCollection();
     } else {
-
-      //System.err.println("since collectionenabled true using colelctions");
-
-      //System.err.println("printing collection name" + collectionname);
-
       collection = bucket.scope("scope1").collection(collectionname);
     }
 
@@ -239,7 +241,6 @@ public class Couchbase3Client extends DB {
           .durabilityLevel(transDurabilityLevel)
           .numATRs(numATRS)
           .build());
-
     }
 
     OPEN_CLIENTS.incrementAndGet();

@@ -695,7 +695,7 @@ public class CoreWorkload extends Workload {
   }
 
 
-  public boolean doTransactionCollection(DB db, Object threadstate, int insertcollection){
+  public boolean doTransactionCollection(DB db, Object threadstate){
     return false;
   }
 

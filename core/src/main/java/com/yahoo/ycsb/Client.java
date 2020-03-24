@@ -461,11 +461,10 @@ class ClientThread implements Runnable {
 
         if (collectionenabled) {
 
-          int insertstart = 0;
 
           while (((opcount == 0) || (opsdone < opcount)) && !workload.isStopRequested()) {
 
-            if (!workload.doTransactionCollection(db, workloadstate, insertstart)) {
+            if (!workload.doTransactionCollection(db, workloadstate)) {
               break;
             }
 
