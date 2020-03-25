@@ -218,7 +218,7 @@ public class Couchbase3Client extends DB {
       collectionname = "collection" + collectionNum;
     }
 
-    System.err.println("collectionNum : " + collectionNum);
+    System.err.println("collectionName : " + collectionname);
 
     //String collectionname = collections[indexNum];
 
@@ -236,7 +236,7 @@ public class Couchbase3Client extends DB {
     if (!collectionenabled){
       collection = bucket.defaultCollection();
     } else {
-      collection = bucket.scope("scope1").collection(collectionname);
+      collection = bucket.scope("scope1").collection("collection1");
     }
 
     if ((transactions == null) && transactionEnabled) {
