@@ -218,6 +218,8 @@ public class Couchbase3Client extends DB {
       collectionname = "collection" + collectionNum;
     }
 
+    System.err.println("collectionNum : " + collectionNum);
+
     //String collectionname = collections[indexNum];
 
     clusterOptions = ClusterOptions.clusterOptions(username, password);
