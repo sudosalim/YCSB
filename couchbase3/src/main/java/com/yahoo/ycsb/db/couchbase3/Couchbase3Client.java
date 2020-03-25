@@ -208,9 +208,10 @@ public class Couchbase3Client extends DB {
     //}
 
     String collectionname;
-    int collectionNum = COLLECTION_NUMBER.incrementAndGet();
+    int collectionNum = COLLECTION_NUMBER.incrementAndGet() + collectionStart - 1;
 
-    if (collectionNum >= collectionStart && collectionNum<=collectionsPerInstance) {
+
+    if (collectionNum <= collectionsPerInstance) {
       collectionname = "collection" + collectionNum;
     } else {
       collectionNum = collectionNum - collectionsPerInstance;
