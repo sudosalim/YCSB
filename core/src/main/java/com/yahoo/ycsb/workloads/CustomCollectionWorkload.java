@@ -461,7 +461,7 @@ public class CustomCollectionWorkload extends Workload {
       orderedinserts = true;
     }
 
-    keysequence = new CollectionCounterGenerator(insertstart);
+    keysequence = new CounterGenerator(insertstart);
     operationchooser = createOperationGenerator(p);
 
     if(collectionenabled) {
