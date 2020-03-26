@@ -207,18 +207,18 @@ public class Couchbase3Client extends DB {
 
     //}
 
-    String collectionname;
-    int collectionNum = COLLECTION_NUMBER.incrementAndGet() + collectionStart - 1;
+    //String collectionname;
+    //int collectionNum = COLLECTION_NUMBER.incrementAndGet() + collectionStart - 1;
 
 
-    if (collectionNum <= collectionsPerInstance) {
-      collectionname = "collection" + collectionNum;
-    } else {
-      collectionNum = collectionNum - collectionsPerInstance;
-      collectionname = "collection" + collectionNum;
-    }
+    //if (collectionNum <= collectionsPerInstance) {
+      //collectionname = "collection" + collectionNum;
+    //} else {
+      //collectionNum = collectionNum - collectionsPerInstance;
+      //collectionname = "collection" + collectionNum;
+    //}
 
-    System.err.println("collectionName : " + collectionname);
+    //System.err.println("collectionName : " + collectionname);
 
     //String collectionname = collections[indexNum];
 
