@@ -394,6 +394,7 @@ class ClientThread implements Runnable {
   public ClientThread(DB db, boolean dotransactions, Workload workload, Properties props, int opcount,
                       boolean collectionenabled,
                       double targetperthreadperms, CountDownLatch completeLatch) {
+
     this.db = db;
     this.dotransactions = dotransactions;
     this.workload = workload;
@@ -461,10 +462,9 @@ class ClientThread implements Runnable {
 
         if (collectionenabled) {
 
-
           while (((opcount == 0) || (opsdone < opcount)) && !workload.isStopRequested()) {
 
-            if (!workload.doTransactionCollection(db, workloadstate)) {
+            if (!workload.doTransaction(db, workloadstate)) {
               break;
             }
 
