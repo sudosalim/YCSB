@@ -25,7 +25,7 @@
 recordcount=1000
 operationcount=1000
 
-collectionenabled=true
+collectionenabled=flase
 
 collectiontestrecordcount=100
 
@@ -38,5 +38,5 @@ updateproportion=0.5
 scanproportion=0
 insertproportion=0
 
-requestdistribution=zipfian
+requestdistribution=uniform
 
