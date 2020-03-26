@@ -465,7 +465,7 @@ public class CustomCollectionWorkload extends Workload {
     operationchooser = createOperationGenerator(p);
 
     if(collectionenabled) {
-      transactioninsertkeysequence = new AcknowledgedCounterGenerator(collectiontestrecordcount);
+      transactioninsertkeysequence = new AcknowledgedCounterGenerator(recordcount);
       transactioninsertkeysequenceskewed = new AcknowledgedCounterGenerator(recordcount);
     } else {
 
@@ -834,8 +834,6 @@ public class CustomCollectionWorkload extends Workload {
 
     String keyname = buildKeyName(keynum);
 
-    //System.err.println("keyname/dbkey value" + keyname);
-
     HashSet<String> fields = null;
 
     if (!readallfields) {
@@ -952,7 +950,6 @@ public class CustomCollectionWorkload extends Workload {
     measurements.measureIntended("READ-MODIFY-WRITE", (int) ((en - ist) / 1000));
   }
 
-
   public void doTransactionScan(DB db) {
     // choose a random key
     long keynum = nextKeynum();
@@ -1003,7 +1000,6 @@ public class CustomCollectionWorkload extends Workload {
     long keynum = nextKeynum();
 
     String keyname = buildKeyName(keynum);
-
     HashMap<String, ByteIterator> values;
 
     if (writeallfields) {
