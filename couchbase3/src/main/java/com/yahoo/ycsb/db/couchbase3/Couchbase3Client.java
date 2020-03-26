@@ -207,16 +207,16 @@ public class Couchbase3Client extends DB {
 
     //}
 
-    //String collectionname;
-    //int collectionNum = COLLECTION_NUMBER.incrementAndGet() + collectionStart - 1;
+    String collectionname;
+    int collectionNum = COLLECTION_NUMBER.incrementAndGet() + collectionStart - 1;
 
 
-    //if (collectionNum <= collectionsPerInstance) {
-      //collectionname = "collection" + collectionNum;
-    //} else {
-      //collectionNum = collectionNum - collectionsPerInstance;
-      //collectionname = "collection" + collectionNum;
-    //}
+    if (collectionNum <= collectionsPerInstance) {
+      collectionname = "collection" + collectionNum;
+    } else {
+      collectionNum = collectionNum - collectionsPerInstance;
+      collectionname = "collection" + collectionNum;
+    }
 
     //System.err.println("collectionName : " + collectionname);
 
@@ -236,7 +236,7 @@ public class Couchbase3Client extends DB {
     if (!collectionenabled){
       collection = bucket.defaultCollection();
     } else {
-      collection = bucket.scope("scope1").collection("collection1");
+      collection = bucket.scope("scope1").collection(collectionname);
     }
 
     if ((transactions == null) && transactionEnabled) {
