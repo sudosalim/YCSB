@@ -1551,7 +1551,7 @@ public class SyncGatewayClient extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     root.put("name", name);
-    root.put("password", DEFAULT_USER_PASSWORD);
+    //root.put("password", DEFAULT_USER_PASSWORD);
     return root.toString();
   }
 
