@@ -332,9 +332,13 @@ public class CustomCollectionWorkload extends Workload {
   protected NumberGenerator keysequence;
   protected DiscreteGenerator operationchooser;
   protected NumberGenerator keychooser;
+  protected NumberGenerator collectionchooser;
+  protected NumberGenerator scopechooser;
   protected NumberGenerator fieldchooser;
   protected AcknowledgedCounterGenerator transactioninsertkeysequence;
-  protected AcknowledgedCounterGenerator transactioninsertkeysequenceskewed;
+  protected AcknowledgedCounterGenerator transactioninsertcollectionsequence;
+  protected AcknowledgedCounterGenerator transactioninsertscopesequence;
+  //protected AcknowledgedCounterGenerator transactioninsertkeysequenceskewed;
   protected NumberGenerator scanlength;
   protected boolean orderedinserts;
   protected long fieldcount;
@@ -342,8 +346,14 @@ public class CustomCollectionWorkload extends Workload {
   protected int zeropadding;
   protected int insertionRetryLimit;
   protected int insertionRetryInterval;
-  protected int collectiontestrecordcount;
   protected boolean collectionenabled;
+  protected long collectioncount;
+  protected long recordspercollection;
+  protected String collectionsparam;
+  protected String[] collections;
+  protected String scopesparam;
+  protected String[] scopes;
+
 
   private Measurements measurements = Measurements.getMeasurements();
 
@@ -376,15 +386,12 @@ public class CustomCollectionWorkload extends Workload {
     }
     return fieldlengthgenerator;
   }
-
   /**
    * Initialize the scenario.
    * Called once, in the main client thread, before any operations are started.
    */
-
   public void init(Properties p) throws WorkloadException {
     table = p.getProperty(TABLENAME_PROPERTY, TABLENAME_PROPERTY_DEFAULT);
-
     fieldcount =
         Long.parseLong(p.getProperty(FIELD_COUNT_PROPERTY, FIELD_COUNT_PROPERTY_DEFAULT));
     fieldnames = new ArrayList<>();
@@ -392,19 +399,29 @@ public class CustomCollectionWorkload extends Workload {
       fieldnames.add("field" + i);
     }
     fieldlengthgenerator = CustomCollectionWorkload.getFieldLengthGenerator(p);
-
+    recordspercollection = Long.parseLong(p.getProperty(Client.RECORD_PER_COLLECTION,
+        Client.RECORD_PER_COLLECTION_DEFAULT));
+    System.err.println("recordspercollection value ::::" + recordspercollection);
     recordcount =
         Long.parseLong(p.getProperty(Client.RECORD_COUNT_PROPERTY, Client.DEFAULT_RECORD_COUNT));
     if (recordcount == 0) {
       recordcount = Integer.MAX_VALUE;
     }
-
-    collectiontestrecordcount = Integer.parseInt(p.getProperty(Client.COLLECTIONTEST_RECORD_COUNT_PROPERTY,
-        Client.COLLECTIONTEST_RECORD_COUNT_DEFAULT));
-
+    if (collectionenabled) {
+      recordcount = recordspercollection;
+    }
     collectionenabled = Boolean.parseBoolean(p.getProperty(
         Client.COLLECTION_ENABLED_PROPERTY, Client.COLLECTION_ENABLED_DEFAULT));
+    if (collectionenabled) {
+      recordcount = recordspercollection;
+    }
+    collectioncount = Long.parseLong(p.getProperty(Client.COLLECTION_COUNT_PROPERTY,
+        Client.COLLECTION_COUNT_DEFAULT));
+    collectionsparam = p.getProperty(Client.COLLECTIONS_PARAM, Client.COLLECTIONS_PARAM_DEFAULT);
+    scopesparam = p.getProperty(Client.SCOPES_PARAM, Client.SCOPES_PARAM_DEFAULT);
 
+    collections = collectionsparam.split(",");
+    scopes = scopesparam.split(",");
     String requestdistrib =
         p.getProperty(REQUEST_DISTRIBUTION_PROPERTY, REQUEST_DISTRIBUTION_PROPERTY_DEFAULT);
     int minscanlength =
@@ -430,12 +447,10 @@ public class CustomCollectionWorkload extends Workload {
     }
     zeropadding =
         Integer.parseInt(p.getProperty(ZERO_PADDING_PROPERTY, ZERO_PADDING_PROPERTY_DEFAULT));
-
     readallfields = Boolean.parseBoolean(
         p.getProperty(READ_ALL_FIELDS_PROPERTY, READ_ALL_FIELDS_PROPERTY_DEFAULT));
     writeallfields = Boolean.parseBoolean(
         p.getProperty(WRITE_ALL_FIELDS_PROPERTY, WRITE_ALL_FIELDS_PROPERTY_DEFAULT));
-
     dataintegrity = Boolean.parseBoolean(
         p.getProperty(DATA_INTEGRITY_PROPERTY, DATA_INTEGRITY_PROPERTY_DEFAULT));
     // Confirm that fieldlengthgenerator returns a constant if data
@@ -446,7 +461,6 @@ public class CustomCollectionWorkload extends Workload {
       System.err.println("Must have constant field size to check data integrity.");
       System.exit(-1);
     }
-
     if (p.getProperty(INSERT_ORDER_PROPERTY, INSERT_ORDER_PROPERTY_DEFAULT).compareTo("hashed") == 0) {
       orderedinserts = false;
     } else if (requestdistrib.compareTo("exponential") == 0) {
@@ -460,17 +474,21 @@ public class CustomCollectionWorkload extends Workload {
     } else {
       orderedinserts = true;
     }
-
     keysequence = new CounterGenerator(insertstart);
     operationchooser = createOperationGenerator(p);
 
-    if(collectionenabled) {
-      transactioninsertkeysequence = new AcknowledgedCounterGenerator(recordcount);
-      transactioninsertkeysequenceskewed = new AcknowledgedCounterGenerator(recordcount);
-    } else {
+    /** sequentially generation of collections
+     * */
 
-      transactioninsertkeysequence = new AcknowledgedCounterGenerator(recordcount);
-    }
+    transactioninsertcollectionsequence = new AcknowledgedCounterGenerator(collectioncount);
+    transactioninsertscopesequence = new AcknowledgedCounterGenerator(scopes.length);
+
+    collectionchooser = new SequentialGenerator(insertstart, insertstart+collectioncount -1);
+    scopechooser = new SequentialGenerator(insertstart, insertstart+scopes.length -1);
+
+
+    transactioninsertkeysequence = new AcknowledgedCounterGenerator(recordcount);
+    //transactioninsertkeysequenceskewed = new AcknowledgedCounterGenerator(recordcount);
 
     if (requestdistrib.compareTo("uniform") == 0) {
       keychooser = new UniformLongGenerator(insertstart, insertstart + insertcount - 1);
@@ -493,7 +511,7 @@ public class CustomCollectionWorkload extends Workload {
 
       keychooser = new ScrambledZipfianGenerator(insertstart, insertstart + insertcount + expectednewkeys);
     } else if (requestdistrib.compareTo("latest") == 0) {
-      keychooser = new SkewedLatestGenerator(transactioninsertkeysequenceskewed);
+      keychooser = new SkewedLatestGenerator(transactioninsertkeysequence);
     } else if (requestdistrib.equals("hotspot")) {
       double hotsetfraction =
           Double.parseDouble(p.getProperty(HOTSPOT_DATA_FRACTION, HOTSPOT_DATA_FRACTION_DEFAULT));
@@ -601,6 +619,9 @@ public class CustomCollectionWorkload extends Workload {
   public boolean doInsert(DB db, Object threadstate) {
 
     int keynum = keysequence.nextValue().intValue();
+
+    //System.err.println("printing key :" + keynum);
+
     String dbkey = buildKeyName(keynum);
 
     //System.err.println("keyname/dbkey value" + dbkey);
@@ -639,54 +660,19 @@ public class CustomCollectionWorkload extends Workload {
   }
 
 
-  public void doTransactionCollectionRead(DB db, int insertstart) {
+  public boolean doInsertcollectoin(DB db, Object threadstate, String scope, String collection, int key) {
 
+    int keynum = key;
 
-    // choose a random key
-    long keynum = nextKeynum();          /// use this for workloada or e
-    //long keynum = nextKeynumCollection(); /// use this only for workloadd
-
-    String keyname = buildKeyName(keynum);
-
-    //System.err.println("keyname/dbkey value" + keyname);
-
-    HashSet<String> fields = null;
-
-    if (!readallfields) {
-      // read a random field
-      String fieldname = fieldnames.get(fieldchooser.nextValue().intValue());
-
-      fields = new HashSet<String>();
-      fields.add(fieldname);
-    } else if (dataintegrity) {
-      // pass the full field list if dataintegrity is on for verification
-      fields = new HashSet<String>(fieldnames);
-    }
-
-    HashMap<String, ByteIterator> cells = new HashMap<String, ByteIterator>();
-    db.read(table, keyname, fields, cells);
-
-    if (dataintegrity) {
-      verifyRow(keyname, cells);
-    }
-  }
-
-
-  public boolean doInsertcollectoin(DB db, Object threadstate, int insertstart) {
-
-    //int keynum = keysequence.nextValue().intValue();
-
-    int keynum = insertstart;
     String dbkey = buildKeyName(keynum);
-
-    //System.err.println("keyname/dbkey value" + dbkey);
 
     HashMap<String, ByteIterator> values = buildValues(dbkey);
 
     Status status;
     int numOfRetries = 0;
     do {
-      status = db.insert(table, dbkey, values);
+
+      status = db.insert(table, dbkey, values, scope, collection);
       if (null != status && status.isOk()) {
         break;
       }
@@ -748,31 +734,6 @@ public class CustomCollectionWorkload extends Workload {
     return true;
   }
 
-  public boolean doTransactionCollection(DB db, Object threadstate) {
-    String operation = operationchooser.nextString();
-    if(operation == null) {
-      return false;
-    }
-
-    switch (operation) {
-    case "READ":
-      doTransactionRead(db);
-      break;
-    case "UPDATE":
-      doTransactionUpdate(db);
-      break;
-    case "INSERT":
-      doTransactionCollectionInsert(db);
-      break;
-    case "SCAN":
-      doTransactionCollectionScan(db);
-      break;
-    default:
-      doTransactionCollectionReadModifyWrite(db);
-    }
-
-    return true;
-  }
 
   /**
    * Results are reported in the first three buckets of the histogram under
@@ -814,6 +775,35 @@ public class CustomCollectionWorkload extends Workload {
     return keynum;
   }
 
+  long nextcollectionNum() {
+    long collectionNum;
+    if (collectionchooser instanceof ExponentialGenerator) {
+      do {
+        collectionNum = transactioninsertcollectionsequence.lastValue() - collectionchooser.nextValue().intValue();
+      } while (collectionNum < 0);
+    } else {
+      do {
+        collectionNum = collectionchooser.nextValue().intValue();
+      } while (collectionNum > transactioninsertcollectionsequence.lastValue());
+    }
+    return collectionNum;
+  }
+
+  long nextscopeNum() {
+    long collectionNum;
+    if (scopechooser instanceof ExponentialGenerator) {
+      do {
+        collectionNum = transactioninsertscopesequence.lastValue() - scopechooser.nextValue().intValue();
+      } while (collectionNum < 0);
+    } else {
+      do {
+        collectionNum = scopechooser.nextValue().intValue();
+      } while (collectionNum > transactioninsertscopesequence.lastValue());
+    }
+    return collectionNum;
+  }
+
+  /**.
   long nextKeynumCollection() {
     long keynum;
     if (keychooser instanceof ExponentialGenerator) {
@@ -826,13 +816,22 @@ public class CustomCollectionWorkload extends Workload {
       } while (keynum > transactioninsertkeysequenceskewed.lastValue());
     }
     return keynum;
-  }
+  } **/
 
   public void doTransactionRead(DB db) {
     // choose a random key
     long keynum = nextKeynum();
 
+    //long keynum = nextKeynumCollection();
+
     String keyname = buildKeyName(keynum);
+
+    int collnum = (int) nextcollectionNum();
+    String collname = collections[collnum];
+
+    int scopenum = (int) nextscopeNum();
+    String scopename = scopes[scopenum];
+
 
     HashSet<String> fields = null;
 
@@ -848,7 +847,7 @@ public class CustomCollectionWorkload extends Workload {
     }
 
     HashMap<String, ByteIterator> cells = new HashMap<String, ByteIterator>();
-    db.read(table, keyname, fields, cells);
+    db.read(table, keyname, fields, cells, scopename, collname);
 
     if (dataintegrity) {
       verifyRow(keyname, cells);
@@ -860,52 +859,11 @@ public class CustomCollectionWorkload extends Workload {
     // choose a random key
     long keynum = nextKeynum();
 
-    String keyname = buildKeyName(keynum);
+    int collnum = (int) nextcollectionNum();
+    String collname = collections[collnum];
 
-    HashSet<String> fields = null;
-
-    if (!readallfields) {
-      // read a random field
-      String fieldname = fieldnames.get(fieldchooser.nextValue().intValue());
-
-      fields = new HashSet<String>();
-      fields.add(fieldname);
-    }
-
-    HashMap<String, ByteIterator> values;
-
-    if (writeallfields) {
-      // new data for all the fields
-      values = buildValues(keyname);
-    } else {
-      // update a random field
-      values = buildSingleValue(keyname);
-    }
-
-    // do the transaction
-
-    HashMap<String, ByteIterator> cells = new HashMap<String, ByteIterator>();
-
-
-    long ist = measurements.getIntendedtartTimeNs();
-    long st = System.nanoTime();
-    db.read(table, keyname, fields, cells);
-
-    db.update(table, keyname, values);
-
-    long en = System.nanoTime();
-
-    if (dataintegrity) {
-      verifyRow(keyname, cells);
-    }
-
-    measurements.measure("READ-MODIFY-WRITE", (int) ((en - st) / 1000));
-    measurements.measureIntended("READ-MODIFY-WRITE", (int) ((en - ist) / 1000));
-  }
-
-  public void doTransactionCollectionReadModifyWrite(DB db) {
-    // choose a random key
-    long keynum = nextKeynum();
+    int scopenum = (int) nextscopeNum();
+    String scopename = scopes[scopenum];
 
     String keyname = buildKeyName(keynum);
 
@@ -936,9 +894,9 @@ public class CustomCollectionWorkload extends Workload {
 
     long ist = measurements.getIntendedtartTimeNs();
     long st = System.nanoTime();
-    db.read(table, keyname, fields, cells);
+    db.read(table, keyname, fields, cells, scopename, collname);
 
-    db.update(table, keyname, values);
+    db.update(table, keyname, values, scopename, collname);
 
     long en = System.nanoTime();
 
@@ -949,6 +907,7 @@ public class CustomCollectionWorkload extends Workload {
     measurements.measure("READ-MODIFY-WRITE", (int) ((en - st) / 1000));
     measurements.measureIntended("READ-MODIFY-WRITE", (int) ((en - ist) / 1000));
   }
+
 
   public void doTransactionScan(DB db) {
     // choose a random key
@@ -956,28 +915,11 @@ public class CustomCollectionWorkload extends Workload {
 
     String startkeyname = buildKeyName(keynum);
 
-    // choose a random scan length
-    int len = scanlength.nextValue().intValue();
+    int collnum = (int) nextcollectionNum();
+    String collname = collections[collnum];
 
-    HashSet<String> fields = null;
-
-    if (!readallfields) {
-      // read a random field
-      String fieldname = fieldnames.get(fieldchooser.nextValue().intValue());
-
-      fields = new HashSet<String>();
-      fields.add(fieldname);
-    }
-
-    db.scan(table, startkeyname, len, fields, new Vector<HashMap<String, ByteIterator>>());
-  }
-
-
-  public void doTransactionCollectionScan(DB db) {
-    // choose a random key
-    long keynum = nextKeynum();
-
-    String startkeyname = buildKeyName(keynum);
+    int scopenum = (int) nextscopeNum();
+    String scopename = scopes[scopenum];
 
     // choose a random scan length
     int len = scanlength.nextValue().intValue();
@@ -992,32 +934,19 @@ public class CustomCollectionWorkload extends Workload {
       fields.add(fieldname);
     }
 
-    db.scan(table, startkeyname, len, fields, new Vector<HashMap<String, ByteIterator>>());
+    db.scan(table, startkeyname, len, fields, new Vector<HashMap<String, ByteIterator>>(), scopename, collname);
   }
 
   public void doTransactionUpdate(DB db) {
     // choose a random key
     long keynum = nextKeynum();
-
     String keyname = buildKeyName(keynum);
-    HashMap<String, ByteIterator> values;
 
-    if (writeallfields) {
-      // new data for all the fields
-      values = buildValues(keyname);
-    } else {
-      // update a random field
-      values = buildSingleValue(keyname);
-    }
+    int collnum = (int) nextcollectionNum();
+    String collname = collections[collnum];
 
-    db.update(table, keyname, values);
-  }
-
-  public void doTransactionCollectionupdate(DB db, int insertcollectoin) {
-    // choose a random key
-    long keynum = nextKeynum();
-
-    String keyname = buildKeyName(keynum);
+    int scopenum = (int) nextscopeNum();
+    String scopename = scopes[scopenum];
 
     HashMap<String, ByteIterator> values;
 
@@ -1029,37 +958,30 @@ public class CustomCollectionWorkload extends Workload {
       values = buildSingleValue(keyname);
     }
 
-    db.update(table, keyname, values);
+    db.update(table, keyname, values, scopename, collname);
   }
+
 
   public void doTransactionInsert(DB db) {
     // choose the next key
     long keynum = transactioninsertkeysequence.nextValue();
 
-    try {
-      String dbkey = buildKeyName(keynum);
+    int collnum = (int) nextcollectionNum();
+    String collname = collections[collnum];
 
-      HashMap<String, ByteIterator> values = buildValues(dbkey);
-      db.insert(table, dbkey, values);
-    } finally {
-      transactioninsertkeysequence.acknowledge(keynum);
-    }
-  }
-
-
-  public void doTransactionCollectionInsert(DB db) {
-    // choose the next key
-    long keynum = transactioninsertkeysequence.nextValue();
+    int scopenum = (int) nextscopeNum();
+    String scopename = scopes[scopenum];
 
     try {
       String dbkey = buildKeyName(keynum);
 
       HashMap<String, ByteIterator> values = buildValues(dbkey);
-      db.insert(table, dbkey, values);
+      db.insert(table, dbkey, values, scopename, collname);
     } finally {
       transactioninsertkeysequence.acknowledge(keynum);
     }
   }
+
 
   /**
    * Creates a weighted discrete values with database operations for a workload to perform.

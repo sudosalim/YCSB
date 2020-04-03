@@ -49,11 +49,7 @@ import static com.couchbase.client.java.query.QueryOptions.queryOptions;
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.ReplicateTo;
 
-import com.yahoo.ycsb.ByteIterator;
-import com.yahoo.ycsb.DB;
-import com.yahoo.ycsb.DBException;
-import com.yahoo.ycsb.Status;
-import com.yahoo.ycsb.StringByteIterator;
+import com.yahoo.ycsb.*;
 
 import java.time.Duration;
 
@@ -65,7 +61,6 @@ import java.util.function.Function;
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
 
-
 /**
  * Full YCSB implementation based on the new Couchbase Java SDK 3.x.
  */
@@ -75,13 +70,11 @@ public class Couchbase3Client extends DB {
 
   private static volatile ClusterEnvironment environment;
   private static final AtomicInteger OPEN_CLIENTS = new AtomicInteger(0);
-
-  private static final AtomicInteger COLLECTION_NUMBER = new AtomicInteger(0);
-
   private static final Object INIT_COORDINATOR = new Object();
 
   private volatile Cluster cluster;
-  private volatile ClusterOptions clusterOptions;
+  private static volatile Bucket bucket;
+  private static volatile ClusterOptions clusterOptions;
   private volatile Collection collection;
   private Transactions transactions;
   private boolean transactionEnabled;
@@ -101,14 +94,14 @@ public class Couchbase3Client extends DB {
   private String bucketName;
 
   private static boolean collectionenabled;
+  private static String username;
+  private static String password;
+  private static String hostname;
+  private static int kvPort;
+  private static int managerPort;
+  private static long kvTimeoutMillis;
+  private static int kvEndpoints;
 
-  private static int collectionsPerInstance;
-
-  private static int collectionStart;
-
-  private static String collectionsparam;
-
-  private static String[] collections;
 
   @Override
   public void init() throws DBException {
@@ -133,37 +126,23 @@ public class Couchbase3Client extends DB {
 
     int numATRS = Integer.parseInt(props.getProperty("couchbase.atrs", "20480"));
 
-    String hostname = props.getProperty("couchbase.host", "127.0.0.1");
-    int kvPort = Integer.parseInt(props.getProperty("couchbase.kvPort", "11210"));
-    int managerPort = Integer.parseInt(props.getProperty("couchbase.managerPort", "8091"));
-    String username = props.getProperty("couchbase.username", "Administrator");
+    hostname = props.getProperty("couchbase.host", "127.0.0.1");
+    kvPort = Integer.parseInt(props.getProperty("couchbase.kvPort", "11210"));
+    managerPort = Integer.parseInt(props.getProperty("couchbase.managerPort", "8091"));
+    username = props.getProperty("couchbase.username", "Administrator");
 
-    String password = props.getProperty("couchbase.password", "password");
+    password = props.getProperty("couchbase.password", "password");
 
-    collectionenabled = props.getProperty("couchbase.collectionenabled", "false").equals("true");
-
-    //System.err.println("collectionenabled insdie couchbase3client" + collectionenabled);
-
-    collectionsPerInstance = Integer.parseInt(props.getProperty("couchbase.collectionsPerInstance", "1"));
-
-    collectionStart = Integer.parseInt(props.getProperty("couchbase.collectionStart", "1"));
-
-    collectionsparam =props.getProperty("couchbase.collectionsparam", "default");
-
-    //System.err.println("printing collectionsparam" + collectionsparam);
-
-    collections =  collectionsparam.split(",");
-
-    //System.err.println("printing collections array" + collections);
-
+    collectionenabled = props.getProperty(Client.COLLECTION_ENABLED_PROPERTY,
+        Client.COLLECTION_ENABLED_DEFAULT).equals("true");
 
     synchronized (INIT_COORDINATOR) {
       if (environment == null) {
 
         boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
 
-        long kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "60000"));
-        int kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
+        kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "60000"));
+        kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
 
         transactionEnabled = Boolean.parseBoolean(props.getProperty("couchbase.transactionsEnabled", "false"));
         try {
@@ -178,74 +157,31 @@ public class Couchbase3Client extends DB {
           System.out.println("Failed to parse TransactionDurability Level");
         }
 
-        //collectionArray = new String[collectionsPerInstance];
-
-        //for(int i = 0; i<=collectionsPerInstance-1; i++) {
-          //System.err.println("colllection start inside loop" + collectionStart);
-
-          //collectionArray[i] = "collection" + collectionStart;
-
-          //System.err.println("printing in loop" + collectionArray);
-          //collectionStart += COLLECTION_INCREMENT.incrementAndGet();
-
         environment = ClusterEnvironment
             .builder()
             .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
             .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints))
             .build();
 
+        clusterOptions = ClusterOptions.clusterOptions(username, password);
+        clusterOptions.environment(environment);
+
+        Set<SeedNode> seedNodes = new HashSet<>(Arrays.asList(
+            SeedNode.create(hostname,
+                Optional.of(kvPort),
+                Optional.of(managerPort))));
+
+        cluster = Cluster.connect(seedNodes, clusterOptions);
+        bucket = cluster.bucket(bucketName);
+
+        if ((transactions == null) && transactionEnabled) {
+          transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
+              .durabilityLevel(transDurabilityLevel)
+              .numATRs(numATRS)
+              .build());
+        }
       }
     }
-
-    //int indexNum = COLLECTION_NUMBER.incrementAndGet()-1;
-
-    //if(indexNum >= collections.length){
-
-      //indexNum = indexNum - collections.length;
-
-      //COLLECTION_NUMBER.set(0);
-
-    //}
-
-    String collectionname;
-    int collectionNum = COLLECTION_NUMBER.incrementAndGet() + collectionStart - 1;
-
-
-    if (collectionNum <= collectionsPerInstance) {
-      collectionname = "collection" + collectionNum;
-    } else {
-      collectionNum = collectionNum - collectionsPerInstance;
-      collectionname = "collection" + collectionNum;
-    }
-
-    //System.err.println("collectionName : " + collectionname);
-
-    //String collectionname = collections[indexNum];
-
-    clusterOptions = ClusterOptions.clusterOptions(username, password);
-    clusterOptions.environment(environment);
-
-    Set<SeedNode> seedNodes = new HashSet<>(Arrays.asList(
-        SeedNode.create(hostname,
-            Optional.of(kvPort),
-            Optional.of(managerPort))));
-
-    cluster = Cluster.connect(seedNodes, clusterOptions);
-    Bucket bucket = cluster.bucket(bucketName);
-
-    if (!collectionenabled){
-      collection = bucket.defaultCollection();
-    } else {
-      collection = bucket.scope("scope1").collection(collectionname);
-    }
-
-    if ((transactions == null) && transactionEnabled) {
-      transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
-          .durabilityLevel(transDurabilityLevel)
-          .numATRs(numATRS)
-          .build());
-    }
-
     OPEN_CLIENTS.incrementAndGet();
   }
 
@@ -319,7 +255,9 @@ public class Couchbase3Client extends DB {
     }
   }
 
-  @Override
+  /**@Override
+
+  /**
   public synchronized void cleanup() {
     OPEN_CLIENTS.decrementAndGet();
     if (OPEN_CLIENTS.get() == 0 && environment != null) {
@@ -333,11 +271,14 @@ public class Couchbase3Client extends DB {
     }
   }
 
-  @Override
+   **/
   public Status read(final String table, final String key, final Set<String> fields,
                      final Map<String, ByteIterator> result) {
 
     try {
+
+      collection = bucket.defaultCollection();
+
       GetResult document = collection.get(formatId(table, key));
       extractFields(document.contentAsObject(), fields, result);
       return Status.OK;
@@ -345,6 +286,31 @@ public class Couchbase3Client extends DB {
       return Status.NOT_FOUND;
     } catch (Throwable t) {
       errors.add(t);
+      System.err.println("read failed with exception : " + t);
+      return Status.ERROR;
+    }
+  }
+
+  public Status read(final String table, final String key, final Set<String> fields,
+                     final Map<String, ByteIterator> result, String scope, String coll) {
+
+    try {
+
+      if (!collectionenabled) {
+        collection = bucket.defaultCollection();
+      } else {
+
+        collection = bucket.scope(scope).collection(coll);
+      }
+
+      GetResult document = collection.get(formatId(table, key));
+      extractFields(document.contentAsObject(), fields, result);
+      return Status.OK;
+    } catch (DocumentNotFoundException e) {
+      return Status.NOT_FOUND;
+    } catch (Throwable t) {
+      errors.add(t);
+      System.err.println("read failed with exception : " + t);
       return Status.ERROR;
     }
   }
@@ -360,9 +326,12 @@ public class Couchbase3Client extends DB {
     }
   }
 
-  @Override
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
+
     try {
+
+      collection = bucket.defaultCollection();
+
       if (useDurabilityLevels) {
         collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
       } else {
@@ -371,13 +340,42 @@ public class Couchbase3Client extends DB {
       return Status.OK;
     } catch (Throwable t) {
       errors.add(t);
+      System.err.println("update failed with exception :" + t);
+      return Status.ERROR;
+    }
+  }
+
+  public Status update(final String table, final String key,
+                       final Map<String, ByteIterator> values, String scope, String coll) {
+
+    try {
+
+      if (!collectionenabled) {
+        collection = bucket.defaultCollection();
+      } else {
+
+        collection = bucket.scope(scope).collection(coll);
+      }
+
+      if (useDurabilityLevels) {
+        collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
+      } else {
+        collection.replace(formatId(table, key), encode(values), replaceOptions().durability(persistTo, replicateTo));
+      }
+      return Status.OK;
+    } catch (Throwable t) {
+      errors.add(t);
+      System.err.println("update failed with exception :" + t);
       return Status.ERROR;
     }
   }
 
   @Override
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
+
     try {
+      collection = bucket.defaultCollection();
+
       if (useDurabilityLevels) {
         collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
       } else {
@@ -391,6 +389,28 @@ public class Couchbase3Client extends DB {
     }
   }
 
+  public Status insert(final String table, final String key, final Map<String,
+      ByteIterator> values, String scope, String coll) {
+
+    try {
+      if (!collectionenabled) {
+        collection = bucket.defaultCollection();
+      } else {
+        collection = bucket.scope(scope).collection(coll);
+      }
+
+      if (useDurabilityLevels) {
+        collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
+      } else {
+        collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
+      }
+
+      return Status.OK;
+    } catch (Throwable t) {
+      errors.add(t);
+      return Status.ERROR;
+    }
+  }
 
   @Override
   public Status transaction(String table, String[] transationKeys, Map<String, ByteIterator>[] transationValues,
@@ -413,10 +433,6 @@ public class Couchbase3Client extends DB {
         case "TRREAD":
           try {
             GetResult document = collection.get(formatId(table, transationKeys[i]));
-            //if (!document.isPresent()) {
-            //  return Status.NOT_FOUND;
-            //}
-            System.out.println("calling transaction read");
             extractFields(document.contentAsObject(), fields, result);
           } catch (DocumentNotFoundException e) {
             System.out.println("Key NOT_FOUND");
@@ -479,7 +495,7 @@ public class Couchbase3Client extends DB {
           //e.result().timeTaken().toMillis() + "msecs");
       for (LogDefer err : e.result().log().logs()) {
         String s = err.toString();
-        logger.warn("Transaction failed:" + s);
+        logger.warn("transaction failed with exception :" + s);
       }
       return Status.ERROR;
     }

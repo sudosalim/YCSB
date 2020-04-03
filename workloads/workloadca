@@ -26,8 +26,10 @@ recordcount=1000
 operationcount=1000
 
 collectionenabled=true
+collectionsparam = colelction1,collection2
+scopesparam = scope1
+collectioncount=10
 
-collectiontestrecordcount=100
 
 workload=com.yahoo.ycsb.workloads.CustomCollectionWorkload
 
@@ -38,5 +40,5 @@ updateproportion=0.5
 scanproportion=0
 insertproportion=0
 
-requestdistribution=uniform
+requestdistribution=zipfian
 
