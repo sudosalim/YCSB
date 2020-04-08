@@ -20,17 +20,22 @@ package com.yahoo.ycsb.db.couchbase3;
 
 import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.JsonNode;
 import com.couchbase.client.core.env.IoConfig;
+import com.couchbase.client.core.env.SeedNode;
 import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.java.Bucket;
 import com.couchbase.client.java.Cluster;
 import com.couchbase.client.java.Collection;
+//import com.couchbase.client.java.codec.RawJsonTranscoder;
+import com.couchbase.client.java.codec.RawJsonTranscoder;
 import com.couchbase.client.java.env.ClusterEnvironment;
 import com.couchbase.client.java.json.JacksonTransformers;
 import com.couchbase.client.java.json.JsonArray;
 import com.couchbase.client.java.json.JsonObject;
+//import com.couchbase.client.java.kv.GetOptions;
+import com.couchbase.client.java.kv.GetOptions;
 import com.couchbase.client.java.kv.GetResult;
-import com.couchbase.client.java.query.QueryResult;
+//import com.couchbase.client.java.query.QueryResult;
 import com.couchbase.transactions.*;
 
 import com.couchbase.transactions.config.TransactionConfigBuilder;
@@ -123,6 +128,8 @@ public class Couchbase3Client extends DB {
     synchronized (INIT_COORDINATOR) {
       if (environment == null) {
         String hostname = props.getProperty("couchbase.host", "127.0.0.1");
+        int kvPort = Integer.parseInt(props.getProperty("couchbase.kvPort", "11210"));
+        int managerPort = Integer.parseInt(props.getProperty("couchbase.managerPort", "8091"));
         String username = props.getProperty("couchbase.username", "Administrator");
         String password = props.getProperty("couchbase.password", "password");
         boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
@@ -152,7 +159,13 @@ public class Couchbase3Client extends DB {
 
         clusterOptions = ClusterOptions.clusterOptions(username, password);
         clusterOptions.environment(environment);
-        cluster = Cluster.connect(hostname, clusterOptions);
+
+        Set<SeedNode> seedNodes = new HashSet<>(Arrays.asList(
+            SeedNode.create(hostname,
+                Optional.of(kvPort),
+                Optional.of(managerPort))));
+
+        cluster = Cluster.connect(seedNodes, clusterOptions);
         Bucket bucket = cluster.bucket(bucketName);
         collection = bucket.defaultCollection();
         if ((transactions == null) && transactionEnabled) {
@@ -450,8 +463,9 @@ public class Couchbase3Client extends DB {
     }
   }
 
-  private Status scanAllFields(final String table, final String startkey, final int recordcount,
+  private Status scanAllFieldsOld(final String table, final String startkey, final int recordcount,
                                final Vector<HashMap<String, ByteIterator>> result) {
+
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
 
     cluster.reactive().query(scanAllQuery, queryOptions()
@@ -465,7 +479,7 @@ public class Couchbase3Client extends DB {
           public HashMap<String, ByteIterator> apply(GetResult getResult) {
             HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>();
             //System.err.println("printingresult before decoding" + getResult.contentAsObject().toString());
-            decode(getResult.contentAsObject().toString(), null, tuple);
+            decode(getResult.contentAsObject().toBytes(), null, tuple);
             return tuple;
           }
         })
@@ -480,6 +494,61 @@ public class Couchbase3Client extends DB {
     return Status.OK;
   }
 
+  private Status scanAllFields(final String table, final String startkey, final int recordcount,
+                               final Vector<HashMap<String, ByteIterator>> result) {
+
+    final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
+
+    cluster.reactive().query(scanAllQuery, queryOptions()
+        .parameters(JsonArray.from(formatId(table, startkey), recordcount))
+        .adhoc(adhoc).maxParallelism(maxParallelism))
+        .flux()
+        .flatMap(res -> res.rowsAs(String.class))
+        .flatMap(id -> collection.reactive().get(id, GetOptions.getOptions()
+            .transcoder(RawJsonTranscoder.INSTANCE)))
+        .map(new Function<GetResult, HashMap<String, ByteIterator>>() {
+          @Override
+          public HashMap<String, ByteIterator> apply(GetResult getResult) {
+            HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>();
+            //System.err.println("printingresult before decoding" + getResult.contentAs(byte[].class));
+            decode(getResult.contentAs(byte[].class), null, tuple);
+            return tuple;
+          }
+        })
+        .toIterable()
+        .forEach(new Consumer<HashMap<String, ByteIterator>>() {
+          @Override
+          public void accept(HashMap<String, ByteIterator> stringByteIteratorHashMap) {
+            data.add(stringByteIteratorHashMap);
+          }
+        });
+
+    return Status.OK;
+
+  }
+
+  private void decode(final byte[] source, final Set<String> fields,
+                      final Map<String, ByteIterator> dest) {
+    try {
+      JsonNode json = JacksonTransformers.MAPPER.readTree(source);
+      boolean checkFields = fields != null && !fields.isEmpty();
+      for (Iterator<Map.Entry<String, JsonNode>> jsonFields = json.fields(); jsonFields.hasNext();) {
+        Map.Entry<String, JsonNode> jsonField = jsonFields.next();
+        String name = jsonField.getKey();
+        if (checkFields && !fields.contains(name)) {
+          continue;
+        }
+        JsonNode jsonValue = jsonField.getValue();
+        if (jsonValue != null && !jsonValue.isNull()) {
+          dest.put(name, new StringByteIterator(jsonValue.asText()));
+        }
+      }
+    } catch (Exception e) {
+      throw new RuntimeException("Could not decode JSON");
+    }
+  }
+
+
   /**
    * Performs the {@link #scan(String, String, int, Set, Vector)} operation N1Ql only for a subset of the fields.
    *
@@ -490,38 +559,44 @@ public class Couchbase3Client extends DB {
    * @param result A Vector of HashMaps, where each HashMap is a set field/value pairs for one record
    * @return The result of the operation.
    */
+
   private Status scanSpecificFields(final String table, final String startkey, final int recordcount,
                                     final Set<String> fields, final Vector<HashMap<String, ByteIterator>> result) {
     String scanSpecQuery = "SELECT " + joinFields(fields) + " FROM `" + bucketName
         + "` WHERE meta().id >= $1 LIMIT $2";
 
-    QueryResult queryResult = cluster.query(scanSpecQuery, queryOptions()
+
+    final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
+
+    cluster.reactive().query(scanAllQuery, queryOptions()
         .parameters(JsonArray.from(formatId(table, startkey), recordcount))
-        .adhoc(adhoc).maxParallelism(maxParallelism));
-
-    boolean allFields = fields == null || fields.isEmpty();
-    result.ensureCapacity(recordcount);
-
-
-    for(JsonObject value : queryResult.rowsAs(JsonObject.class)) {
-
-      if (fields == null) {
-        value = value.getObject(bucketName);
-      }
-
-      Set<String> f = allFields ? value.getNames() : fields;
-      HashMap<String, ByteIterator> tuple =new HashMap<String, ByteIterator>(f.size());
-      for (String field : f){
-        tuple.put(field, new StringByteIterator(value.getString(field)));
-      }
-      result.add(tuple);
-    }
+        .adhoc(adhoc).maxParallelism(maxParallelism))
+        .flux()
+        .flatMap(res -> res.rowsAs(String.class))
+        .flatMap(id -> collection.reactive().get(id, GetOptions.getOptions()
+            .transcoder(RawJsonTranscoder.INSTANCE)))
+        .map(new Function<GetResult, HashMap<String, ByteIterator>>() {
+          @Override
+          public HashMap<String, ByteIterator> apply(GetResult getResult) {
+            HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>();
+            //System.err.println("printingresult before decoding" + getResult.contentAs(byte[].class));
+            decode(getResult.contentAs(byte[].class), null, tuple);
+            return tuple;
+          }
+        })
+        .toIterable()
+        .forEach(new Consumer<HashMap<String, ByteIterator>>() {
+          @Override
+          public void accept(HashMap<String, ByteIterator> stringByteIteratorHashMap) {
+            data.add(stringByteIteratorHashMap);
+          }
+        });
 
     return Status.OK;
   }
 
 
-  private void decode(final String source, final Set<String> fields,
+  private void decodeStringSource(final String source, final Set<String> fields,
                       final Map<String, ByteIterator> dest) {
     try {
       JsonNode json = JacksonTransformers.MAPPER.readTree(source);
@@ -560,6 +635,7 @@ public class Couchbase3Client extends DB {
     String toReturn = builder.toString();
     return toReturn.substring(0, toReturn.length() - 1);
   }
+
 
   /**
    * Helper method to turn the prefix and key into a proper document ID.
