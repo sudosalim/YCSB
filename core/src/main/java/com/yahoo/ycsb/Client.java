@@ -372,6 +372,7 @@ class ClientThread implements Runnable {
 
   private int opsdone;
   private int collectioncount;
+  private int scopecount;
   private boolean collectionenabled;
   private int threadid;
   private int threadcount;
@@ -396,7 +397,7 @@ class ClientThread implements Runnable {
    */
   public ClientThread(DB db, boolean dotransactions, Workload workload, Properties props, int opcount,
                       boolean collectionenabled, int collectioncount, String collectionsparam,
-                      String scopesparam,
+                      int scopecount, String scopesparam,
                       int insertstart,
                       double targetperthreadperms, CountDownLatch completeLatch) {
 
@@ -405,6 +406,7 @@ class ClientThread implements Runnable {
     this.workload = workload;
     this.opcount = opcount;
     this.collectioncount = collectioncount;
+    this.scopecount = scopecount;
     this.collectionenabled = collectionenabled;
     this.collectionsparam = collectionsparam;
     this.scopesparam = scopesparam;
@@ -502,18 +504,22 @@ class ClientThread implements Runnable {
 
         if (collectionenabled) {
 
-          int insertPerCollection = opcount/collectioncount;
+          int insertPerCollection = opcount/(collectioncount*scopecount);
 
-          for (int j=0; j<scopes.length; j++) {
+          for (int j=0; j<scopecount; j++) {
+
+            System.err.println("entered scopes loop : " + scopes[j]);
 
             for (int i=0; i<collectioncount; i++) {
+
+              System.err.println("collections loop  :  " + collections[i]);
 
               opsdone = 0;
               int insertkey=insertstart;
 
               while (((insertPerCollection == 0) || (opsdone < insertPerCollection)) && !workload.isStopRequested()) {
-                workload.doInsertcollectoin(db, workloadstate, scopes[j], collections[i], insertkey);
 
+                workload.doInsertcollectoin(db, workloadstate, scopes[j], collections[i], insertkey);
                 insertkey++;
                 opsdone++;
                 throttleNanos(startTimeNanos);
@@ -608,8 +614,10 @@ public final class Client {
    */
 
   public static final String COLLECTION_COUNT_PROPERTY = "collectioncount";
-
   public static final String COLLECTION_COUNT_DEFAULT = "0";
+
+  public static final String SCOPE_COUNT_PROPERTY = "scopecount";
+  public static final String SCOPE_COUNT_DEFAULT = "0";
 
   /**
    * Collection names in comma seperated format.
@@ -860,13 +868,16 @@ public final class Client {
     int collectioncount = Integer.parseInt(props.getProperty(COLLECTION_COUNT_PROPERTY,
         COLLECTION_COUNT_DEFAULT));
 
+    int scopecount = Integer.parseInt(props.getProperty(SCOPE_COUNT_PROPERTY,
+        SCOPE_COUNT_DEFAULT));
+
     String collectionsparam = props.getProperty(COLLECTIONS_PARAM, COLLECTIONS_PARAM_DEFAULT);
     String scopesparam = props.getProperty(SCOPES_PARAM, SCOPES_PARAM_DEFAULT);
 
     int insertstart = 0;
 
     final List<ClientThread> clients = initDb(dbname, props, threadcount, targetperthreadperms,
-        collectionenabled, collectioncount, collectionsparam, scopesparam,
+        collectionenabled, collectioncount, collectionsparam, scopecount, scopesparam,
         insertstart, workload, tracer, completeLatch);
 
     if (status) {
@@ -963,6 +974,7 @@ public final class Client {
                                            boolean collectionenabled,
                                            int collectioncount,
                                            String collectionsparam,
+                                           int scopecount,
                                            String scopesparam,
                                            int insertstart,
                                            Workload workload, Tracer tracer,
@@ -1003,10 +1015,11 @@ public final class Client {
           ++threadopcount;
         }
 
-        insertstart = threadopcount/collectioncount * threadid;
+        insertstart = threadopcount/(collectioncount*scopecount) * threadid;
 
         ClientThread t = new ClientThread(db, dotransactions, workload, props, threadopcount,
-            collectionenabled, collectioncount, collectionsparam, scopesparam, insertstart, targetperthreadperms,
+            collectionenabled, collectioncount, collectionsparam, scopecount, scopesparam,
+            insertstart, targetperthreadperms,
             completeLatch);
         t.setThreadId(threadid);
         t.setThreadCount(threadcount);

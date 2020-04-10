@@ -401,14 +401,10 @@ public class CustomCollectionWorkload extends Workload {
     fieldlengthgenerator = CustomCollectionWorkload.getFieldLengthGenerator(p);
     recordspercollection = Long.parseLong(p.getProperty(Client.RECORD_PER_COLLECTION,
         Client.RECORD_PER_COLLECTION_DEFAULT));
-    System.err.println("recordspercollection value ::::" + recordspercollection);
     recordcount =
         Long.parseLong(p.getProperty(Client.RECORD_COUNT_PROPERTY, Client.DEFAULT_RECORD_COUNT));
     if (recordcount == 0) {
       recordcount = Integer.MAX_VALUE;
-    }
-    if (collectionenabled) {
-      recordcount = recordspercollection;
     }
     collectionenabled = Boolean.parseBoolean(p.getProperty(
         Client.COLLECTION_ENABLED_PROPERTY, Client.COLLECTION_ENABLED_DEFAULT));
@@ -821,7 +817,6 @@ public class CustomCollectionWorkload extends Workload {
   public void doTransactionRead(DB db) {
     // choose a random key
     long keynum = nextKeynum();
-
     //long keynum = nextKeynumCollection();
 
     String keyname = buildKeyName(keynum);
@@ -940,6 +935,7 @@ public class CustomCollectionWorkload extends Workload {
   public void doTransactionUpdate(DB db) {
     // choose a random key
     long keynum = nextKeynum();
+
     String keyname = buildKeyName(keynum);
 
     int collnum = (int) nextcollectionNum();
