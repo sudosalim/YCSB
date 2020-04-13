@@ -508,11 +508,7 @@ class ClientThread implements Runnable {
 
           for (int j=0; j<scopecount; j++) {
 
-            System.err.println("entered scopes loop : " + scopes[j]);
-
             for (int i=0; i<collectioncount; i++) {
-
-              System.err.println("collections loop  :  " + collections[i]);
 
               opsdone = 0;
               int insertkey=insertstart;
