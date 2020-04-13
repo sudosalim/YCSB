@@ -78,9 +78,10 @@ public class Couchbase3Client extends DB {
 
   private static final Object INIT_COORDINATOR = new Object();
 
-  private static volatile Cluster cluster;
+  private volatile Cluster cluster;
+  private static volatile Bucket bucket;
   private static volatile ClusterOptions clusterOptions;
-  private static volatile Collection collection;
+  //private static volatile Collection collection;
   private static Transactions transactions;
   private static boolean transactionEnabled;
   private static int[] transactionKeys;
@@ -162,8 +163,8 @@ public class Couchbase3Client extends DB {
                 Optional.of(managerPort))));
 
         cluster = Cluster.connect(seedNodes, clusterOptions);
-        Bucket bucket = cluster.bucket(bucketName);
-        collection = bucket.scope("scope1").collection("collection1");
+        bucket = cluster.bucket(bucketName);
+
         if ((transactions == null) && transactionEnabled) {
           transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
               .durabilityLevel(transDurabilityLevel)
@@ -264,6 +265,8 @@ public class Couchbase3Client extends DB {
   public Status read(final String table, final String key, final Set<String> fields,
                      final Map<String, ByteIterator> result) {
     try {
+      Collection collection = bucket.defaultCollection();
+
       GetResult document = collection.get(formatId(table, key));
       extractFields(document.contentAsObject(), fields, result);
       return Status.OK;
@@ -289,6 +292,8 @@ public class Couchbase3Client extends DB {
   @Override
   public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
+      Collection collection = bucket.defaultCollection();
+
       if (useDurabilityLevels) {
         collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
       } else {
@@ -304,6 +309,7 @@ public class Couchbase3Client extends DB {
   @Override
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
+      Collection collection = bucket.defaultCollection();
       if (useDurabilityLevels) {
         collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
       } else {
@@ -333,6 +339,7 @@ public class Couchbase3Client extends DB {
                                      Map<String, ByteIterator>[] transationValues, String[] transationOperations,
                                      Set<String> fields, Map<String, ByteIterator> result) {
 
+    Collection collection = bucket.defaultCollection();
     try {
       for (int i = 0; i < transationKeys.length; i++) {
         switch (transationOperations[i]) {
@@ -371,6 +378,8 @@ public class Couchbase3Client extends DB {
                                    ByteIterator>[] transationValues,
                                    String[] transationOperations, Set<String> fields,
                                    Map<String, ByteIterator> result) {
+
+    Collection collection = bucket.defaultCollection();
 
     try {
       transactions.run((ctx) -> {
@@ -429,6 +438,7 @@ public class Couchbase3Client extends DB {
 
   @Override
   public Status delete(final String table, final String key) {
+    Collection collection = bucket.defaultCollection();
     try {
       if (useDurabilityLevels) {
         collection.remove(formatId(table, key), removeOptions().durability(durabilityLevel));
@@ -461,6 +471,9 @@ public class Couchbase3Client extends DB {
 
   private Status scanAllFields(final String table, final String startkey, final int recordcount,
                                final Vector<HashMap<String, ByteIterator>> result) {
+
+    Collection collection = bucket.defaultCollection();
+
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
 
     cluster.reactive().query(scanAllQuery, queryOptions()
