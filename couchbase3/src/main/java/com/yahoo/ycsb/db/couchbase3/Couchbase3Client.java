@@ -102,9 +102,17 @@ public class Couchbase3Client extends DB {
   private String scanAllQuery;
   private String bucketName;
 
+  private static boolean outOfOrderExecution;
+
   @Override
   public void init() throws DBException {
     Properties props = getProperties();
+
+    outOfOrderExecution = props.getProperty("couchbase.outOfOrderExecution", "false").equals("true");
+    if (outOfOrderExecution) {
+      System.setProperty("com.couchbase.unorderedExecutionEnabled", "true");
+    }
+
     bucketName = props.getProperty("couchbase.bucket", "ycsb");
     // durability options
     String rawDurabilityLevel = props.getProperty("couchbase.durability", null);
