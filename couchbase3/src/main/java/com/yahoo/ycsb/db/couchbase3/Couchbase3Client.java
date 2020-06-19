@@ -102,15 +102,15 @@ public class Couchbase3Client extends DB {
   private String scanAllQuery;
   private String bucketName;
 
-  private static boolean outOfOrderExecution;
-
   @Override
   public void init() throws DBException {
     Properties props = getProperties();
 
-    outOfOrderExecution = props.getProperty("couchbase.outOfOrderExecution", "false").equals("true");
+    boolean outOfOrderExecution = Boolean.parseBoolean(props.getProperty("couchbase.outOfOrderExecution", "false"));
     if (outOfOrderExecution) {
       System.setProperty("com.couchbase.unorderedExecutionEnabled", "true");
+    } else {
+      System.setProperty("com.couchbase.unorderedExecutionEnabled", "false");
     }
 
     bucketName = props.getProperty("couchbase.bucket", "ycsb");
