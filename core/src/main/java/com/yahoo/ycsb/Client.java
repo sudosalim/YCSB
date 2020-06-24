@@ -515,7 +515,7 @@ class ClientThread implements Runnable {
 
               while (((insertPerCollection == 0) || (opsdone < insertPerCollection)) && !workload.isStopRequested()) {
 
-                workload.doInsertcollectoin(db, workloadstate, scopes[j], collections[i], insertkey);
+                workload.doInsertCollection(db, workloadstate, scopes[j], collections[i], insertkey);
                 insertkey++;
                 opsdone++;
                 throttleNanos(startTimeNanos);

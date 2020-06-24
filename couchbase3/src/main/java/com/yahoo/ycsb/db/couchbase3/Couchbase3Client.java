@@ -540,15 +540,29 @@ public class Couchbase3Client extends DB {
   public Status scan(final String table, final String startkey, final int recordcount, final Set<String> fields,
                      final Vector<HashMap<String, ByteIterator>> result) {
     try {
-
       if (fields == null || fields.isEmpty()) {
         return scanAllFields(table, startkey, recordcount, result);
       } else {
         return scanSpecificFields(table, startkey, recordcount, fields, result);
         // need to implement
       }
-    } catch (Exception ex) {
-      ex.printStackTrace();
+    } catch (Throwable t) {
+      errors.add(t);
+      return Status.ERROR;
+    }
+  }
+
+  public Status scan(final String table, final String startkey, final int recordcount, final Set<String> fields,
+                     final Vector<HashMap<String, ByteIterator>> result, String scope, String coll) {
+    try {
+      if (fields == null || fields.isEmpty()) {
+        return scanAllFields(table, startkey, recordcount, result, scope, coll);
+      } else {
+        return scanSpecificFields(table, startkey, recordcount, fields, result);
+        // need to implement
+      }
+    } catch (Throwable t) {
+      errors.add(t);
       return Status.ERROR;
     }
   }
@@ -582,6 +596,41 @@ public class Couchbase3Client extends DB {
             data.add(stringByteIteratorHashMap);
           }
         });
+
+    return Status.OK;
+  }
+
+
+  private Status scanAllFields(final String table, final String startkey, final int recordcount,
+                               final Vector<HashMap<String, ByteIterator>> result, String scope, String coll) {
+
+    Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
+
+    final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
+    String query =  "SELECT RAW meta().id FROM default:`" + bucketName +
+          "`.`" + scope + "`.`"+ coll + "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+    cluster.reactive().query(query, queryOptions()
+          .parameters(JsonArray.from(formatId(table, startkey), recordcount))
+          .adhoc(adhoc).maxParallelism(maxParallelism))
+          .flux()
+          .flatMap(res -> res.rowsAs(String.class))
+          .flatMap(id -> collection.reactive().get(id))
+          .map(new Function<GetResult, HashMap<String, ByteIterator>>() {
+            @Override
+            public HashMap<String, ByteIterator> apply(GetResult getResult) {
+              HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>();
+              //System.err.println("printingresult before decoding" + getResult.contentAsObject().toString());
+              decode(getResult.contentAsObject().toString(), null, tuple);
+              return tuple;
+            }
+          })
+          .toIterable()
+          .forEach(new Consumer<HashMap<String, ByteIterator>>() {
+            @Override
+            public void accept(HashMap<String, ByteIterator> stringByteIteratorHashMap) {
+              data.add(stringByteIteratorHashMap);
+            }
+          });
 
     return Status.OK;
   }

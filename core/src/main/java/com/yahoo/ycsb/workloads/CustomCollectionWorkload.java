@@ -656,7 +656,7 @@ public class CustomCollectionWorkload extends Workload {
   }
 
 
-  public boolean doInsertcollectoin(DB db, Object threadstate, String scope, String collection, int key) {
+  public boolean doInsertCollection(DB db, Object threadstate, String scope, String collection, int key) {
 
     int keynum = key;
 
@@ -902,7 +902,6 @@ public class CustomCollectionWorkload extends Workload {
     measurements.measure("READ-MODIFY-WRITE", (int) ((en - st) / 1000));
     measurements.measureIntended("READ-MODIFY-WRITE", (int) ((en - ist) / 1000));
   }
-
 
   public void doTransactionScan(DB db) {
     // choose a random key

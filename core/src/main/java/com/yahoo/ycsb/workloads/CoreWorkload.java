@@ -775,8 +775,7 @@ public class CoreWorkload extends Workload {
     measurements.measureIntended("READ-MODIFY-WRITE", (int) ((en - ist) / 1000));
   }
 
-  public boolean doInsertcollectoin(DB db, Object threadstate,
-                                    String scope, String collection, int keynum) {
+  public boolean doInsertCollection(DB db, Object threadstate, String scope, String collection, int keynum) {
     return false;
   }
 

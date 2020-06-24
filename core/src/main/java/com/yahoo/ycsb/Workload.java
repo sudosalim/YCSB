@@ -120,6 +120,6 @@ public abstract class Workload {
     return stopRequested.get();
   }
 
-  public abstract boolean doInsertcollectoin(DB db, Object threadstate, String scope,
+  public abstract boolean doInsertCollection(DB db, Object threadstate, String scope,
                                              String collection, int keynum);
 }
