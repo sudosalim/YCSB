@@ -17,6 +17,7 @@
 
 package com.yahoo.ycsb.db.couchbase3;
 
+import com.couchbase.client.core.error.TemporaryFailureException;
 import com.couchbase.client.java.codec.RawJsonTranscoder;
 import com.couchbase.client.java.kv.GetOptions;
 import com.couchbase.client.java.kv.GetResult;
@@ -34,6 +35,7 @@ import com.couchbase.client.java.json.JacksonTransformers;
 import com.couchbase.client.java.json.JsonArray;
 import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.java.query.QueryResult;
+import com.couchbase.client.java.query.ReactiveQueryResult;
 import com.couchbase.transactions.*;
 
 import com.couchbase.transactions.config.TransactionConfigBuilder;
@@ -895,17 +897,20 @@ public class Couchbase3Client extends DB {
   private Status soeInsertN1ql(Generator gen)
         throws Exception {
 
-    N1qlQueryResult queryResult = bucket.query(N1qlQuery.parameterized(
-          soeInsertN1qlQuery,
-          JsonArray.from(gen.getPredicate().getDocid(), JsonObject.fromJson(gen.getPredicate().getValueA())),
-          N1qlParams.build().adhoc(adhoc).maxParallelism(maxParallelism)
-    ));
+    Collection collection = bucket.defaultCollection();
 
-    if (!queryResult.parseSuccess() || !queryResult.finalSuccess()) {
-      throw new DBException("Error while parsing N1QL Result. Query: " + soeInsertN1qlQuery
-            + ", Errors: " + queryResult.errors());
+    try {
+      QueryResult queryResult = cluster.query(
+          soeInsertN1qlQuery,
+          queryOptions()
+              .parameters(JsonArray.from(gen.getPredicate().getDocid(), JsonObject.fromJson(gen.getPredicate().getValueA())))
+              .adhoc(adhoc)
+              .maxParallelism(maxParallelism)
+      );
+      return Status.OK;
+    } catch (Exception ex) {
+      throw new DBException("Error while parsing N1QL Result. Query: " + soeInsertN1qlQuery, ex);
     }
-    return Status.OK;
   }
 
 
@@ -1034,49 +1039,27 @@ public class Couchbase3Client extends DB {
     int recordcount = gen.getRandomLimit();
     String key = gen.getCustomerIdWithDistribution();
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-    bucket.async()
-          .query(N1qlQuery.parameterized(
-                soeScanKVQuery,
-                JsonArray.from(key, recordcount),
-                N1qlParams.build().adhoc(adhoc).maxParallelism(maxParallelism)
-          ))
-          .doOnNext(new Action1<AsyncN1qlQueryResult>() {
-            @Override
-            public void call(AsyncN1qlQueryResult result) {
-              if (!result.parseSuccess()) {
-                throw new RuntimeException("Error while parsing N1QL Result. Query: " + soeScanKVQuery
-                      + ", Errors: " + result.errors());
-              }
-            }
+    final Collection collection = bucket.defaultCollection();
+    try {
+      cluster
+          .reactive()
+          .query(soeScanKVQuery, queryOptions().adhoc(adhoc).maxParallelism(maxParallelism).parameters(JsonArray.from(key, recordcount)))
+          .flatMapMany(res -> res.rowsAs(byte[].class))
+          .flatMap(row -> {
+            String id = new String(row).trim();
+            return collection.reactive().get(id.substring(1, id.length()-1), GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE));
           })
-          .flatMap(new Func1<AsyncN1qlQueryResult, Observable<AsyncN1qlQueryRow>>() {
-            @Override
-            public Observable<AsyncN1qlQueryRow> call(AsyncN1qlQueryResult result) {
-              return result.rows();
-            }
+          .map(getResult -> {
+            HashMap<String, ByteIterator> tuple = new HashMap<>();
+            soeDecode(getResult.contentAs(String.class), null, tuple);
+            return tuple;
           })
-          .flatMap(new Func1<AsyncN1qlQueryRow, Observable<RawJsonDocument>>() {
-            @Override
-            public Observable<RawJsonDocument> call(AsyncN1qlQueryRow row) {
-              String id = new String(row.byteValue()).trim();
-              return bucket.async().get(id.substring(1, id.length()-1), RawJsonDocument.class);
-            }
-          })
-          .map(new Func1<RawJsonDocument, HashMap<String, ByteIterator>>() {
-            @Override
-            public HashMap<String, ByteIterator> call(RawJsonDocument document) {
-              HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>();
-              soeDecode(document.content(), null, tuple);
-              return tuple;
-            }
-          })
-          .toBlocking()
-          .forEach(new Action1<HashMap<String, ByteIterator>>() {
-            @Override
-            public void call(HashMap<String, ByteIterator> tuple) {
-              data.add(tuple);
-            }
-          });
+          .toStream()
+          .forEach(data::add);
+
+    } catch (Exception e) {
+      throw new RuntimeException("Error while parsing N1QL Result. Query: " + soeScanKVQuery, e);
+    }
 
     result.addAll(data);
     return Status.OK;
