@@ -61,8 +61,6 @@ import java.time.Duration;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
-import java.util.function.Function;
 
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
@@ -559,6 +557,7 @@ public class Couchbase3Client extends DB {
       return Status.OK;
     } catch (Throwable t) {
       errors.add(t);
+      System.err.println("delete failed with exception :" + t);
       return Status.ERROR;
     }
   }
@@ -591,6 +590,7 @@ public class Couchbase3Client extends DB {
       }
     } catch (Throwable t) {
       errors.add(t);
+      System.err.println("scan failed with exception :" + t);
       return Status.ERROR;
     }
   }
@@ -598,33 +598,33 @@ public class Couchbase3Client extends DB {
   private Status scanAllFields(final String table, final String startkey, final int recordcount,
                                final Vector<HashMap<String, ByteIterator>> result) {
 
-    Collection collection = bucket.defaultCollection();
+    final Collection collection = bucket.defaultCollection();
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
+    final String query =  "SELECT RAW meta().id FROM default:`" + bucketName +
+          "`.`_default`.`_default` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+    final ReactiveCollection reactiveCollection = collection.reactive();
+    reactiveCluster.query(query,
+          queryOptions()
+                .adhoc(adhoc)
+                .maxParallelism(maxParallelism)
+                .parameters(JsonArray.from(formatId(table, startkey), recordcount)))
+          .flatMapMany(res -> {
+              return res.rowsAs(String.class);
+            })
+          .flatMap(id -> {
+              return reactiveCollection
+                  .get(id, GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE));
+            })
+          .map(getResult -> {
+              HashMap<String, ByteIterator> tuple = new HashMap<>();
+              decode(getResult.contentAs(String.class), null, tuple);
+              return tuple;
+            })
+          .toStream()
+          .forEach(data::add);
 
-    cluster.reactive().query(scanAllQuery, queryOptions()
-        .parameters(JsonArray.from(formatId(table, startkey), recordcount))
-        .adhoc(adhoc).maxParallelism(maxParallelism))
-        .flux()
-        .flatMap(res -> res.rowsAs(String.class))
-        .flatMap(id -> collection.reactive().get(id))
-        .map(new Function<GetResult, HashMap<String, ByteIterator>>() {
-          @Override
-          public HashMap<String, ByteIterator> apply(GetResult getResult) {
-            HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>();
-            //System.err.println("printingresult before decoding" + getResult.contentAsObject().toString());
-            decode(getResult.contentAsObject().toString(), null, tuple);
-            return tuple;
-          }
-        })
-        .toIterable()
-        .forEach(new Consumer<HashMap<String, ByteIterator>>() {
-          @Override
-          public void accept(HashMap<String, ByteIterator> stringByteIteratorHashMap) {
-            data.add(stringByteIteratorHashMap);
-          }
-        });
-
+    result.addAll(data);
     return Status.OK;
   }
 
@@ -638,31 +638,26 @@ public class Couchbase3Client extends DB {
           "`.`" + scope + "`.`"+ coll + "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
 
     final ReactiveCollection reactiveCollection = collection.reactive();
-    try {
-      reactiveCluster.query(query,
-            queryOptions()
+    reactiveCluster.query(query,
+          queryOptions()
                   .adhoc(adhoc)
                   .maxParallelism(maxParallelism)
                   .parameters(JsonArray.from(formatId(table, startkey), recordcount)))
-            .flatMapMany(res -> {
-                return res.rowsAs(String.class);
-              })
-            .flatMap(id -> {
-                return reactiveCollection
+          .flatMapMany(res -> {
+              return res.rowsAs(String.class);
+            })
+          .flatMap(id -> {
+              return reactiveCollection
                     .get(id, GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE));
-              })
-            .map(getResult -> {
-                HashMap<String, ByteIterator> tuple = new HashMap<>();
-                decode(getResult.contentAs(String.class), null, tuple);
-                return tuple;
-              })
-            .toStream()
-            .forEach(data::add);
+            })
+          .map(getResult -> {
+              HashMap<String, ByteIterator> tuple = new HashMap<>();
+              decode(getResult.contentAs(String.class), null, tuple);
+              return tuple;
+            })
+          .toStream()
+          .forEach(data::add);
 
-    } catch (Exception ex) {
-      ex.printStackTrace();
-      throw new RuntimeException(ex);
-    }
     result.addAll(data);
     return Status.OK;
   }
