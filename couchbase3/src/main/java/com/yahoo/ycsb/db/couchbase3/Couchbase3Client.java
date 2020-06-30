@@ -25,7 +25,9 @@ import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.java.Bucket;
 import com.couchbase.client.java.Cluster;
+import com.couchbase.client.java.ReactiveCluster;
 import com.couchbase.client.java.Collection;
+import com.couchbase.client.java.ReactiveCollection;
 import com.couchbase.client.java.env.ClusterEnvironment;
 import com.couchbase.client.java.json.JacksonTransformers;
 import com.couchbase.client.java.json.JsonArray;
@@ -46,6 +48,9 @@ import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
 import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
 import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
 import static com.couchbase.client.java.query.QueryOptions.queryOptions;
+
+import com.couchbase.client.java.codec.RawJsonTranscoder;
+import com.couchbase.client.java.kv.GetOptions;
 
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.ReplicateTo;
@@ -74,6 +79,7 @@ public class Couchbase3Client extends DB {
   private static final Object INIT_COORDINATOR = new Object();
 
   private volatile Cluster cluster;
+  private static volatile ReactiveCluster reactiveCluster;
   private static volatile Bucket bucket;
   private static volatile ClusterOptions clusterOptions;
   //private volatile Collection collectiont;
@@ -184,6 +190,7 @@ public class Couchbase3Client extends DB {
                 Optional.of(managerPort))));
 
         cluster = Cluster.connect(seedNodes, clusterOptions);
+        reactiveCluster = cluster.reactive();
         bucket = cluster.bucket(bucketName);
 
         if ((transactions == null) && transactionEnabled) {
@@ -584,7 +591,6 @@ public class Couchbase3Client extends DB {
       }
     } catch (Throwable t) {
       errors.add(t);
-      System.err.println("scan failed with exception :" + t);
       return Status.ERROR;
     }
   }
@@ -625,36 +631,39 @@ public class Couchbase3Client extends DB {
 
   private Status scanAllFields(final String table, final String startkey, final int recordcount,
                                final Vector<HashMap<String, ByteIterator>> result, String scope, String coll) {
-
-    Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
+    final Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-    String query =  "SELECT RAW meta().id FROM default:`" + bucketName +
+    final String query =  "SELECT RAW meta().id FROM default:`" + bucketName +
           "`.`" + scope + "`.`"+ coll + "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
 
-    cluster.reactive().query(query, queryOptions()
-          .parameters(JsonArray.from(formatId(table, startkey), recordcount))
-          .adhoc(adhoc).maxParallelism(maxParallelism))
-          .flux()
-          .flatMap(res -> res.rowsAs(String.class))
-          .flatMap(id -> collection.reactive().get(id))
-          .map(new Function<GetResult, HashMap<String, ByteIterator>>() {
-            @Override
-            public HashMap<String, ByteIterator> apply(GetResult getResult) {
-              HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>();
-              //System.err.println("printingresult before decoding" + getResult.contentAsObject().toString());
-              decode(getResult.contentAsObject().toString(), null, tuple);
-              return tuple;
-            }
-          })
-          .toIterable()
-          .forEach(new Consumer<HashMap<String, ByteIterator>>() {
-            @Override
-            public void accept(HashMap<String, ByteIterator> stringByteIteratorHashMap) {
-              data.add(stringByteIteratorHashMap);
-            }
-          });
+    final ReactiveCollection reactiveCollection = collection.reactive();
+    try {
+      reactiveCluster.query(query,
+            queryOptions()
+                  .adhoc(adhoc)
+                  .maxParallelism(maxParallelism)
+                  .parameters(JsonArray.from(formatId(table, startkey), recordcount)))
+            .flatMapMany(res -> {
+                return res.rowsAs(String.class);
+              })
+            .flatMap(id -> {
+                return reactiveCollection
+                    .get(id, GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE));
+              })
+            .map(getResult -> {
+                HashMap<String, ByteIterator> tuple = new HashMap<>();
+                decode(getResult.contentAs(String.class), null, tuple);
+                return tuple;
+              })
+            .toStream()
+            .forEach(data::add);
 
+    } catch (Exception ex) {
+      ex.printStackTrace();
+      throw new RuntimeException(ex);
+    }
+    result.addAll(data);
     return Status.OK;
   }
 
