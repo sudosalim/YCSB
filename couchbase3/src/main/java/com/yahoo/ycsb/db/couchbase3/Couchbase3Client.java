@@ -392,6 +392,7 @@ public class Couchbase3Client extends DB {
       return Status.OK;
     } catch (Throwable t) {
       errors.add(t);
+      System.err.println("insert failed with exception :" + t);
       return Status.ERROR;
     }
   }
@@ -420,6 +421,7 @@ public class Couchbase3Client extends DB {
       return Status.OK;
     } catch (Throwable t) {
       errors.add(t);
+      System.err.println("insert failed with exception :" + t);
       return Status.ERROR;
     }
   }
@@ -566,6 +568,7 @@ public class Couchbase3Client extends DB {
       }
     } catch (Throwable t) {
       errors.add(t);
+      System.err.println("scan failed with exception :" + t);
       return Status.ERROR;
     }
   }
@@ -581,6 +584,7 @@ public class Couchbase3Client extends DB {
       }
     } catch (Throwable t) {
       errors.add(t);
+      System.err.println("scan failed with exception :" + t);
       return Status.ERROR;
     }
   }
