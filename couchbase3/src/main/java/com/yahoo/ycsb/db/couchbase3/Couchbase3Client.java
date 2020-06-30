@@ -42,6 +42,7 @@ import com.couchbase.client.java.ClusterOptions;
 
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
+import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
 import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
 import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
 import static com.couchbase.client.java.query.QueryOptions.queryOptions;
@@ -101,6 +102,7 @@ public class Couchbase3Client extends DB {
   private static int managerPort;
   private static long kvTimeoutMillis;
   private static int kvEndpoints;
+  private boolean upsert;
 
 
   @Override
@@ -131,6 +133,8 @@ public class Couchbase3Client extends DB {
     scanAllQuery =  "SELECT RAW meta().id FROM `" + bucketName +
         "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
     bucketName = props.getProperty("couchbase.bucket", "default");
+    upsert = props.getProperty("couchbase.upsert", "false").equals("true");
+
 
     int numATRS = Integer.parseInt(props.getProperty("couchbase.atrs", "20480"));
 
@@ -372,11 +376,19 @@ public class Couchbase3Client extends DB {
       Collection collection = bucket.defaultCollection();
 
       if (useDurabilityLevels) {
-        collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
+        if (upsert) {
+          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
+        } else {
+          collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
+        }
       } else {
-        collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
-      }
+        if (upsert) {
+          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
+        } else {
+          collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
 
+        }
+      }
       return Status.OK;
     } catch (Throwable t) {
       errors.add(t);
@@ -389,16 +401,22 @@ public class Couchbase3Client extends DB {
 
     try {
 
-      //System.err.println("scope : " + scope + " : collection :" + coll + " : insert doc : " + key);
-
       Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
 
       if (useDurabilityLevels) {
-        collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
+        if (upsert) {
+          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
+        } else {
+          collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
+        }
       } else {
-        collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
-      }
+        if (upsert) {
+          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
+        } else {
+          collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
 
+        }
+      }
       return Status.OK;
     } catch (Throwable t) {
       errors.add(t);
@@ -609,6 +627,7 @@ public class Couchbase3Client extends DB {
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
     String query =  "SELECT RAW meta().id FROM default:`" + bucketName +
           "`.`" + scope + "`.`"+ coll + "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+
     cluster.reactive().query(query, queryOptions()
           .parameters(JsonArray.from(formatId(table, startkey), recordcount))
           .adhoc(adhoc).maxParallelism(maxParallelism))
