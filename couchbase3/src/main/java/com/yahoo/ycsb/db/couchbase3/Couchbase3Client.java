@@ -29,13 +29,14 @@ import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.java.Bucket;
 import com.couchbase.client.java.Cluster;
+import com.couchbase.client.java.ReactiveCluster;
 import com.couchbase.client.java.Collection;
+import com.couchbase.client.java.ReactiveCollection;
 import com.couchbase.client.java.env.ClusterEnvironment;
 import com.couchbase.client.java.json.JacksonTransformers;
 import com.couchbase.client.java.json.JsonArray;
 import com.couchbase.client.java.json.JsonObject;
 import com.couchbase.client.java.query.QueryResult;
-//import com.couchbase.client.java.query.ReactiveQueryResult;
 import com.couchbase.transactions.*;
 
 import com.couchbase.transactions.config.TransactionConfigBuilder;
@@ -49,6 +50,7 @@ import static com.couchbase.client.java.kv.InsertOptions.insertOptions;
 import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
 import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
 import static com.couchbase.client.java.query.QueryOptions.queryOptions;
+import static com.couchbase.client.java.kv.UpsertOptions.upsertOptions;
 
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.ReplicateTo;
@@ -60,8 +62,6 @@ import java.time.Duration;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
-import java.util.function.Function;
 
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
@@ -79,6 +79,7 @@ public class Couchbase3Client extends DB {
 
   private volatile Cluster cluster;
   private static volatile Bucket bucket;
+  private static volatile ReactiveCluster reactiveCluster;
   private static volatile ClusterOptions clusterOptions;
   //private volatile Collection collectiont;
   private Transactions transactions;
@@ -227,6 +228,7 @@ public class Couchbase3Client extends DB {
                 Optional.of(managerPort))));
 
         cluster = Cluster.connect(seedNodes, clusterOptions);
+        reactiveCluster = cluster.reactive();
         bucket = cluster.bucket(bucketName);
 
         if ((transactions == null) && transactionEnabled) {
@@ -445,36 +447,52 @@ public class Couchbase3Client extends DB {
       Collection collection = bucket.defaultCollection();
 
       if (useDurabilityLevels) {
-        collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
+        if (upsert) {
+          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
+        } else {
+          collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
+        }
       } else {
-        collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
-      }
+        if (upsert) {
+          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
+        } else {
+          collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
 
+        }
+      }
       return Status.OK;
     } catch (Throwable t) {
       errors.add(t);
+      System.err.println("insert failed with exception :" + t);
       return Status.ERROR;
     }
   }
 
   public Status insert(final String table, final String key, final Map<String,
-      ByteIterator> values, String scope, String coll) {
+        ByteIterator> values, String scope, String coll) {
 
     try {
-
-      //System.err.println("scope : " + scope + " : collection :" + coll + " : insert doc : " + key);
 
       Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
 
       if (useDurabilityLevels) {
-        collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
+        if (upsert) {
+          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
+        } else {
+          collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
+        }
       } else {
-        collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
-      }
+        if (upsert) {
+          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
+        } else {
+          collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
 
+        }
+      }
       return Status.OK;
     } catch (Throwable t) {
       errors.add(t);
+      System.err.println("insert failed with exception :" + t);
       return Status.ERROR;
     }
   }
@@ -605,6 +623,7 @@ public class Couchbase3Client extends DB {
       return Status.OK;
     } catch (Throwable t) {
       errors.add(t);
+      System.err.println("delete failed with exception :" + t);
       return Status.ERROR;
     }
   }
@@ -621,6 +640,7 @@ public class Couchbase3Client extends DB {
       }
     } catch (Throwable t) {
       errors.add(t);
+      System.err.println("scan failed with exception :" + t);
       return Status.ERROR;
     }
   }
@@ -636,75 +656,70 @@ public class Couchbase3Client extends DB {
       }
     } catch (Throwable t) {
       errors.add(t);
+      System.err.println("scan failed with exception :" + t);
       return Status.ERROR;
     }
   }
 
   private Status scanAllFields(final String table, final String startkey, final int recordcount,
                                final Vector<HashMap<String, ByteIterator>> result) {
-
-    Collection collection = bucket.defaultCollection();
-
+    final Collection collection = bucket.defaultCollection();
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
+    final String query =  "SELECT RAW meta().id FROM default:`" + bucketName +
+          "`.`_default`.`_default` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+    final ReactiveCollection reactiveCollection = collection.reactive();
+    reactiveCluster.query(query,
+          queryOptions()
+                .adhoc(adhoc)
+                .maxParallelism(maxParallelism)
+                .parameters(JsonArray.from(formatId(table, startkey), recordcount)))
+          .flatMapMany(res -> {
+              return res.rowsAs(String.class);
+            })
+          .flatMap(id -> {
+              return reactiveCollection
+                  .get(id, GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE));
+            })
+          .map(getResult -> {
+              HashMap<String, ByteIterator> tuple = new HashMap<>();
+              decode(getResult.contentAs(String.class), null, tuple);
+              return tuple;
+            })
+          .toStream()
+          .forEach(data::add);
 
-    cluster.reactive().query(scanAllQuery, queryOptions()
-        .parameters(JsonArray.from(formatId(table, startkey), recordcount))
-        .adhoc(adhoc).maxParallelism(maxParallelism))
-        .flux()
-        .flatMap(res -> res.rowsAs(String.class))
-        .flatMap(id -> collection.reactive().get(id))
-        .map(new Function<GetResult, HashMap<String, ByteIterator>>() {
-          @Override
-          public HashMap<String, ByteIterator> apply(GetResult getResult) {
-            HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>();
-            //System.err.println("printingresult before decoding" + getResult.contentAsObject().toString());
-            decode(getResult.contentAsObject().toString(), null, tuple);
-            return tuple;
-          }
-        })
-        .toIterable()
-        .forEach(new Consumer<HashMap<String, ByteIterator>>() {
-          @Override
-          public void accept(HashMap<String, ByteIterator> stringByteIteratorHashMap) {
-            data.add(stringByteIteratorHashMap);
-          }
-        });
-
+    result.addAll(data);
     return Status.OK;
   }
 
-
   private Status scanAllFields(final String table, final String startkey, final int recordcount,
                                final Vector<HashMap<String, ByteIterator>> result, String scope, String coll) {
-
-    Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
-
+    final Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-    String query =  "SELECT RAW meta().id FROM default:`" + bucketName +
+    final String query =  "SELECT RAW meta().id FROM default:`" + bucketName +
           "`.`" + scope + "`.`"+ coll + "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
-    cluster.reactive().query(query, queryOptions()
-          .parameters(JsonArray.from(formatId(table, startkey), recordcount))
-          .adhoc(adhoc).maxParallelism(maxParallelism))
-          .flux()
-          .flatMap(res -> res.rowsAs(String.class))
-          .flatMap(id -> collection.reactive().get(id))
-          .map(new Function<GetResult, HashMap<String, ByteIterator>>() {
-            @Override
-            public HashMap<String, ByteIterator> apply(GetResult getResult) {
-              HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>();
-              //System.err.println("printingresult before decoding" + getResult.contentAsObject().toString());
-              decode(getResult.contentAsObject().toString(), null, tuple);
+    final ReactiveCollection reactiveCollection = collection.reactive();
+    reactiveCluster.query(query,
+          queryOptions()
+                .adhoc(adhoc)
+                .maxParallelism(maxParallelism)
+                .parameters(JsonArray.from(formatId(table, startkey), recordcount)))
+          .flatMapMany(res -> {
+              return res.rowsAs(String.class);
+            })
+          .flatMap(id -> {
+              return reactiveCollection
+                  .get(id, GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE));
+            })
+          .map(getResult -> {
+              HashMap<String, ByteIterator> tuple = new HashMap<>();
+              decode(getResult.contentAs(String.class), null, tuple);
               return tuple;
-            }
-          })
-          .toIterable()
-          .forEach(new Consumer<HashMap<String, ByteIterator>>() {
-            @Override
-            public void accept(HashMap<String, ByteIterator> stringByteIteratorHashMap) {
-              data.add(stringByteIteratorHashMap);
-            }
-          });
+            })
+          .toStream()
+          .forEach(data::add);
 
+    result.addAll(data);
     return Status.OK;
   }
 
@@ -847,29 +862,27 @@ public class Couchbase3Client extends DB {
         System.err.println("Error getting document from DB: " + docId);
       }
 
-    } catch (Exception ex) {
-      ex.printStackTrace();
+    } catch (Throwable t) {
+      errors.add(t);
+      System.err.println("soe load failed with exception :" + t);
       return Status.ERROR;
     }
     return Status.OK;
   }
 
-
   // *********************  SOE Insert ********************************
 
   @Override
   public Status soeInsert(String table, HashMap<String, ByteIterator> result, Generator gen)  {
-
     try {
-      //Pair<String, String> inserDocPair = gen.getInsertDocument();
-
       if (kv) {
         return soeInsertKv(gen);
       } else {
         return soeInsertN1ql(gen);
       }
-    } catch (Exception ex) {
-      ex.printStackTrace();
+    } catch (Throwable t) {
+      errors.add(t);
+      System.err.println("soe insert failed with exception :" + t);
       return Status.ERROR;
     }
   }
@@ -880,17 +893,34 @@ public class Couchbase3Client extends DB {
     for(int i = 0; i < tries; i++) {
       try {
         if (useDurabilityLevels) {
-          collection.reactive().insert(gen.getPredicate().getDocid(),
-                JsonObject.fromJson(gen.getPredicate().getValueA()),
-                insertOptions()
-                      .expiry(Duration.ofHours(documentExpiry))
-                      .durability(durabilityLevel));
+          if (upsert) {
+            collection.reactive().upsert(gen.getPredicate().getDocid(),
+                  JsonObject.fromJson(gen.getPredicate().getValueA()),
+                  upsertOptions()
+                        .expiry(Duration.ofHours(documentExpiry))
+                        .durability(durabilityLevel));
+          } else {
+            collection.reactive().insert(gen.getPredicate().getDocid(),
+                  JsonObject.fromJson(gen.getPredicate().getValueA()),
+                  insertOptions()
+                        .expiry(Duration.ofHours(documentExpiry))
+                        .durability(durabilityLevel));
+          }
+
         } else {
-          collection.reactive().insert(gen.getPredicate().getDocid(),
-                JsonObject.fromJson(gen.getPredicate().getValueA()),
-                insertOptions()
-                      .expiry(Duration.ofHours(documentExpiry))
-                      .durability(persistTo, replicateTo));
+          if (upsert) {
+            collection.reactive().upsert(gen.getPredicate().getDocid(),
+                  JsonObject.fromJson(gen.getPredicate().getValueA()),
+                  upsertOptions()
+                        .expiry(Duration.ofHours(documentExpiry))
+                        .durability(persistTo, replicateTo));
+          } else {
+            collection.reactive().insert(gen.getPredicate().getDocid(),
+                  JsonObject.fromJson(gen.getPredicate().getValueA()),
+                  insertOptions()
+                        .expiry(Duration.ofHours(documentExpiry))
+                        .durability(persistTo, replicateTo));
+          }
         }
         return Status.OK;
       } catch (TemporaryFailureException ex) {
@@ -934,8 +964,9 @@ public class Couchbase3Client extends DB {
       } else {
         return soeUpdateN1ql(gen);
       }
-    } catch (Exception ex) {
-      ex.printStackTrace();
+    } catch (Throwable t) {
+      errors.add(t);
+      System.err.println("soe update failed with exception :" + t);
       return Status.ERROR;
     }
   }
@@ -990,8 +1021,9 @@ public class Couchbase3Client extends DB {
       } else {
         return soeReadN1ql(result, gen);
       }
-    } catch (Exception ex) {
-      ex.printStackTrace();
+    } catch (Throwable t) {
+      errors.add(t);
+      System.err.println("soe read failed with exception :" + t);
       return Status.ERROR;
     }
   }
@@ -1004,8 +1036,6 @@ public class Couchbase3Client extends DB {
                 GetOptions.getOptions()
                       .transcoder(RawJsonTranscoder.INSTANCE));
 
-
-    //RawJsonDocument loaded = bucket.get(gen.getCustomerIdWithDistribution(), RawJsonDocument.class);
     if (getResult == null) {
       return Status.NOT_FOUND;
     }
@@ -1037,7 +1067,6 @@ public class Couchbase3Client extends DB {
       return Status.NOT_FOUND;
     }
 
-
     Set<String> fields = gen.getAllFields();
     if (fields == null) {
       row = row.getObject(bucketName); // n1ql result set scoped under *.bucketName
@@ -1051,7 +1080,6 @@ public class Couchbase3Client extends DB {
     return Status.OK;
   }
 
-
   // *********************  SOE Scan ********************************
 
   @Override
@@ -1062,8 +1090,9 @@ public class Couchbase3Client extends DB {
       } else {
         return soeScanN1ql(result, gen);
       }
-    } catch (Exception ex) {
-      ex.printStackTrace();
+    } catch (Throwable t) {
+      errors.add(t);
+      System.err.println("scan failed with exception :" + t);
       return Status.ERROR;
     }
   }
@@ -1071,21 +1100,23 @@ public class Couchbase3Client extends DB {
   private Status soeScanKv(final Vector<HashMap<String, ByteIterator>> result, Generator gen) {
     int recordcount = gen.getRandomLimit();
     String key = gen.getCustomerIdWithDistribution();
-    final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
     final Collection collection = bucket.defaultCollection();
-    try {
-      cluster
-          .reactive()
-          .query(soeScanKVQuery, queryOptions()
+    final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
+    final String query =  "SELECT RAW meta().id FROM `" + bucketName +
+          "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+
+    final ReactiveCollection reactiveCollection = collection.reactive();
+    reactiveCluster.query(query,
+          queryOptions()
                 .adhoc(adhoc)
                 .maxParallelism(maxParallelism)
                 .parameters(JsonArray.from(key, recordcount)))
-          .flatMapMany(res -> res.rowsAs(byte[].class))
-          .flatMap(row -> {
-              String id = new String(row).trim();
-              return collection.reactive()
-                  .get(id.substring(1, id.length()-1),
-                        GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE));
+          .flatMapMany(res -> {
+              return res.rowsAs(String.class);
+            })
+          .flatMap(id -> {
+              return reactiveCollection
+                  .get(id, GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE));
             })
           .map(getResult -> {
               HashMap<String, ByteIterator> tuple = new HashMap<>();
@@ -1095,21 +1126,17 @@ public class Couchbase3Client extends DB {
           .toStream()
           .forEach(data::add);
 
-    } catch (Exception e) {
-      throw new RuntimeException("Error while parsing N1QL Result. Query: " + soeScanKVQuery, e);
-    }
-
     result.addAll(data);
     return Status.OK;
   }
 
-
   private Status soeScanN1ql(final Vector<HashMap<String, ByteIterator>> result, Generator gen) {
 
     int recordcount = gen.getRandomLimit();
-
+    final String query =  "SELECT RAW meta().id FROM `" + bucketName +
+          "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
     QueryResult queryResult = cluster.query(
-          soeScanN1qlQuery,
+          query,
           queryOptions()
                 .parameters(JsonArray.from(
                       gen.getCustomerIdWithDistribution(), recordcount))
