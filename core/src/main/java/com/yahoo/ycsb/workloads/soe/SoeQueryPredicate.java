@@ -23,48 +23,48 @@ public class SoeQueryPredicate {
   private SoeQueryPredicate nestedPredicateD = null;
 
 
-  public void setName(String name) {
-    this.name = name;
+  public void setName(String param) {
+    this.name = param;
   }
 
-  public void setValueA(String valueA) {
-    this.valueA = valueA;
+  public void setValueA(String param) {
+    this.valueA = param;
   }
 
-  public void setValueB(String valueB) {
-    this.valueB = valueB;
+  public void setValueB(String param) {
+    this.valueB = param;
   }
 
-  public void setDocid(String docid) {
-    this.docid = docid;
+  public void setDocid(String param) {
+    this.docid = param;
   }
 
-  public void setOperation(String operation) {
-    this.operation = operation;
+  public void setOperation(String param) {
+    this.operation = param;
   }
 
-  public void setRelation(String relation) {
-    this.relation = relation;
+  public void setRelation(String param) {
+    this.relation = param;
   }
 
-  public void setType(String type) {
-    this.type = type;
+  public void setType(String param) {
+    this.type = param;
   }
 
-  public void setNestedPredicateA(SoeQueryPredicate nestedPredicateA) {
-    this.nestedPredicateA = nestedPredicateA;
+  public void setNestedPredicateA(SoeQueryPredicate param) {
+    this.nestedPredicateA = param;
   }
 
-  public void setNestedPredicateB(SoeQueryPredicate nestedPredicateB) {
-    this.nestedPredicateB = nestedPredicateB;
+  public void setNestedPredicateB(SoeQueryPredicate param) {
+    this.nestedPredicateB = param;
   }
 
-  public void setNestedPredicateC(SoeQueryPredicate nestedPredicateC) {
-    this.nestedPredicateC = nestedPredicateC;
+  public void setNestedPredicateC(SoeQueryPredicate param) {
+    this.nestedPredicateC = param;
   }
 
-  public void setNestedPredicateD(SoeQueryPredicate nestedPredicateD) {
-    this.nestedPredicateD = nestedPredicateD;
+  public void setNestedPredicateD(SoeQueryPredicate param) {
+    this.nestedPredicateD = param;
   }
 
   public String getName() {
