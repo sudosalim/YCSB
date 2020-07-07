@@ -371,12 +371,18 @@ class ClientThread implements Runnable {
   private double targetOpsPerMs;
 
   private int opsdone;
+  private int collectioncount;
+  private int scopecount;
+  private boolean collectionenabled;
   private int threadid;
   private int threadcount;
   private Object workloadstate;
   private Properties props;
   private long targetOpsTickNs;
   private final Measurements measurements;
+  private String collectionsparam;
+  private String scopesparam;
+  private int insertstart;
 
   /**
    * Constructor.
@@ -390,11 +396,21 @@ class ClientThread implements Runnable {
    * @param completeLatch        The latch tracking the completion of all clients.
    */
   public ClientThread(DB db, boolean dotransactions, Workload workload, Properties props, int opcount,
+                      boolean collectionenabled, int collectioncount, String collectionsparam,
+                      int scopecount, String scopesparam,
+                      int insertstart,
                       double targetperthreadperms, CountDownLatch completeLatch) {
+
     this.db = db;
     this.dotransactions = dotransactions;
     this.workload = workload;
     this.opcount = opcount;
+    this.collectioncount = collectioncount;
+    this.scopecount = scopecount;
+    this.collectionenabled = collectionenabled;
+    this.collectionsparam = collectionsparam;
+    this.scopesparam = scopesparam;
+    this.insertstart = insertstart;
     opsdone = 0;
     if (targetperthreadperms > 0) {
       targetOpsPerMs = targetperthreadperms;
@@ -446,32 +462,76 @@ class ClientThread implements Runnable {
       long randomMinorDelay = ThreadLocalRandom.current().nextInt((int) targetOpsTickNs);
       sleepUntil(System.nanoTime() + randomMinorDelay);
     }
+
+
+    String[] collections = collectionsparam.split(",");
+    String[] scopes = scopesparam.split(",");
+
     try {
       if (dotransactions) {
+
         long startTimeNanos = System.nanoTime();
 
-        while (((opcount == 0) || (opsdone < opcount)) && !workload.isStopRequested()) {
+        if (collectionenabled) {
 
-          if (!workload.doTransaction(db, workloadstate)) {
-            break;
+          while (((opcount == 0) || (opsdone < opcount)) && !workload.isStopRequested()) {
+
+            if (!workload.doTransaction(db, workloadstate)) {
+
+              break;
+            }
+            opsdone++;
+
+            throttleNanos(startTimeNanos);
           }
 
-          opsdone++;
+        } else {
 
-          throttleNanos(startTimeNanos);
+          while (((opcount == 0) || (opsdone < opcount)) && !workload.isStopRequested()) {
+
+            if (!workload.doTransaction(db, workloadstate)) {
+              break;
+            }
+            opsdone++;
+
+            throttleNanos(startTimeNanos);
+          }
         }
+
+
       } else {
         long startTimeNanos = System.nanoTime();
 
-        while (((opcount == 0) || (opsdone < opcount)) && !workload.isStopRequested()) {
+        if (collectionenabled) {
 
-          if (!workload.doInsert(db, workloadstate)) {
-            break;
+          int insertPerCollection = opcount/(collectioncount*scopecount);
+
+          for (int j=0; j<scopecount; j++) {
+
+            for (int i=0; i<collectioncount; i++) {
+
+              opsdone = 0;
+              int insertkey=insertstart;
+
+              while (((insertPerCollection == 0) || (opsdone < insertPerCollection)) && !workload.isStopRequested()) {
+
+                workload.doInsertCollection(db, workloadstate, scopes[j], collections[i], insertkey);
+                insertkey++;
+                opsdone++;
+                throttleNanos(startTimeNanos);
+              }
+            }
           }
+        } else {
 
-          opsdone++;
+          while (((opcount == 0) || (opsdone < opcount)) && !workload.isStopRequested()) {
 
-          throttleNanos(startTimeNanos);
+            if (!workload.doInsert(db, workloadstate)) {
+              break;
+            }
+            opsdone++;
+            throttleNanos(startTimeNanos);
+          }
         }
       }
     } catch (Exception e) {
@@ -537,6 +597,46 @@ public final class Client {
    * The number of records to load into the database initially.
    */
   public static final String RECORD_COUNT_PROPERTY = "recordcount";
+
+  /**
+   * The number of records per collection .
+   */
+  public static final String RECORD_PER_COLLECTION = "recordspercollection";
+
+  public static final String RECORD_PER_COLLECTION_DEFAULT = "0";
+
+  /**
+   * The number of collections .
+   */
+
+  public static final String COLLECTION_COUNT_PROPERTY = "collectioncount";
+  public static final String COLLECTION_COUNT_DEFAULT = "0";
+
+  public static final String SCOPE_COUNT_PROPERTY = "scopecount";
+  public static final String SCOPE_COUNT_DEFAULT = "0";
+
+  /**
+   * Collection names in comma seperated format.
+   */
+
+  public static final String COLLECTIONS_PARAM = "collectionsparam";
+
+  /**
+   * Collection names in comma seperated format.
+   */
+
+  public static final String SCOPES_PARAM = "scopesparam";
+
+  public static final String SCOPES_PARAM_DEFAULT = "default";
+
+  public static final String COLLECTIONS_PARAM_DEFAULT = "default";
+
+  /**
+   * flag used to indicate its a collection enabled test.
+   */
+  public static final String COLLECTION_ENABLED_PROPERTY = "collectionenabled";
+
+  public static final String COLLECTION_ENABLED_DEFAULT = "false";
 
   /**
    * The workload class to be loaded.
@@ -756,8 +856,25 @@ public final class Client {
     System.err.println("Starting test.");
     final CountDownLatch completeLatch = new CountDownLatch(threadcount);
 
+    boolean collectionenabled;
+    collectionenabled = Boolean.parseBoolean(props.getProperty(
+        COLLECTION_ENABLED_PROPERTY, COLLECTION_ENABLED_DEFAULT));
+
+
+    int collectioncount = Integer.parseInt(props.getProperty(COLLECTION_COUNT_PROPERTY,
+        COLLECTION_COUNT_DEFAULT));
+
+    int scopecount = Integer.parseInt(props.getProperty(SCOPE_COUNT_PROPERTY,
+        SCOPE_COUNT_DEFAULT));
+
+    String collectionsparam = props.getProperty(COLLECTIONS_PARAM, COLLECTIONS_PARAM_DEFAULT);
+    String scopesparam = props.getProperty(SCOPES_PARAM, SCOPES_PARAM_DEFAULT);
+
+    int insertstart = 0;
+
     final List<ClientThread> clients = initDb(dbname, props, threadcount, targetperthreadperms,
-        workload, tracer, completeLatch);
+        collectionenabled, collectioncount, collectionsparam, scopecount, scopesparam,
+        insertstart, workload, tracer, completeLatch);
 
     if (status) {
       boolean standardstatus = false;
@@ -849,12 +966,22 @@ public final class Client {
   }
 
   private static List<ClientThread> initDb(String dbname, Properties props, int threadcount,
-                                           double targetperthreadperms, Workload workload, Tracer tracer,
+                                           double targetperthreadperms,
+                                           boolean collectionenabled,
+                                           int collectioncount,
+                                           String collectionsparam,
+                                           int scopecount,
+                                           String scopesparam,
+                                           int insertstart,
+                                           Workload workload, Tracer tracer,
                                            CountDownLatch completeLatch) {
     boolean initFailed = false;
     boolean dotransactions = Boolean.valueOf(props.getProperty(DO_TRANSACTIONS_PROPERTY, String.valueOf(true)));
 
+
     final List<ClientThread> clients = new ArrayList<>(threadcount);
+
+
     try (final TraceScope span = tracer.newScope(CLIENT_INIT_SPAN)) {
       int opcount;
       if (dotransactions) {
@@ -884,7 +1011,11 @@ public final class Client {
           ++threadopcount;
         }
 
-        ClientThread t = new ClientThread(db, dotransactions, workload, props, threadopcount, targetperthreadperms,
+        insertstart = threadopcount/(collectioncount*scopecount) * threadid;
+
+        ClientThread t = new ClientThread(db, dotransactions, workload, props, threadopcount,
+            collectionenabled, collectioncount, collectionsparam, scopecount, scopesparam,
+            insertstart, targetperthreadperms,
             completeLatch);
         t.setThreadId(threadid);
         t.setThreadCount(threadcount);

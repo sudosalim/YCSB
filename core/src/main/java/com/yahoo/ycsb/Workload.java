@@ -119,4 +119,7 @@ public abstract class Workload {
   public boolean isStopRequested() {
     return stopRequested.get();
   }
+
+  public abstract boolean doInsertCollection(DB db, Object threadstate, String scope,
+                                             String collection, int keynum);
 }
