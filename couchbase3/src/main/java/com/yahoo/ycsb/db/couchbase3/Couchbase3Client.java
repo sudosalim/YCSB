@@ -50,7 +50,6 @@ import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
 import static com.couchbase.client.java.query.QueryOptions.queryOptions;
 
 import com.couchbase.client.java.codec.RawJsonTranscoder;
-import com.couchbase.client.java.kv.GetOptions;
 
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.ReplicateTo;
@@ -595,14 +594,14 @@ public class Couchbase3Client extends DB {
     }
   }
 
-  private Status scanAllFieldsOld(final String table, final String startkey, final int recordcount,
+  private Status scanAllFields(final String table, final String startkey, final int recordcount,
                                final Vector<HashMap<String, ByteIterator>> result) {
 
     final Collection collection = bucket.defaultCollection();
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-    final String query =  "SELECT RAW meta().id FROM default:`" + bucketName +
-          "`.`_default`.`_default` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+    final String query =  "SELECT RAW meta().id FROM `" + bucketName +
+          "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
     final ReactiveCollection reactiveCollection = collection.reactive();
     reactiveCluster.query(query,
           queryOptions()
@@ -618,7 +617,7 @@ public class Couchbase3Client extends DB {
             })
           .map(getResult -> {
               HashMap<String, ByteIterator> tuple = new HashMap<>();
-              decode(getResult.contentAs(String.class), null, tuple);
+              decodeStringSource(getResult.contentAs(String.class), null, tuple);
               return tuple;
             })
           .toStream()
@@ -651,7 +650,7 @@ public class Couchbase3Client extends DB {
             })
           .map(getResult -> {
               HashMap<String, ByteIterator> tuple = new HashMap<>();
-              decode(getResult.contentAs(String.class), null, tuple);
+              decodeStringSource(getResult.contentAs(String.class), null, tuple);
               return tuple;
             })
           .toStream()
@@ -661,37 +660,47 @@ public class Couchbase3Client extends DB {
     return Status.OK;
   }
 
-  private Status scanAllFields(final String table, final String startkey, final int recordcount,
-                               final Vector<HashMap<String, ByteIterator>> result) {
+  /**
+   * Performs the {@link #scan(String, String, int, Set, Vector)} operation N1Ql only for a subset of the fields.
+   *
+   * @param table The name of the table
+   * @param startkey The record key of the first record to read.
+   * @param recordcount The number of records to read
+   * @param fields The list of fields to read, or null for all of them
+   * @param result A Vector of HashMaps, where each HashMap is a set field/value pairs for one record
+   * @return The result of the operation.
+   */
+
+  private Status scanSpecificFields(final String table, final String startkey, final int recordcount,
+                                    final Set<String> fields, final Vector<HashMap<String, ByteIterator>> result) {
+    final Collection collection = bucket.defaultCollection();
 
     final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-
-    cluster.reactive().query(scanAllQuery, queryOptions()
-        .parameters(JsonArray.from(formatId(table, startkey), recordcount))
-        .adhoc(adhoc).maxParallelism(maxParallelism))
-        .flux()
-        .flatMap(res -> res.rowsAs(String.class))
-        .flatMap(id -> collection.reactive().get(id, GetOptions.getOptions()
-            .transcoder(RawJsonTranscoder.INSTANCE)))
-        .map(new Function<GetResult, HashMap<String, ByteIterator>>() {
-          @Override
-          public HashMap<String, ByteIterator> apply(GetResult getResult) {
-            HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>();
-            //System.err.println("printingresult before decoding" + getResult.contentAs(byte[].class));
-            decode(getResult.contentAs(byte[].class), null, tuple);
+    final String query =  "SELECT RAW meta().id FROM `" + bucketName +
+        "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
+    final ReactiveCollection reactiveCollection = collection.reactive();
+    reactiveCluster.query(query,
+        queryOptions()
+            .adhoc(adhoc)
+            .maxParallelism(maxParallelism)
+            .parameters(JsonArray.from(formatId(table, startkey), recordcount)))
+        .flatMapMany(res -> {
+            return res.rowsAs(String.class);
+          })
+        .flatMap(id -> {
+            return reactiveCollection
+              .get(id, GetOptions.getOptions().transcoder(RawJsonTranscoder.INSTANCE));
+          })
+        .map(getResult -> {
+            HashMap<String, ByteIterator> tuple = new HashMap<>();
+            decodeStringSource(getResult.contentAs(String.class), null, tuple);
             return tuple;
-          }
-        })
-        .toIterable()
-        .forEach(new Consumer<HashMap<String, ByteIterator>>() {
-          @Override
-          public void accept(HashMap<String, ByteIterator> stringByteIteratorHashMap) {
-            data.add(stringByteIteratorHashMap);
-          }
-        });
+          })
+        .toStream()
+        .forEach(data::add);
 
+    result.addAll(data);
     return Status.OK;
-
   }
 
   private void decode(final byte[] source, final Set<String> fields,
@@ -714,54 +723,6 @@ public class Couchbase3Client extends DB {
       throw new RuntimeException("Could not decode JSON");
     }
   }
-
-
-  /**
-   * Performs the {@link #scan(String, String, int, Set, Vector)} operation N1Ql only for a subset of the fields.
-   *
-   * @param table The name of the table
-   * @param startkey The record key of the first record to read.
-   * @param recordcount The number of records to read
-   * @param fields The list of fields to read, or null for all of them
-   * @param result A Vector of HashMaps, where each HashMap is a set field/value pairs for one record
-   * @return The result of the operation.
-   */
-
-  private Status scanSpecificFields(final String table, final String startkey, final int recordcount,
-                                    final Set<String> fields, final Vector<HashMap<String, ByteIterator>> result) {
-    String scanSpecQuery = "SELECT " + joinFields(fields) + " FROM `" + bucketName
-        + "` WHERE meta().id >= $1 LIMIT $2";
-
-
-    final List<HashMap<String, ByteIterator>> data = new ArrayList<HashMap<String, ByteIterator>>(recordcount);
-
-    cluster.reactive().query(scanAllQuery, queryOptions()
-        .parameters(JsonArray.from(formatId(table, startkey), recordcount))
-        .adhoc(adhoc).maxParallelism(maxParallelism))
-        .flux()
-        .flatMap(res -> res.rowsAs(String.class))
-        .flatMap(id -> collection.reactive().get(id, GetOptions.getOptions()
-            .transcoder(RawJsonTranscoder.INSTANCE)))
-        .map(new Function<GetResult, HashMap<String, ByteIterator>>() {
-          @Override
-          public HashMap<String, ByteIterator> apply(GetResult getResult) {
-            HashMap<String, ByteIterator> tuple = new HashMap<String, ByteIterator>();
-            //System.err.println("printingresult before decoding" + getResult.contentAs(byte[].class));
-            decode(getResult.contentAs(byte[].class), null, tuple);
-            return tuple;
-          }
-        })
-        .toIterable()
-        .forEach(new Consumer<HashMap<String, ByteIterator>>() {
-          @Override
-          public void accept(HashMap<String, ByteIterator> stringByteIteratorHashMap) {
-            data.add(stringByteIteratorHashMap);
-          }
-        });
-
-    return Status.OK;
-  }
-
 
   private void decodeStringSource(final String source, final Set<String> fields,
                       final Map<String, ByteIterator> dest) {
