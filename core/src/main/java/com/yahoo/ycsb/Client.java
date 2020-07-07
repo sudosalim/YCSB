@@ -1011,8 +1011,12 @@ public final class Client {
           ++threadopcount;
         }
 
-        insertstart = threadopcount/(collectioncount*scopecount) * threadid;
-
+        if (collectionenabled) {
+          insertstart = threadopcount/(collectioncount*scopecount) * threadid;
+        } else {
+          insertstart = threadopcount * threadid;
+        }
+        
         ClientThread t = new ClientThread(db, dotransactions, workload, props, threadopcount,
             collectionenabled, collectioncount, collectionsparam, scopecount, scopesparam,
             insertstart, targetperthreadperms,
