@@ -703,6 +703,12 @@ public class TimeSeriesWorkload extends Workload {
     return false;
   }
 
+  public boolean doInsertCollection(DB db, Object threadstate, String doInsertcollectoin,
+                                    String scope,
+                                    int keynum) {
+    return false;
+  }
+
   @Override
   public boolean doTransaction(DB db, Object threadstate) {
     if (threadstate == null) {
@@ -841,7 +847,11 @@ public class TimeSeriesWorkload extends Workload {
     final Vector<HashMap<String, ByteIterator>> results = new Vector<HashMap<String, ByteIterator>>();
     db.scan(table, keyname, len, fields, results);
   }
-  
+
+  public boolean doTransactionCollection(DB db, Object threadstate){
+    return false;
+  }
+
   protected void doTransactionDelete(final DB db, Object threadstate) {
     final ThreadState state = (ThreadState) threadstate;
     final Random random = ThreadLocalRandom.current();
