@@ -118,6 +118,10 @@ public class SyncGatewayClient extends DB {
   private static final int SG_READ_MODE_ALLCHANGES = 3;
   private static final int SG_READ_MODE_200CHANGES = 4;
 
+  private static final int SG_READ_MODE_WITH_LIMIT = 5;
+
+  private static final String SG_READ_LIMIT = "syncgateway.readLimit";
+
   private static final String SG_FEED_READ_MODE_IDSONLY = "idsonly";
   private static final String SG_FEED_READ_MODE_WITHDOCS = "withdocs";
 
@@ -143,6 +147,7 @@ public class SyncGatewayClient extends DB {
   private int insertMode;
   private String sequencestart;
   private boolean initUsers;
+  private String readLimit;
   private int insertUsersStart = 0;
   private String feedMode;
   private boolean includeDocWhenReadingFeed;
@@ -202,6 +207,8 @@ public class SyncGatewayClient extends DB {
       readMode = SG_READ_MODE_ALLCHANGES;
     } else if (runModeProp.equals("200changes")) {
       readMode = SG_READ_MODE_200CHANGES;
+    } else if (runModeProp.equals("changesWithLimit")) {
+      readMode = SG_READ_MODE_WITH_LIMIT;
     } else {
       readMode = SG_READ_MODE_DOCUMENTS_WITH_REV;
     }
@@ -239,6 +246,8 @@ public class SyncGatewayClient extends DB {
     grantAccessToAllUsers = props.getProperty(SG_GRANT_ACCESS_TO_ALL_USERS, "false").equals("true");
     grantAccessInScanOperation = props.getProperty(SG_GRANT_ACCESS_IN_SCAN, "false").equals("true");
 
+    readLimit = props.getProperty(SG_READ_LIMIT, "200");
+
     createUserEndpoint = "/" + db + "/_user/";
     documentEndpoint = "/" + db + "/";
     createSessionEndpoint = "/" + db + "/_session";
@@ -275,6 +284,8 @@ public class SyncGatewayClient extends DB {
       return readAllChanges(key);
     } else if (readMode == SG_READ_MODE_200CHANGES) {
       return read200Changes(key);
+    } else if (readMode == SG_READ_MODE_WITH_LIMIT) {
+      return readChangesWithLimit();
     }
 
 
@@ -310,6 +321,15 @@ public class SyncGatewayClient extends DB {
   private Status readAllChanges(String key) {
     try {
       checkForChanges("0", getChannelNameByKey(key));
+    } catch (Exception e) {
+      return Status.ERROR;
+    }
+    return Status.OK;
+  }
+
+  private Status readChangesWithLimit() {
+    try {
+      checkForChangesWithLimit("0", readLimit);
     } catch (Exception e) {
       return Status.ERROR;
     }
@@ -596,6 +616,63 @@ public class SyncGatewayClient extends DB {
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=normal&" + includeDocsParam;
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
 
+    //System.out.println(fullUrl);
+
+    requestTimedout.setIsSatisfied(false);
+    Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
+    timer.start();
+    HttpGet request = new HttpGet(fullUrl);
+    for (int i = 0; i < headers.length; i = i + 2) {
+      request.setHeader(headers[i], headers[i + 1]);
+    }
+    if (useAuth) {
+      request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
+    }
+
+    CloseableHttpResponse response = restClient.execute(request);
+    HttpEntity responseEntity = response.getEntity();
+    if (responseEntity != null) {
+      InputStream stream = responseEntity.getContent();
+      BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+      StringBuffer responseContent = new StringBuffer();
+      String line = "";
+      //String fullResponse = "CHANGES FEED RESPONSE: " + "(user)" + currentIterationUser + ", (changes since) " +
+      //    sequenceSince + ": ";
+      while ((line = reader.readLine()) != null) {
+        //fullResponse = fullResponse + line + "\n";
+        if (requestTimedout.isSatisfied()) {
+          // Must avoid memory leak.
+          reader.close();
+          stream.close();
+          EntityUtils.consumeQuietly(responseEntity);
+          response.close();
+          restClient.close();
+          System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! for " + changesFeedEndpoint);
+          throw new TimeoutException();
+        }
+        responseContent.append(line);
+      }
+      //System.out.println(fullResponse);
+      timer.interrupt();
+      // Closing the input stream will trigger connection release.
+      stream.close();
+    }
+    EntityUtils.consumeQuietly(responseEntity);
+    response.close();
+    restClient.close();
+  }
+
+  private void checkForChangesWithLimit(String sequenceSince, String limit) throws IOException {
+
+    String port = (useAuth) ? portPublic : portAdmin;
+    String includeDocsParam = "include_docs=false";
+    if (includeDocWhenReadingFeed) {
+      includeDocsParam = "include_docs=true";
+    }
+
+    String changesFeedEndpoint = "_changes?since=" + sequenceSince +"&limit=" + limit + "&feed=normal&"
+        + includeDocsParam;
+    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
     //System.out.println(fullUrl);
 
     requestTimedout.setIsSatisfied(false);
