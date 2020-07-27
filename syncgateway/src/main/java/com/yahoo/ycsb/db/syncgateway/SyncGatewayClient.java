@@ -307,7 +307,8 @@ public class SyncGatewayClient extends DB {
 
   private Status read200Changes(String key) {
     try {
-      String seq = getLocalSequenceForUser(currentIterationUser);
+      //String seq = getLocalSequenceForUser(currentIterationUser);
+      String seq = getLastSequenceGlobal();
       seq = String.valueOf(Integer.parseInt(seq) - 200);
       checkForChanges(seq, getChannelNameByKey(key));
     } catch (Exception e) {
