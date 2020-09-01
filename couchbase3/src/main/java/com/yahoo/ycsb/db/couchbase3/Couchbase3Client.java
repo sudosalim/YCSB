@@ -80,8 +80,8 @@ public class Couchbase3Client extends DB {
   private static volatile Bucket bucket;
   private static volatile ClusterOptions clusterOptions;
   //private volatile Collection collectiont;
-  private Transactions transactions;
-  private boolean transactionEnabled;
+  private static Transactions transactions;
+  private static boolean transactionEnabled;
   private int[] transactionKeys;
 
   private volatile TransactionDurabilityLevel transDurabilityLevel;
