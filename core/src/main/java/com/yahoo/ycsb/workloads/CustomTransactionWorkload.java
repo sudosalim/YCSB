@@ -90,12 +90,12 @@ public class CustomTransactionWorkload extends CoreWorkload {
     HashSet<String> fields = null;
     HashMap<String, ByteIterator> result = new HashMap<String, ByteIterator>();
 
-    //String transactionOperation = transactionoperationchooser.nextString();
+    String transactionOperation = transactionoperationchooser.nextString();
 
     for(int i=0; i<documentsintransaction; i++){
-      transationOperations[i] = transactionoperationchooser.nextString();
+      transationOperations[i] = transactionOperation;
 
-      switch (transationOperations[i]) {
+      switch (transactionOperation) {
       case "TRREAD":
         transationKeys[i] = buildKeyName(nextKeynum());
         transationValues[i] = null;
