@@ -24,12 +24,18 @@
 
 recordcount=1000
 operationcount=1000
-workload=com.yahoo.ycsb.workloads.CoreWorkload
+
+collectionenabled=true
+collectionsparam=collection-1
+scopesparam=scope-1
+collectioncount=1
+
+workload=com.yahoo.ycsb.workloads.CustomCollectionWorkload
 
 readallfields=true
 
-readproportion=0.1
-updateproportion=0.9
+readproportion=0
+updateproportion=1
 scanproportion=0
 insertproportion=0
 
