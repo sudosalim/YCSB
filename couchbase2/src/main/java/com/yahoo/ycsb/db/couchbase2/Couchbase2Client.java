@@ -138,6 +138,7 @@ public class Couchbase2Client extends DB {
   private static Boolean certAuthEnabled = false;
   private String certKeystoreFile;
   private String certKeystorePassword;
+  private boolean dnsSrv;
   
   @Override
   public void init() throws DBException {
@@ -164,6 +165,7 @@ public class Couchbase2Client extends DB {
     certKeystoreFile = props.getProperty("couchbase.certKeystoreFile", "");
     certKeystorePassword = props.getProperty("couchbase.certKeystorePassword", "");
     sslMode = props.getProperty("couchbase.sslMode", "none");
+    dnsSrv = props.getProperty("couchbase.dnsSrv", "false").equals("true");
 
     scanAllQuery =  "SELECT RAW meta().id FROM `" + bucketName +
       "` WHERE meta().id >= $1 ORDER BY meta().id LIMIT $2";
@@ -217,6 +219,10 @@ public class Couchbase2Client extends DB {
               certAuthEnabled = true;
               builder.certAuthEnabled(true);
             }
+          }
+
+          if (dnsSrv) {
+            builder.dnsSrvEnabled(true);
           }
 
           env = builder.build();
