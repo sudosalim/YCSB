@@ -19,9 +19,7 @@ package com.yahoo.ycsb.db.couchbase3;
 
 
 import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.JsonNode;
-import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.env.SeedNode;
-import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.java.Bucket;
 import com.couchbase.client.java.Cluster;
@@ -63,6 +61,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
+
+import java.nio.file.Paths;
 
 /**
  * Full YCSB implementation based on the new Couchbase Java SDK 3.x.
@@ -106,6 +106,9 @@ public class Couchbase3Client extends DB {
   private static long kvTimeoutMillis;
   private static int kvEndpoints;
   private boolean upsert;
+  private boolean tls;
+  private boolean dnsSrv;
+  private static String certPath;
 
 
   @Override
@@ -138,15 +141,17 @@ public class Couchbase3Client extends DB {
     bucketName = props.getProperty("couchbase.bucket", "default");
     upsert = props.getProperty("couchbase.upsert", "false").equals("true");
 
-
     int numATRS = Integer.parseInt(props.getProperty("couchbase.atrs", "20480"));
 
     hostname = props.getProperty("couchbase.host", "127.0.0.1");
     kvPort = Integer.parseInt(props.getProperty("couchbase.kvPort", "11210"));
     managerPort = Integer.parseInt(props.getProperty("couchbase.managerPort", "8091"));
     username = props.getProperty("couchbase.username", "Administrator");
-
     password = props.getProperty("couchbase.password", "password");
+
+    tls = props.getProperty("couchbase.tls", "false").equals("true");
+    dnsSrv = props.getProperty("couchbase.dnsSrv", "false").equals("true");
+    certPath = props.getProperty("couchbase.certPath", null);
 
     collectionenabled = props.getProperty(Client.COLLECTION_ENABLED_PROPERTY,
         Client.COLLECTION_ENABLED_DEFAULT).equals("true");
@@ -172,23 +177,38 @@ public class Couchbase3Client extends DB {
           System.out.println("Failed to parse TransactionDurability Level");
         }
 
-        environment = ClusterEnvironment
-            .builder()
-            .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
-            .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints))
-            .build();
+        ClusterEnvironment.Builder envBuilder = ClusterEnvironment.builder();
 
+        envBuilder.timeoutConfig().kvTimeout(Duration.ofMillis(kvTimeoutMillis));
+        envBuilder.ioConfig().enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints);
+
+        if (dnsSrv) {
+          envBuilder.ioConfig().enableDnsSrv(true);
+        }
+
+        if (tls) {
+          envBuilder.securityConfig().enableTls(true).trustCertificate(Paths.get(certPath));
+        } else {
+          envBuilder.securityConfig().enableTls(false);
+        }
+
+        ClusterEnvironment env = envBuilder.build();
         clusterOptions = ClusterOptions.clusterOptions(username, password);
-        clusterOptions.environment(environment);
+        clusterOptions.environment(env);
 
-        Set<SeedNode> seedNodes = new HashSet<>(Arrays.asList(
-            SeedNode.create(hostname,
-                Optional.of(kvPort),
-                Optional.of(managerPort))));
+        if (kvPort != 11210 || managerPort != 8091) {
+          Set<SeedNode> seedNodes = new HashSet<>(Arrays.asList(
+              SeedNode.create(hostname,
+                  Optional.of(kvPort),
+                  Optional.of(managerPort))));
+          cluster = Cluster.connect(seedNodes, clusterOptions);
+        } else {
+          cluster = Cluster.connect(hostname, clusterOptions);
+        }
 
-        cluster = Cluster.connect(seedNodes, clusterOptions);
         reactiveCluster = cluster.reactive();
         bucket = cluster.bucket(bucketName);
+        bucket.waitUntilReady(Duration.parse("PT10S"));
 
         if ((transactions == null) && transactionEnabled) {
           transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
