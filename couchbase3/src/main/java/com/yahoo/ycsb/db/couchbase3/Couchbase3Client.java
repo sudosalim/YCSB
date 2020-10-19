@@ -208,7 +208,7 @@ public class Couchbase3Client extends DB {
 
         reactiveCluster = cluster.reactive();
         bucket = cluster.bucket(bucketName);
-        bucket.waitUntilReady(Duration.parse("PT10S"));
+        bucket.waitUntilReady(Duration.parse("PT60S"));
 
         if ((transactions == null) && transactionEnabled) {
           transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
