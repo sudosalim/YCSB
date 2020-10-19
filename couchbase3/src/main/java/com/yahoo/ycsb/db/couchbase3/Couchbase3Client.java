@@ -192,9 +192,9 @@ public class Couchbase3Client extends DB {
           envBuilder.securityConfig().enableTls(false);
         }
 
-        ClusterEnvironment env = envBuilder.build();
+        environment = envBuilder.build();
         clusterOptions = ClusterOptions.clusterOptions(username, password);
-        clusterOptions.environment(env);
+        clusterOptions.environment(environment);
 
         if (kvPort != 11210 || managerPort != 8091) {
           Set<SeedNode> seedNodes = new HashSet<>(Arrays.asList(
