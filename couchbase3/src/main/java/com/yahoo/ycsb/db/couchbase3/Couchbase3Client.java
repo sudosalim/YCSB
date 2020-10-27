@@ -21,6 +21,7 @@ package com.yahoo.ycsb.db.couchbase3;
 import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.JsonNode;
 import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.env.SeedNode;
+import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
 import com.couchbase.client.core.error.DocumentNotFoundException;
 import com.couchbase.client.java.Bucket;
@@ -55,6 +56,8 @@ import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.ReplicateTo;
 
 import com.yahoo.ycsb.*;
+
+import java.nio.file.Paths;
 
 import java.time.Duration;
 
@@ -107,6 +110,8 @@ public class Couchbase3Client extends DB {
   private static int kvEndpoints;
   private boolean upsert;
 
+  private String sslMode;
+  private String certificateFile;
 
   @Override
   public void init() throws DBException {
@@ -151,6 +156,15 @@ public class Couchbase3Client extends DB {
     collectionenabled = props.getProperty(Client.COLLECTION_ENABLED_PROPERTY,
         Client.COLLECTION_ENABLED_DEFAULT).equals("true");
 
+    sslMode = props.getProperty("couchbase.sslMode", "none");
+    certificateFile = props.getProperty("couchbase.certificateFile", "none");
+
+    if (sslMode.equals("none")) {
+      kvPort = Integer.parseInt(props.getProperty("couchbase.kvPort", "11210"));
+    } else {
+      kvPort = Integer.parseInt(props.getProperty("couchbase.kvPort", "11207"));
+    }
+
     synchronized (INIT_COORDINATOR) {
       if (environment == null) {
 
@@ -172,11 +186,21 @@ public class Couchbase3Client extends DB {
           System.out.println("Failed to parse TransactionDurability Level");
         }
 
-        environment = ClusterEnvironment
-            .builder()
-            .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
-            .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints))
-            .build();
+        if (!sslMode.equals("none")) {
+          environment = ClusterEnvironment
+              .builder()
+              .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
+              .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints))
+              .securityConfig(SecurityConfig.enableTls(true)
+                  .trustCertificate(Paths.get(certificateFile)))
+              .build();
+        } else {
+          environment = ClusterEnvironment
+              .builder()
+              .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
+              .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints))
+              .build();
+        }
 
         clusterOptions = ClusterOptions.clusterOptions(username, password);
         clusterOptions.environment(environment);
