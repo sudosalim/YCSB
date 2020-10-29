@@ -57,7 +57,11 @@ import com.couchbase.client.java.kv.ReplicateTo;
 
 import com.yahoo.ycsb.*;
 
+import java.io.*;
+
 import java.nio.file.Paths;
+
+import java.security.KeyStore;
 
 import java.time.Duration;
 
@@ -110,8 +114,11 @@ public class Couchbase3Client extends DB {
   private static int kvEndpoints;
   private boolean upsert;
 
+  private static KeyStore keyStore;
   private String sslMode;
   private String certificateFile;
+  private String certKeystoreFile;
+  private String certKeystorePassword;
 
   @Override
   public void init() throws DBException {
@@ -147,7 +154,6 @@ public class Couchbase3Client extends DB {
     int numATRS = Integer.parseInt(props.getProperty("couchbase.atrs", "20480"));
 
     hostname = props.getProperty("couchbase.host", "127.0.0.1");
-    kvPort = Integer.parseInt(props.getProperty("couchbase.kvPort", "11210"));
     managerPort = Integer.parseInt(props.getProperty("couchbase.managerPort", "8091"));
     username = props.getProperty("couchbase.username", "Administrator");
 
@@ -156,6 +162,8 @@ public class Couchbase3Client extends DB {
     collectionenabled = props.getProperty(Client.COLLECTION_ENABLED_PROPERTY,
         Client.COLLECTION_ENABLED_DEFAULT).equals("true");
 
+    certKeystoreFile = props.getProperty("couchbase.certKeystoreFile", "");
+    certKeystorePassword = props.getProperty("couchbase.certKeystorePassword", "");
     sslMode = props.getProperty("couchbase.sslMode", "none");
     certificateFile = props.getProperty("couchbase.certificateFile", "none");
 
@@ -186,7 +194,21 @@ public class Couchbase3Client extends DB {
           System.out.println("Failed to parse TransactionDurability Level");
         }
 
-        if (!sslMode.equals("none")) {
+        if (sslMode.equals("auth")){
+          try {
+            char[] pass = certKeystorePassword.toCharArray();
+
+            File keystoreFile = new File(certKeystoreFile);
+            FileInputStream is = new FileInputStream(keystoreFile);
+
+            keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+            keyStore.load(is, pass);
+          } catch (Exception e) {
+            e.printStackTrace();
+          }
+        }
+
+        if (sslMode.equals("data")) {
           environment = ClusterEnvironment
               .builder()
               .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
@@ -194,6 +216,15 @@ public class Couchbase3Client extends DB {
               .securityConfig(SecurityConfig.enableTls(true)
                   .trustCertificate(Paths.get(certificateFile)))
               .build();
+        } else if (sslMode.equals("auth")) {
+          environment = ClusterEnvironment
+              .builder()
+              .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
+              .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints))
+              .securityConfig(SecurityConfig.enableTls(true)
+                  .trustStore(keyStore))
+              .build();
+          environment.eventBus().subscribe(System.out::println);
         } else {
           environment = ClusterEnvironment
               .builder()
@@ -203,14 +234,18 @@ public class Couchbase3Client extends DB {
         }
 
         clusterOptions = ClusterOptions.clusterOptions(username, password);
-        clusterOptions.environment(environment);
+ 
+        if (!sslMode.equals("auth")) {
+          clusterOptions.environment(environment);
+          Set<SeedNode> seedNodes = new HashSet<>(Arrays.asList(
+              SeedNode.create(hostname,
+                  Optional.of(kvPort),
+                  Optional.of(managerPort))));
+          cluster = Cluster.connect(seedNodes, clusterOptions);
+        } else {
+          cluster = Cluster.connect(hostname, clusterOptions);
+        }
 
-        Set<SeedNode> seedNodes = new HashSet<>(Arrays.asList(
-            SeedNode.create(hostname,
-                Optional.of(kvPort),
-                Optional.of(managerPort))));
-
-        cluster = Cluster.connect(seedNodes, clusterOptions);
         reactiveCluster = cluster.reactive();
         bucket = cluster.bucket(bucketName);
 
