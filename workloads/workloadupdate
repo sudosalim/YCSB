@@ -24,4 +24,4 @@ updateproportion=1
 scanproportion=0
 insertproportion=0
 
-requestdistribution=uniform
+requestdistribution=sequential
