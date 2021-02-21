@@ -499,6 +499,18 @@ public class Couchbase3Client extends DB {
 
   }
 
+  public Status transaction(String table, String[] transationKeys, Map<String, ByteIterator>[] transationValues,
+                            String[] transationOperations, Set<String> fields, Map<String, ByteIterator> result,
+                            String scope, String coll) {
+    if (transactionEnabled) {
+      return transactionContext(table, transationKeys, transationValues, transationOperations, fields, result,
+          scope, coll);
+    }
+    //return simpleCustomSequense(table, transationKeys, transationValues, transationOperations, fields, result);
+    return Status.NOT_IMPLEMENTED;
+
+  }
+
 
   public Status simpleCustomSequense(String table, String[] transationKeys,
                                      Map<String, ByteIterator>[] transationValues, String[] transationOperations,
@@ -540,9 +552,11 @@ public class Couchbase3Client extends DB {
   public Status transactionContext(String table, String[] transationKeys, Map<String,
                                    ByteIterator>[] transationValues,
                                    String[] transationOperations, Set<String> fields,
-                                   Map<String, ByteIterator> result) {
+                                   Map<String, ByteIterator> result,
+                                   String scope, String coll) {
 
-    Collection collection = bucket.defaultCollection();
+
+    Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
 
     try {
 
@@ -585,6 +599,54 @@ public class Couchbase3Client extends DB {
     return Status.OK;
   }
 
+
+  public Status transactionContext(String table, String[] transationKeys, Map<String,
+      ByteIterator>[] transationValues,
+                                   String[] transationOperations, Set<String> fields,
+                                   Map<String, ByteIterator> result) {
+
+    Collection collection = bucket.defaultCollection();
+
+    try {
+
+      transactions.run((ctx) -> {
+        // Init and Start transaction here
+          for (int i = 0; i < transationKeys.length; i++) {
+            final String formattedDocId = formatId(table, transationKeys[i]);
+            switch (transationOperations[i]) {
+            case "TRREAD":
+              TransactionGetResult doc = ctx.get(collection, formattedDocId);
+              extractFields(doc.contentAs(JsonObject.class), fields, result);
+              break;
+            case "TRUPDATE":
+              TransactionGetResult docToReplace = ctx.get(collection, formattedDocId);
+              JsonObject content = docToReplace.contentAs(JsonObject.class);
+              for (Map.Entry<String, String> entry: encode(transationValues[i]).entrySet()){
+                content.put(entry.getKey(), entry.getValue());
+              }
+              ctx.replace(docToReplace, content);
+              break;
+            case "TRINSERT":
+              ctx.insert(collection, formattedDocId, encode(transationValues[i]));
+              break;
+            default:
+              break;
+            }
+          }
+          ctx.commit();
+        });
+    } catch (TransactionFailed e) {
+      Logger logger = LoggerFactory.getLogger(getClass().getName() + ".bad");
+      //System.err.println("Transaction failed " + e.result().transactionId() + " " +
+      //e.result().timeTaken().toMillis() + "msecs");
+      for (LogDefer err : e.result().log().logs()) {
+        String s = err.toString();
+        logger.warn("transaction failed with exception :" + s);
+      }
+      return Status.ERROR;
+    }
+    return Status.OK;
+  }
 
   /**
    * Helper method to turn the passed in iterator values into a map we can encode to json.

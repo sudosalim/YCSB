@@ -311,4 +311,20 @@ public class DBWrapper extends DB {
       return res;
     }
   }
+
+  @Override
+  public Status transaction(String table, String[] transationKeys, Map<String, ByteIterator>[] transationValues,
+                            String[] transationOperations, Set<String> fields, Map<String, ByteIterator> result,
+                            String scope, String collection) {
+    try (final TraceScope span = tracer.newScope(scopeStringInsert)) {
+      long ist = measurements.getIntendedtartTimeNs();
+      long st = System.nanoTime();
+      Status res = db.transaction(table, transationKeys, transationValues, transationOperations, fields, result,
+          scope, collection);
+      long en = System.nanoTime();
+      measure("TRANSACTION", res, ist, st, en);
+      measurements.reportStatus("TRANSACTION", res);
+      return res;
+    }
+  }
 }

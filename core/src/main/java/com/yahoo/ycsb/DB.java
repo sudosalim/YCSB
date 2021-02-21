@@ -163,4 +163,11 @@ public abstract class DB {
 
     return Status.NOT_IMPLEMENTED;
   }
+
+  public Status transaction(String table, String[] transationKeys, Map<String, ByteIterator>[] transationValues,
+                            String[] transationOperations, Set<String> fields, Map<String, ByteIterator> result,
+                            String scope, String collection) {
+
+    return Status.NOT_IMPLEMENTED;
+  }
 }
