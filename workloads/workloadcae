@@ -40,8 +40,8 @@ readallfields=true
 
 readproportion=0.25
 updateproportion=0.25
-scanproportion=0.475
-insertproportion=0.025
+scanproportion=0.5
+insertproportion=0
 
 requestdistribution=zipfian
 
