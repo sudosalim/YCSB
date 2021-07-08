@@ -17,7 +17,9 @@
 
 package com.yahoo.ycsb.db.syncgateway;
 
-
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.yahoo.ycsb.*;
 import com.yahoo.ycsb.generator.CounterGenerator;
@@ -112,15 +114,9 @@ public class SyncGatewayClient extends DB {
 
   private static final int SG_READ_MODE_DOCUMENTS = 0;
   private static final int SG_READ_MODE_DOCUMENTS_WITH_REV = 1;
-  private static final String SG_REPLICATOR2 = "syncgateway.replicator2";
-
   private static final int SG_READ_MODE_CHANGES = 2;
   private static final int SG_READ_MODE_ALLCHANGES = 3;
   private static final int SG_READ_MODE_200CHANGES = 4;
-
-  private static final int SG_READ_MODE_WITH_LIMIT = 5;
-
-  private static final String SG_READ_LIMIT = "syncgateway.readLimit";
 
   private static final String SG_FEED_READ_MODE_IDSONLY = "idsonly";
   private static final String SG_FEED_READ_MODE_WITHDOCS = "withdocs";
@@ -128,6 +124,17 @@ public class SyncGatewayClient extends DB {
   private static final String SG_CHANNELS_PER_GRANT = "syncgateway.channelspergrant";
   private static final String SG_GRANT_ACCESS_TO_ALL_USERS = "syncgateway.grantaccesstoall";
   private static final String SG_GRANT_ACCESS_IN_SCAN = "syncgateway.grantaccessinscan";
+
+  private static final String SG_REPLICATOR2 = "syncgateway.replicator2";
+  private static final String SG_READ_LIMIT = "syncgateway.readLimit";
+  private static final int SG_READ_MODE_WITH_LIMIT = 5;
+
+  private static final String SG_UPDATEFIELDCOUNT = "syncgateway.updatefieldcount";
+
+  private static final String SG_DOCTYPE = "syncgateway.doctype";
+  private static final String SG_DOC_DEPTH = "syncgateway.docdepth";
+
+  private static final String SG_DELTA_SYNC = "syncgateway.deltasync";
 
   // Sync Gateway parameters
   private String portAdmin;
@@ -137,7 +144,6 @@ public class SyncGatewayClient extends DB {
   private boolean roudTripWrite;
   private int loadMode;
   private int readMode;
-  private boolean isSgReplicator2;
   private int totalUsers;
   private int totalChannels;
   private int channelsPerUser;
@@ -147,7 +153,6 @@ public class SyncGatewayClient extends DB {
   private int insertMode;
   private String sequencestart;
   private boolean initUsers;
-  private String readLimit;
   private int insertUsersStart = 0;
   private String feedMode;
   private boolean includeDocWhenReadingFeed;
@@ -155,7 +160,8 @@ public class SyncGatewayClient extends DB {
   private int channelsPerGrant;
   private boolean grantAccessToAllUsers;
   private boolean grantAccessInScanOperation;
-
+  private boolean isSgReplicator2;
+  private String readLimit;
 
   // http parameters
   private volatile Criteria requestTimedout = new Criteria(false);
@@ -164,7 +170,6 @@ public class SyncGatewayClient extends DB {
   private int readTimeout = 5000;
   private int execTimeout = 5000;
   private CloseableHttpClient restClient;
-
 
   //memcached
   private MemcachedClient memcachedClient;
@@ -177,6 +182,13 @@ public class SyncGatewayClient extends DB {
   private String currentIterationUser = null;
   private Random rand = new Random();
 
+  //delta sync parameters
+  private boolean deltaSync;
+  private int updatefieldcount;
+
+  //nested doc paramtere
+  private int docdepth;
+  private String doctype;
 
   @Override
   public void init() throws DBException {
@@ -252,6 +264,14 @@ public class SyncGatewayClient extends DB {
     documentEndpoint = "/" + db + "/";
     createSessionEndpoint = "/" + db + "/_session";
 
+    //delta sync properties
+    deltaSync = props.getProperty(SG_DELTA_SYNC, "false").equals("true");
+    updatefieldcount = Integer.valueOf(props.getProperty(SG_UPDATEFIELDCOUNT, "1"));
+
+    //doc type properties
+    doctype = props.getProperty(SG_DOCTYPE, "simple");
+    docdepth = Integer.valueOf(props.getProperty(SG_DOC_DEPTH, "1"));
+
     // Init components
     restClient = createRestClient();
 
@@ -288,7 +308,6 @@ public class SyncGatewayClient extends DB {
       return readChangesWithLimit();
     }
 
-
     return readSingle(key, result);
   }
 
@@ -307,8 +326,12 @@ public class SyncGatewayClient extends DB {
 
   private Status read200Changes(String key) {
     try {
-      //String seq = getLocalSequenceForUser(currentIterationUser);
-      String seq = getLastSequenceGlobal();
+      String seq;
+      if (deltaSync) {
+        seq = getLocalSequenceForUser(currentIterationUser);
+      } else {
+        seq = getLastSequenceGlobal();
+      }
       seq = String.valueOf(Integer.parseInt(seq) - 200);
       checkForChanges(seq, getChannelNameByKey(key));
     } catch (Exception e) {
@@ -389,11 +412,17 @@ public class SyncGatewayClient extends DB {
     //return Status.NOT_IMPLEMENTED;
   }
 
-
   @Override
   public Status update(String table, String key, HashMap<String, ByteIterator> values) {
-    assignRandomUserToCurrentIteration();
+    if (deltaSync) {
+      return deltaSyncUpdate(table, key, values);
+    } else {
+      return defaultUpdate(table, key, values);
+    }
+  }
 
+  private Status defaultUpdate(String table, String key, HashMap<String, ByteIterator> values) {
+    assignRandomUserToCurrentIteration();
     String requestBody = buildDocumentFromMap(key, values);
     String docRevision = getRevision(key);
 
@@ -406,7 +435,6 @@ public class SyncGatewayClient extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl;
     int responseCode;
-
     fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
 
     if(isSgReplicator2){
@@ -422,13 +450,17 @@ public class SyncGatewayClient extends DB {
     }
 
     Status result = getStatus(responseCode);
+
     if (result == Status.OK) {
       incrementLocalSequenceForUser();
+
       if (roudTripWrite) {
+
         if ((currentSequence == null) || (currentSequence.equals(""))) {
           System.err.println("Memcached failure!");
           return Status.BAD_REQUEST;
         }
+
         try {
           waitForDocInChangeFeed(currentSequence, key);
         } catch (Exception e) {
@@ -437,6 +469,55 @@ public class SyncGatewayClient extends DB {
         }
       }
     }
+
+    return result;
+  }
+
+  private Status deltaSyncUpdate(String table, String key, HashMap<String, ByteIterator> values) {
+    String docRevision = getRevision(key);
+
+    if (docRevision == null) {
+      System.err.println("Revision for document " + key + " not found in local");
+      return Status.UNEXPECTED_STATE;
+    }
+
+    int intdocRevision = Integer.parseInt((docRevision.split("-")[0]));
+
+    if(intdocRevision > updatefieldcount){
+      return Status.OK;
+    }
+
+    String port = (useAuth) ? portPublic : portAdmin;
+    String fullUrl;
+    int responseCode;
+    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
+    String responsebodymap = null;
+    String requestBody = null;
+
+    try {
+      responsebodymap = getResponseBody(fullUrl);
+      //	System.out.println("responsebody map before update " + responsebodymap );
+    } catch (IOException e1) {
+      // TODO Auto-generated catch block
+      e1.printStackTrace();
+    }
+
+    if (doctype.equals("simple")) {
+      requestBody = buildUpdateDocument(key, responsebodymap, values);
+    }
+    else if (doctype.equals("nested")) {
+      requestBody = buildUpdateNestedDoc(key, responsebodymap, values);
+    }
+
+    HttpPut httpPutRequest = new HttpPut(fullUrl);
+
+    try {
+      responseCode = httpExecute(httpPutRequest, requestBody);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "PUT");
+    }
+
+    Status result = getStatus(responseCode);
     return result;
   }
 
@@ -447,8 +528,11 @@ public class SyncGatewayClient extends DB {
     }
 
     assignRandomUserToCurrentIteration();
-    return insertDocument(table, key, values);
-
+    if (deltaSync) {
+      return deltaSyncInsertDocument(table, key, values);
+    } else {
+      return defaultInsertDocument(table, key, values);
+    }
   }
 
   @Override
@@ -457,7 +541,6 @@ public class SyncGatewayClient extends DB {
   }
 
   private Status authRandomUser() {
-
     String requestBody = buildAutorizationBody(currentIterationUser);
     try {
       httpAuthWithSessionCookie(requestBody);
@@ -467,20 +550,20 @@ public class SyncGatewayClient extends DB {
     return Status.OK;
   }
 
-
   private Status insertUser(String table, String key, HashMap<String, ByteIterator> values) {
-
     String requestBody = buildUserDef();
     String fullUrl = "http://" + getRandomHost() + ":" + portAdmin + createUserEndpoint;
     HttpPost httpPostRequest = new HttpPost(fullUrl);
-
     int responseCode;
+
     try {
       responseCode = httpExecute(httpPostRequest, requestBody);
     } catch (Exception e) {
       responseCode = handleExceptions(e, fullUrl, "POST");
     }
+
     Status result = getStatus(responseCode);
+
     if (result == Status.OK) {
       incrementLocalSequenceForUser();
     }
@@ -488,24 +571,49 @@ public class SyncGatewayClient extends DB {
     return result;
   }
 
+  private Status deltaSyncInsertDocument(String table, String key, HashMap<String, ByteIterator> values) {
+    String port = (useAuth) ? portPublic : portAdmin;
+    String requestBody = null;
+    String fullUrl;
 
-  private Status insertDocument(String table, String key, HashMap<String, ByteIterator> values) {
+    if(doctype.equals("simple")) {
+      requestBody = buildDocumentFromMap(key, values);
+    }
+    else if(doctype.equals("nested")) {
+      requestBody = buildnestedDocFromMap(key, values);
+    }
+    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
+    //String currentSequence = getLocalSequenceGlobal(); //commenting to acvoid getLocalSequenceForUser
+    HttpPost httpPostRequest = new HttpPost(fullUrl);
+    int responseCode;
+    //System.out.println("before INSERT: User " + currentIterationUser + " just inserted doc " + key
+    //+ " SG seq before insert was " + currentSequence);
 
+    try {
+      responseCode = httpExecute(httpPostRequest, requestBody);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "POST");
+    }
+
+    //System.out.println("INSERT: User " + currentIterationUser + " just inserted doc " + key
+    //+ " SG seq before insert was " + currentSequence);
+    Status result = getStatus(responseCode);
+    return result;
+  }
+
+  private Status defaultInsertDocument(String table, String key, HashMap<String, ByteIterator> values) {
     String port = (useAuth) ? portPublic : portAdmin;
     String requestBody;
     String fullUrl;
-
     String channel = null;
 
     if (insertMode == SG_INSERT_MODE_BYKEY) {
       channel = getChannelNameByTotalChannels();
-
     } else {
       channel = getChannelForUser();
     }
 
     requestBody = buildDocumentWithChannel(key, values, channel);
-
     fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
 
     if(isSgReplicator2){
@@ -514,11 +622,8 @@ public class SyncGatewayClient extends DB {
 
     String currentSequence = getLocalSequenceGlobal();
     String lastSequence = getLastSequenceGlobal();
-
     //String lastSeqChannel = getLastSequenceChannel(channel);
-
     String lastseq = null;
-
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
 
@@ -530,8 +635,10 @@ public class SyncGatewayClient extends DB {
     }
 
     Status result = getStatus(responseCode);
+
     if (result == Status.OK) {
       incrementLocalSequenceForUser();
+
       if (roudTripWrite) {
 
         if ((lastSequence == null) || (lastSequence.equals(""))) {
@@ -545,6 +652,7 @@ public class SyncGatewayClient extends DB {
           } else {
             lastseq = waitForDocInChangeFeed3(lastSequence, channel, key);
           }
+
           incrementLocalSequenceGlobal();
           setLastSequenceGlobally(lastseq);
           //setLastSequenceChannel(lastseq, channel);
@@ -556,7 +664,6 @@ public class SyncGatewayClient extends DB {
           return Status.UNEXPECTED_STATE;
         }
       }
-
     }
 
     return result;
@@ -720,8 +827,16 @@ public class SyncGatewayClient extends DB {
     restClient.close();
   }
 
-
   private String waitForDocInChangeFeed2(String sequenceSince, String key) throws IOException {
+      if (deltaSync) {
+        deltaSyncWaitForDocInChangeFeed2(sequenceSince, key);
+        return null;
+      } else {
+        return defaultWaitForDocInChangeFeed2(sequenceSince, key);
+      }
+  }
+
+  private String defaultWaitForDocInChangeFeed2(String sequenceSince, String key) throws IOException {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
@@ -800,19 +915,88 @@ public class SyncGatewayClient extends DB {
       response.close();
     }
     restClient.close();
-
     return lastseq;
   }
 
+  private void deltaSyncWaitForDocInChangeFeed2(String sequenceSince, String key) throws IOException {
+    String port = (useAuth) ? portPublic : portAdmin;
+    String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
+        "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
+
+    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+
+    requestTimedout.setIsSatisfied(false);
+    Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
+    timer.start();
+    HttpGet request = new HttpGet(fullUrl);
+    for (int i = 0; i < headers.length; i = i + 2) {
+      request.setHeader(headers[i], headers[i + 1]);
+    }
+    if (useAuth) {
+      request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
+    }
+
+    CloseableHttpResponse response = null;
+    boolean docFound = false;
+    int repeatCounter = 1000;
+    while (!docFound) {
+      repeatCounter--;
+      if (repeatCounter<=0){
+        response.close();
+        restClient.close();
+        System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! by repeatCounter for " + changesFeedEndpoint);
+        throw new TimeoutException();
+      }
+      try {
+        response = restClient.execute(request);
+      } catch (java.net.SocketTimeoutException ex){
+        response.close();
+        restClient.close();
+        System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! by Socket ex for " + changesFeedEndpoint
+            + " " + ex.getStackTrace());
+        throw new TimeoutException();
+      }
+      HttpEntity responseEntity = response.getEntity();
+      if (responseEntity != null) {
+        InputStream stream = responseEntity.getContent();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+        StringBuffer responseContent = new StringBuffer();
+        String line = "";
+        while ((line = reader.readLine()) != null) {
+          if (requestTimedout.isSatisfied()) {
+            // Must avoid memory leak.
+            reader.close();
+            stream.close();
+            EntityUtils.consumeQuietly(responseEntity);
+            response.close();
+            restClient.close();
+            throw new TimeoutException();
+          }
+          if (lookForDocID(line, key)) {
+            docFound = true;
+          }
+          responseContent.append(line);
+        }
+        timer.interrupt();
+        stream.close();
+      }
+      if (requestTimedout.isSatisfied()) {
+        EntityUtils.consumeQuietly(responseEntity);
+        response.close();
+        restClient.close();
+        throw new TimeoutException();
+      }
+      EntityUtils.consumeQuietly(responseEntity);
+      response.close();
+    }
+    restClient.close();
+  }
 
   private String waitForDocInChangeFeed3(String sequenceSince, String channel, String key) throws IOException {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + channel;
-
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
-
-
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -831,14 +1015,12 @@ public class SyncGatewayClient extends DB {
       request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
     }
 
-
     CloseableHttpResponse response = null;
     boolean docFound = false;
     String lastseq = null;
-
     int repeatCounter = 1000;
-    while (!docFound) {
 
+    while (!docFound) {
       repeatCounter--;
       if (repeatCounter <= 0) {
         response.close();
@@ -892,7 +1074,6 @@ public class SyncGatewayClient extends DB {
       response.close();
     }
     restClient.close();
-
     return lastseq;
   }
 
@@ -1019,9 +1200,15 @@ public class SyncGatewayClient extends DB {
     return lastseq;
   }
 
-
-
   private void waitForDocInChangeFeed(String sequenceSince, String key) throws IOException {
+      if (deltaSync) {
+        deltaSyncWaitForDocInChangeFeed(sequenceSince, key);
+      } else {
+        defaultWaitForDocInChangeFeed(sequenceSince, key);
+      }
+  }
+
+  private void defaultWaitForDocInChangeFeed(String sequenceSince, String key) throws IOException {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
@@ -1090,29 +1277,92 @@ public class SyncGatewayClient extends DB {
     restClient.close();
   }
 
+  private void deltaSyncWaitForDocInChangeFeed(String sequenceSince, String key) throws IOException {
+    String port = (useAuth) ? portPublic : portAdmin;
+    String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
+        "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
 
-  private int httpExecute(HttpEntityEnclosingRequestBase request, String data)
-      throws IOException {
+    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
 
+    requestTimedout.setIsSatisfied(false);
+    Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
+    timer.start();
+    HttpGet request = new HttpGet(fullUrl);
+    for (int i = 0; i < headers.length; i = i + 2) {
+      request.setHeader(headers[i], headers[i + 1]);
+    }
+    if (useAuth) {
+      request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
+    }
 
+    int counter = 10;
+    boolean docFound = false;
+    while (!docFound) {
+      counter--;
+      if (counter < 0) {
+        requestTimedout.isSatisfied = true;
+        System.err.println(" -= waitForDocInChangeFeed -= COUNTER OUT for " + changesFeedEndpoint);
+        docFound = true;
+      }
+      CloseableHttpResponse response = restClient.execute(request);
+      HttpEntity responseEntity = response.getEntity();
+      if (responseEntity != null) {
+        InputStream stream = responseEntity.getContent();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+        StringBuffer responseContent = new StringBuffer();
+        String line = "";
+        while ((line = reader.readLine()) != null) {
+          //System.out.println(line);
+          if (lookForDocID(line, key)) {
+            docFound = true;
+          }
+          //docFound = true;
+          if (requestTimedout.isSatisfied()) {
+            // Must avoid memory leak.
+            reader.close();
+            stream.close();
+            EntityUtils.consumeQuietly(responseEntity);
+            response.close();
+            restClient.close();
+            System.err.println(" -= waitForDocInChangeFeed -= TIMEOUT! for " + changesFeedEndpoint);
+            throw new TimeoutException();
+          }
+          responseContent.append(line);
+        }
+        timer.interrupt();
+        // Closing the input stream will trigger connection release.
+        stream.close();
+      }
+      EntityUtils.consumeQuietly(responseEntity);
+      response.close();
+    }
+    restClient.close();
+  }
+
+  private int httpExecute(HttpEntityEnclosingRequestBase request, String data) throws IOException {
+      if (deltaSync) {
+        return deltaSyncHttpExecute(request, data);
+      } else {
+        return defaultHttpExecute(request, data);
+      }
+  }
+
+  private int defaultHttpExecute(HttpEntityEnclosingRequestBase request, String data) throws IOException {
     if (basicAuth) {
       String auth = currentIterationUser + ":" + DEFAULT_USER_PASSWORD;
       byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
       String authHeader = "Basic " + new String(encodedAuth);
       request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
     }
-
     if (useAuth && !basicAuth) {
       request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
     }
-
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
     for (int i = 0; i < headers.length; i = i + 2) {
       request.setHeader(headers[i], headers[i + 1]);
     }
-
     InputStreamEntity reqEntity = new InputStreamEntity(new ByteArrayInputStream(data.getBytes()),
         ContentType.APPLICATION_FORM_URLENCODED);
     reqEntity.setChunked(true);
@@ -1160,42 +1410,91 @@ public class SyncGatewayClient extends DB {
     EntityUtils.consumeQuietly(responseEntity);
     response.close();
     restClient.close();
+    if (!responseGenericValidation) {
+      return 500;
+    }
+    return responseCode;
+  }
+
+  private int deltaSyncHttpExecute(HttpEntityEnclosingRequestBase request, String data) throws IOException {
+    if (useAuth) {
+      request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
+    }
+    requestTimedout.setIsSatisfied(false);
+    Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
+    timer.start();
+    int responseCode = 200;
+    for (int i = 0; i < headers.length; i = i + 2) {
+      request.setHeader(headers[i], headers[i + 1]);
+    }
+    InputStreamEntity reqEntity = new InputStreamEntity(new ByteArrayInputStream(data.getBytes()),
+        ContentType.APPLICATION_FORM_URLENCODED);
+    reqEntity.setChunked(true);
+    request.setEntity(reqEntity);
+    CloseableHttpResponse response = restClient.execute(request);
+    responseCode = response.getStatusLine().getStatusCode();
+    HttpEntity responseEntity = response.getEntity();
+    boolean responseGenericValidation = true;
+    if (responseEntity != null) {
+      InputStream stream = responseEntity.getContent();
+      BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+      StringBuffer responseContent = new StringBuffer();
+      String line = "";
+      while ((line = reader.readLine()) != null) {
+        storeRevisions(line, currentIterationUser);
+        responseGenericValidation = validateHttpResponse(line);
+        if (requestTimedout.isSatisfied()) {
+          reader.close();
+          stream.close();
+          EntityUtils.consumeQuietly(responseEntity);
+          response.close();
+          restClient.close();
+          throw new TimeoutException();
+        }
+        responseContent.append(line);
+      }
+      timer.interrupt();
+      stream.close();
+    }
+    EntityUtils.consumeQuietly(responseEntity);
+    response.close();
+    restClient.close();
 
     if (!responseGenericValidation) {
       return 500;
     }
-
     return responseCode;
   }
 
+  private int httpGet(String endpoint, HashMap<String, ByteIterator> result) throws IOException {
+    if (deltaSync) {
+      return deltaSyncHttpGet(endpoint, result);
+    } else {
+      return defaultHttpGet(endpoint, result);
+    }
+  }
 
   // Connection is automatically released back in case of an exception.
-  private int httpGet(String endpoint, HashMap<String, ByteIterator> result) throws IOException {
+  private int defaultHttpGet(String endpoint, HashMap<String, ByteIterator> result) throws IOException {
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
     //int responseCode = 200;
-
     HttpGet request = new HttpGet(endpoint);
     for (int i = 0; i < headers.length; i = i + 2) {
       request.setHeader(headers[i], headers[i + 1]);
     }
-
     if (basicAuth) {
       String auth = currentIterationUser + ":" + DEFAULT_USER_PASSWORD;
       byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
       String authHeader = "Basic " + new String(encodedAuth);
       request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
     }
-
     if (useAuth && !basicAuth) {
       request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
     }
-
     CloseableHttpResponse response = restClient.execute(request);
-
     int responseCode = response.getStatusLine().getStatusCode();
-
     HttpEntity responseEntity = response.getEntity();
     // If null entity don't bother about connection release.
     if (responseEntity != null) {
@@ -1226,22 +1525,60 @@ public class SyncGatewayClient extends DB {
     return responseCode;
   }
 
-
-  private String httpAuthWithSessionCookie(String data) throws IOException {
-
-    String fullUrl = "http://" + getRandomHost() + ":" + portAdmin + createSessionEndpoint;
-    HttpPost request = new HttpPost(fullUrl);
-
+  private int deltaSyncHttpGet(String endpoint, HashMap<String, ByteIterator> result) throws IOException {
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
-
-    String sessionCookie = null;
-
+    int responseCode = 200;
+    HttpGet request = new HttpGet(endpoint);
     for (int i = 0; i < headers.length; i = i + 2) {
       request.setHeader(headers[i], headers[i + 1]);
     }
+    if (useAuth) {
+      request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
+    }
+    CloseableHttpResponse response = restClient.execute(request);
+    responseCode = response.getStatusLine().getStatusCode();
+    HttpEntity responseEntity = response.getEntity();
+    // If null entity don't bother about connection release.
+    if (responseEntity != null) {
+      InputStream stream = responseEntity.getContent();
+      BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+      StringBuffer responseContent = new StringBuffer();
+      String line = "";
+      while ((line = reader.readLine()) != null) {
+        if (requestTimedout.isSatisfied()) {
+          // Must avoid memory leak.
+          reader.close();
+          stream.close();
+          EntityUtils.consumeQuietly(responseEntity);
+          response.close();
+          restClient.close();
+          throw new TimeoutException();
+        }
+        responseContent.append(line);
+      }
+      timer.interrupt();
+      result.put("response", new StringByteIterator(responseContent.toString()));
+      // Closing the input stream will trigger connection release.
+      stream.close();
+    }
+    EntityUtils.consumeQuietly(responseEntity);
+    response.close();
+    restClient.close();
+    return responseCode;
+  }
 
+  private String httpAuthWithSessionCookie(String data) throws IOException {
+    String fullUrl = "http://" + getRandomHost() + ":" + portAdmin + createSessionEndpoint;
+    HttpPost request = new HttpPost(fullUrl);
+    requestTimedout.setIsSatisfied(false);
+    Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
+    timer.start();
+    String sessionCookie = null;
+    for (int i = 0; i < headers.length; i = i + 2) {
+      request.setHeader(headers[i], headers[i + 1]);
+    }
     InputStreamEntity reqEntity = new InputStreamEntity(new ByteArrayInputStream(data.getBytes()),
         ContentType.APPLICATION_FORM_URLENCODED);
     reqEntity.setChunked(true);
@@ -1277,7 +1614,6 @@ public class SyncGatewayClient extends DB {
     return sessionCookie;
   }
 
-
   private int handleExceptions(Exception e, String url, String method) {
     System.err.println(new StringBuilder(method).append(" Request: ").append(url).append(" | ")
         .append(e.getClass().getName()).append(" occured | Error message: ")
@@ -1309,6 +1645,162 @@ public class SyncGatewayClient extends DB {
   private String getRandomHost() {
     //hosts[rand.nextInt(hosts.length)];
     return host;
+  }
+
+  private String getResponseBody(String endpoint) throws IOException {
+    requestTimedout.setIsSatisfied(false);
+    Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
+    timer.start();
+    int responseCode = 200;
+
+    HttpGet request = new HttpGet(endpoint);
+    for (int i = 0; i < headers.length; i = i + 2) {
+      request.setHeader(headers[i], headers[i + 1]);
+    }
+
+    if (useAuth) {
+      request.setHeader("Cookie", "SyncGatewaySession=" +
+          getSessionCookieByUser(currentIterationUser));
+    }
+
+    HashMap<String, Object> resultmap = new HashMap<String, Object>();
+
+    CloseableHttpResponse response = restClient.execute(request);
+
+    responseCode = response.getStatusLine().getStatusCode();
+
+    HttpEntity responseEntity = response.getEntity();
+
+    String responsestring = null;
+    // If null entity don't bother about connection release.
+    if (responseEntity != null) {
+
+      // CONVERT RESPONSE TO STRING and THEN TO JSON OBJECT TO HASHMAP
+
+      responsestring = EntityUtils.toString(responseEntity, "UTF-8");
+
+
+      if (requestTimedout.isSatisfied()) {
+
+        EntityUtils.consumeQuietly(responseEntity);
+        response.close();
+        restClient.close();
+        throw new TimeoutException();
+      }
+
+      timer.interrupt();
+    }
+    EntityUtils.consumeQuietly(responseEntity);
+    response.close();
+    restClient.close();
+    return responsestring;
+  }
+
+  private String buildUpdateDocument(String key, String responsestring, HashMap<String, ByteIterator> values) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectMapper mapper = new ObjectMapper();
+
+    JsonNode actualObj = null;
+    try {
+      actualObj = mapper.readTree(responsestring);
+    } catch (JsonProcessingException e) {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    } catch (IOException e) {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    }
+    ObjectNode root = factory.objectNode();
+
+    ArrayNode channelsNode = factory.arrayNode();
+
+    if (insertMode == SG_INSERT_MODE_BYKEY) {
+      channelsNode.add(getChannelNameByKey(key));
+    } else {
+      channelsNode.add(getChannelForUser());
+    }
+
+    ((ObjectNode)actualObj).set("channels", channelsNode);
+
+    String var1 = values.toString();
+    for(Map.Entry<String, ByteIterator> mp:values.entrySet()) {
+      ((ObjectNode)actualObj).put(mp.getKey(), var1);
+    }
+    return ((ObjectNode)actualObj).toString();
+  }
+
+  private String buildUpdateNestedDoc(String key, String responsestring, HashMap<String, ByteIterator> values) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectMapper mapper = new ObjectMapper();
+
+    JsonNode actualObj = null;
+    try {
+      actualObj = mapper.readTree(responsestring);
+    } catch (JsonProcessingException e) {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    } catch (IOException e) {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    }
+    int depth = docdepth;
+    ObjectNode[] valNode = new ObjectNode[docdepth+1];
+    for(int i=depth; i>=1; i--) {
+      valNode[i] = factory.objectNode();
+      String levelname = "level"+Integer.toString(i)+"0";
+      if (i==depth) {
+        valNode[i] = (ObjectNode) actualObj.get(levelname);
+      }
+      if (i<depth) {
+        valNode[i] = (ObjectNode) valNode[i+1].get(levelname);
+      }
+    }
+    ObjectNode finalValNode = factory.objectNode();
+    String flevelname = null;
+    for (int i=1; i<=depth; i++) {
+      String levelname = "level"+Integer.toString(i)+"0";
+      if (i==1) {
+        String var1 = values.toString();
+        for(Map.Entry<String, ByteIterator> mp:values.entrySet()) {
+          valNode[i].put(mp.getKey(), var1);
+        }
+      }
+      if(i>1) {
+        levelname = "level"+Integer.toString(i-1)+"0";
+        valNode[i].set(levelname, valNode[i-1]);
+      }
+      levelname = "level"+Integer.toString(i)+"0";
+      flevelname = levelname ;
+      finalValNode = valNode[i];
+    }
+    ((ObjectNode)actualObj).set(flevelname, finalValNode);
+    return ((ObjectNode)actualObj).toString();
+  }
+
+  @SuppressWarnings("deprecation")
+  private String buildnestedDocFromMap(String key, HashMap<String, ByteIterator> values) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    ArrayNode channelsNode = factory.arrayNode();
+    values.forEach((k, v) -> {
+      root.put(k, v.toString());
+    });
+    ObjectNode finalValNode = factory.objectNode();
+    ObjectNode[] valNode = new ObjectNode[docdepth + 1];
+    //  String objectname = null ;
+    for (int i = 1; i <= docdepth; i++) {
+      valNode[i] = factory.objectNode();
+      for (int j = 0; j <= values.size(); j++) {
+        if (i == 1) {
+          valNode[i].set("level" + Integer.toString(i) + Integer.toString(j), root);
+        } else {
+          valNode[i].set("level" + Integer.toString(i) + Integer.toString(j), valNode[i - 1]);
+        }
+      }
+      finalValNode = valNode[i];
+    }
+    finalValNode.put("_id", key);
+    return finalValNode.toString();
   }
 
   private String buildUserDef() {
@@ -1343,15 +1835,12 @@ public class SyncGatewayClient extends DB {
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
     root.put("_id", key);
-
     if (insertMode == SG_INSERT_MODE_BYKEY) {
       channelsNode.add(getChannelNameByKey(key));
     } else {
       channelsNode.add(getChannelForUser());
     }
-
     root.set("channels", channelsNode);
-
     values.forEach((k, v) -> {
         root.put(k, v.toString());
       });
@@ -1363,11 +1852,8 @@ public class SyncGatewayClient extends DB {
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
     root.put("_id", key);
-
     channelsNode.add(channel);
-
     root.set("channels", channelsNode);
-
     values.forEach((k, v) -> {
         root.put(k, v.toString());
       });
@@ -1385,10 +1871,8 @@ public class SyncGatewayClient extends DB {
   }
 
   private String[] getSetOfRandomChannels() {
-
     String[] channels = new String[channelsPerUser];
     int[] allChannels = new int[totalChannels];
-
     for (int i = 0; i < totalChannels; i++) {
       allChannels[i] = i;
     }
@@ -1480,9 +1964,7 @@ public class SyncGatewayClient extends DB {
 
   private String getlastSequenceFromSG() throws IOException {
     String port = portAdmin;
-
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
-
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -1490,15 +1972,11 @@ public class SyncGatewayClient extends DB {
     //for (int i = 0; i < headers.length; i = i + 2) {
     //  request.setHeader(headers[i], headers[i + 1]);
     //}
-
     String lastsequence = null;
     //String str1 = null;
     int counter = 10;
-
     CloseableHttpResponse response = restClient.execute(request);
-
     HttpEntity responseEntity = response.getEntity();
-
     if (responseEntity != null) {
       InputStream stream = responseEntity.getContent();
       BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
@@ -1541,7 +2019,6 @@ public class SyncGatewayClient extends DB {
     memcachedClient.incr("_sequenceCounterGlobal", 1);
   }
 
-
   private String getLocalSequenceForUser(String userName) {
     Object localSegObj = memcachedClient.get("_sequenceCounter_" + userName);
     if (localSegObj == null) {
@@ -1554,7 +2031,6 @@ public class SyncGatewayClient extends DB {
   private void incrementLocalSequenceForUser(){
     memcachedClient.incr("_sequenceCounter_" + currentIterationUser , 1);
   }
-
 
   private CloseableHttpClient createRestClient() {
     RequestConfig.Builder requestBuilder = RequestConfig.custom();
@@ -1579,12 +2055,9 @@ public class SyncGatewayClient extends DB {
     Pattern pattern = Pattern.compile("\\\"id\\\".\\\"([^\\\"]*).*\\\"rev\\\".\\\"([^\\\"]*)");
     Matcher matcher = pattern.matcher(responseWithRevision);
     while (matcher.find()) {
-
       memcachedClient.set(matcher.group(1), 0, matcher.group(2));
-
     }
   }
-
 
   private String readSessionCookie(String responseWithSession) {
     Pattern pattern = Pattern.compile("\\\"session_id\\\".\\\"([^\\\"]*)");
@@ -1629,7 +2102,9 @@ public class SyncGatewayClient extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     root.put("name", name);
-    //root.put("password", DEFAULT_USER_PASSWORD);
+    if (deltaSync) {
+      root.put("password", DEFAULT_USER_PASSWORD);
+    }
     return root.toString();
   }
 
@@ -1771,7 +2246,6 @@ public class SyncGatewayClient extends DB {
   }
 
 
-
   /**
    * Sets the flag when a criteria is fulfilled.
    */
@@ -1792,6 +2266,7 @@ public class SyncGatewayClient extends DB {
     }
 
   }
+
 
   /**
    * Private exception class for execution timeout.
