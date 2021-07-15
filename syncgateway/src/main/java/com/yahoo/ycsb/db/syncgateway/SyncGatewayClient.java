@@ -115,6 +115,7 @@ public class SyncGatewayClient extends DB {
   private static final String SG_DOCTYPE = "syncgateway.doctype";
   private static final String SG_DOC_DEPTH = "syncgateway.docdepth";
   private static final String SG_DELTA_SYNC = "syncgateway.deltasync";
+  private static final String SG_E2E = "syncgateway.e2e";
   private String portAdmin;
   private String portPublic;
   private boolean useAuth;
@@ -153,6 +154,7 @@ public class SyncGatewayClient extends DB {
   private String currentIterationUser = null;
   private Random rand = new Random();
   private boolean deltaSync;
+  private boolean e2e;
   private int updatefieldcount;
   private int docdepth;
   private String doctype;
@@ -217,6 +219,7 @@ public class SyncGatewayClient extends DB {
     documentEndpoint = "/" + db + "/";
     createSessionEndpoint = "/" + db + "/_session";
     deltaSync = props.getProperty(SG_DELTA_SYNC, "false").equals("true");
+    e2e = props.getProperty(SG_E2E, "false").equals("true");
     updatefieldcount = Integer.valueOf(props.getProperty(SG_UPDATEFIELDCOUNT, "1"));
     doctype = props.getProperty(SG_DOCTYPE, "simple");
     docdepth = Integer.valueOf(props.getProperty(SG_DOC_DEPTH, "1"));
