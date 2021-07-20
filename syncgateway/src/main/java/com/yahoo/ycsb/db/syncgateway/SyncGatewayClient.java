@@ -267,7 +267,7 @@ public class SyncGatewayClient extends DB {
   private Status read200Changes(String key) {
     try {
       String seq;
-      if (deltaSync) {
+      if (deltaSync || e2e) {
         seq = getLocalSequenceForUser(currentIterationUser);
       } else {
         seq = getLastSequenceGlobal();
@@ -341,7 +341,7 @@ public class SyncGatewayClient extends DB {
 
   @Override
   public Status update(String table, String key, HashMap<String, ByteIterator> values) {
-    if (deltaSync) {
+    if (deltaSync || e2e) {
       return deltaSyncUpdate(table, key, values);
     } else {
       return defaultUpdate(table, key, values);
@@ -431,7 +431,7 @@ public class SyncGatewayClient extends DB {
       return insertUser(table, key, values);
     }
     assignRandomUserToCurrentIteration();
-    if (deltaSync) {
+    if (deltaSync || e2e) {
       return deltaSyncInsertDocument(table, key, values);
     } else {
       return defaultInsertDocument(table, key, values);
@@ -675,7 +675,7 @@ public class SyncGatewayClient extends DB {
   }
 
   private String waitForDocInChangeFeed2(String sequenceSince, String key) throws IOException {
-    if (deltaSync) {
+    if (deltaSync || e2e) {
       deltaSyncWaitForDocInChangeFeed2(sequenceSince, key);
       return null;
     } else {
@@ -1004,7 +1004,7 @@ public class SyncGatewayClient extends DB {
   }
 
   private void waitForDocInChangeFeed(String sequenceSince, String key) throws IOException {
-    if (deltaSync) {
+    if (deltaSync || e2e) {
       deltaSyncWaitForDocInChangeFeed(sequenceSince, key);
     } else {
       defaultWaitForDocInChangeFeed(sequenceSince, key);
@@ -1128,7 +1128,7 @@ public class SyncGatewayClient extends DB {
   }
 
   private int httpExecute(HttpEntityEnclosingRequestBase request, String data) throws IOException {
-    if (deltaSync) {
+    if (deltaSync || e2e) {
       return deltaSyncHttpExecute(request, data);
     } else {
       return defaultHttpExecute(request, data);
@@ -1251,7 +1251,7 @@ public class SyncGatewayClient extends DB {
   }
 
   private int httpGet(String endpoint, HashMap<String, ByteIterator> result) throws IOException {
-    if (deltaSync) {
+    if (deltaSync || e2e) {
       return deltaSyncHttpGet(endpoint, result);
     } else {
       return defaultHttpGet(endpoint, result);
@@ -1836,7 +1836,7 @@ public class SyncGatewayClient extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     root.put("name", name);
-    if (deltaSync) {
+    if (deltaSync || e2e) {
       root.put("password", DEFAULT_USER_PASSWORD);
     }
     return root.toString();
