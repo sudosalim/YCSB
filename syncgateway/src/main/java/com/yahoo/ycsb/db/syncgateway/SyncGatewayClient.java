@@ -1269,22 +1269,9 @@ public class SyncGatewayClient extends DB {
     reqEntity.setContentType("application/json");
     reqEntity.setChunked(true);
     request.setEntity(new StringEntity(data, ContentType.APPLICATION_JSON));
-    //InputStreamEntity reqEntity = new InputStreamEntity(new ByteArrayInputStream(data.getBytes()),
-    //    ContentType.APPLICATION_FORM_URLENCODED);
-    //reqEntity.setChunked(true);
-    //request.setEntity(reqEntity);
-    System.out.println("reqEntity:");
-    System.out.println(reqEntity);
-    System.out.println("rest execute");
     CloseableHttpResponse response = restClient.execute(request);
-    System.out.println("response:");
-    System.out.println(response);
     responseCode = response.getStatusLine().getStatusCode();
-    System.out.println("response code:");
-    System.out.println(responseCode);
     HttpEntity responseEntity = response.getEntity();
-    System.out.println("responseEntity:");
-    System.out.println(responseEntity);
     boolean responseGenericValidation = true;
     if (responseEntity != null) {
       InputStream stream = responseEntity.getContent();
@@ -1292,12 +1279,9 @@ public class SyncGatewayClient extends DB {
       StringBuffer responseContent = new StringBuffer();
       String line = "";
       while ((line = reader.readLine()) != null) {
-        System.out.println("line:");
-        System.out.println(line);
         storeRevisions(line, currentIterationUser);
         responseGenericValidation = validateHttpResponse(line);
         if (requestTimedout.isSatisfied()) {
-          System.out.println("request timeout satisfied");
           reader.close();
           stream.close();
           EntityUtils.consumeQuietly(responseEntity);
