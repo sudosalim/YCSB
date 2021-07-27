@@ -62,7 +62,7 @@ LICENSE file.
     <!-- See http://checkstyle.sf.net/config_misc.html#Translation -->
     <module name="Translation"/>
 
-    <module name="FileLength"/>
+  <!-- <module name="FileLength"/> -->
     <module name="FileTabCharacter"/>
 
     <module name="TreeWalker">

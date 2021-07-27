@@ -34,6 +34,7 @@ import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.entity.ContentType;
+import org.apache.http.entity.StringEntity;
 import org.apache.http.entity.InputStreamEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
@@ -472,6 +473,7 @@ public class SyncGatewayClient extends DB {
 
   private Status deltaSyncInsertDocument(String table, String key, HashMap<String, ByteIterator> values) {
     String port = (useAuth) ? portPublic : portAdmin;
+
     String requestBody = null;
     String fullUrl;
     if(doctype.equals("simple")) {
@@ -1128,8 +1130,10 @@ public class SyncGatewayClient extends DB {
   }
 
   private int httpExecute(HttpEntityEnclosingRequestBase request, String data) throws IOException {
-    if (deltaSync || e2e) {
+    if (deltaSync) {
       return deltaSyncHttpExecute(request, data);
+    } else if (e2e) {
+      return e2eHttpExecute(request, data);
     } else {
       return defaultHttpExecute(request, data);
     }
@@ -1228,6 +1232,72 @@ public class SyncGatewayClient extends DB {
         storeRevisions(line, currentIterationUser);
         responseGenericValidation = validateHttpResponse(line);
         if (requestTimedout.isSatisfied()) {
+          reader.close();
+          stream.close();
+          EntityUtils.consumeQuietly(responseEntity);
+          response.close();
+          restClient.close();
+          throw new TimeoutException();
+        }
+        responseContent.append(line);
+      }
+      timer.interrupt();
+      stream.close();
+    }
+    EntityUtils.consumeQuietly(responseEntity);
+    response.close();
+    restClient.close();
+
+    if (!responseGenericValidation) {
+      return 500;
+    }
+    return responseCode;
+  }
+
+  private int e2eHttpExecute(HttpEntityEnclosingRequestBase request, String data) throws IOException {
+    if (useAuth) {
+      request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
+    }
+    requestTimedout.setIsSatisfied(false);
+    Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
+    timer.start();
+    int responseCode = 200;
+    for (int i = 0; i < headers.length; i = i + 2) {
+      request.setHeader(headers[i], headers[i + 1]);
+    }
+    InputStreamEntity reqEntity = new InputStreamEntity(new ByteArrayInputStream(data.getBytes()), -1);
+    reqEntity.setContentType("application/json");
+    reqEntity.setChunked(true);
+    request.setEntity(new StringEntity(data, ContentType.APPLICATION_JSON));
+    //InputStreamEntity reqEntity = new InputStreamEntity(new ByteArrayInputStream(data.getBytes()),
+    //    ContentType.APPLICATION_FORM_URLENCODED);
+    //reqEntity.setChunked(true);
+    //request.setEntity(reqEntity);
+    System.out.println("reqEntity:");
+    System.out.println(reqEntity);
+    System.out.println("rest execute");
+    CloseableHttpResponse response = restClient.execute(request);
+    System.out.println("response:");
+    System.out.println(response);
+    responseCode = response.getStatusLine().getStatusCode();
+    System.out.println("response code:");
+    System.out.println(responseCode);
+    HttpEntity responseEntity = response.getEntity();
+    System.out.println("responseEntity:");
+    System.out.println(responseEntity);
+    boolean responseGenericValidation = true;
+    if (responseEntity != null) {
+      InputStream stream = responseEntity.getContent();
+      BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+      StringBuffer responseContent = new StringBuffer();
+      String line = "";
+      while ((line = reader.readLine()) != null) {
+        System.out.println("line:");
+        System.out.println(line);
+        storeRevisions(line, currentIterationUser);
+        responseGenericValidation = validateHttpResponse(line);
+        if (requestTimedout.isSatisfied()) {
+          System.out.println("request timeout satisfied");
           reader.close();
           stream.close();
           EntityUtils.consumeQuietly(responseEntity);
