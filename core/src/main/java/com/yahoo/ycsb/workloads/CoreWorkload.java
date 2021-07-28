@@ -383,6 +383,9 @@ public class CoreWorkload extends Workload {
         Integer.parseInt(p.getProperty(INSERT_START_PROPERTY, INSERT_START_PROPERTY_DEFAULT));
     sgInserstart = insertstart;
 
+    int insertcountset =
+        Integer.parseInt(p.getProperty(INSERT_COUNT_PROPERTY, "0"));
+
     int insertcount =
         Integer.parseInt(p.getProperty(INSERT_COUNT_PROPERTY, String.valueOf(recordcount - insertstart)));
     // Confirm valid values for insertstart and insertcount in relation to recordcount
@@ -429,8 +432,11 @@ public class CoreWorkload extends Workload {
 
     transactioninsertkeysequence = new AcknowledgedCounterGenerator(recordcount);
     if (requestdistrib.compareTo("uniform") == 0) {
-      //keychooser = new UniformIntegerGenerator(insertstart, insertstart + insertcount - 1);
-      keychooser = new UniformIntegerGenerator(0, recordcount);
+      if (insertcountset > 0) {
+        keychooser = new UniformIntegerGenerator(insertstart, insertstart + insertcount - 1);
+      } else {
+        keychooser = new UniformIntegerGenerator(0, recordcount);
+      }
     } else if (requestdistrib.compareTo("sequential") == 0) {
       keychooser = new SequentialGenerator(insertstart, insertstart + insertcount - 1);
     } else if (requestdistrib.compareTo("zipfian") == 0) {
