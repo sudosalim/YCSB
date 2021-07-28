@@ -1461,6 +1461,8 @@ public class SyncGatewayClient extends DB {
       return Status.FORBIDDEN;
     } else if (responseCode == 404) {
       return Status.NOT_FOUND;
+    } else if (responseCode == 423) {
+      return Status.ERROR;
     } else if (responseCode == 501) {
       return Status.NOT_IMPLEMENTED;
     } else if (responseCode == 503) {
