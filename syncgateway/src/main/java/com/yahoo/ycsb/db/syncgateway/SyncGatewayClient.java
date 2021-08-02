@@ -1887,7 +1887,7 @@ public class SyncGatewayClient extends DB {
         return memcachedClient.get(key).toString();
       }
     } catch (Exception e) {
-      System.err.println(new StringBuilder(method).append(" Memcache exception getRevision: ")
+      System.err.println(new StringBuilder("getRevision").append(" Memcached exception: ")
           .append(e.getClass().getName()).append("\n Error message: ")
           .append(e.getMessage()).toString());
     }
