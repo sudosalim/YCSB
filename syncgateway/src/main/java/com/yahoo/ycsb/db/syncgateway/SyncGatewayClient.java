@@ -1881,9 +1881,15 @@ public class SyncGatewayClient extends DB {
   }
 
   private String getRevision(String key){
-    Object respose = memcachedClient.get(key);
-    if (respose != null) {
-      return memcachedClient.get(key).toString();
+    try {
+      Object respose = memcachedClient.get(key);
+      if (respose != null) {
+        return memcachedClient.get(key).toString();
+      }
+    } catch (Exception e) {
+      System.err.println(new StringBuilder(method).append(" Memcache exception getRevision: ")
+          .append(e.getClass().getName()).append("\n Error message: ")
+          .append(e.getMessage()).toString());
     }
     return null;
   }
