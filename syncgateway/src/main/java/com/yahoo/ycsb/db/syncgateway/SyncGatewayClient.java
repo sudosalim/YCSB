@@ -400,32 +400,18 @@ public class SyncGatewayClient extends DB {
 
   private Status e2eUpdate(String table, String key, HashMap<String, ByteIterator> values) {
     int responseCode;
-    String responsebodymap = null;
-    String requestBody = null;
     String port = (useAuth) ? portPublic : portAdmin;
     assignRandomUserToCurrentIteration();
+    String requestBody = buildDocumentFromMap(key, values);
     String docRevision = getRevision(key);
     if (docRevision == null) {
       System.err.println("Revision for document " + key + " not found in local");
       return Status.UNEXPECTED_STATE;
     }
-
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
-    try {
-      responsebodymap = getResponseBody(fullUrl);
-    } catch (IOException e1) {
-      e1.printStackTrace();
-    }
-    if (doctype.equals("simple")) {
-      requestBody = buildUpdateDocument(key, responsebodymap, values);
-    } else if (doctype.equals("nested")) {
-      requestBody = buildUpdateNestedDoc(key, responsebodymap, values);
-    }
-
     HttpPut httpPutRequest = new HttpPut(fullUrl);
     Status result;
     int numOfRetries = 0;
-
     do {
       try {
         responseCode = httpExecute(httpPutRequest, requestBody);
@@ -440,13 +426,11 @@ public class SyncGatewayClient extends DB {
       if (++numOfRetries <= maxretry) {
         System.err.println("Retrying update, retry count: " + numOfRetries);
         try {
-          // Sleep for a random number between [0.8, 1.2)*insertionRetryInterval.
           int sleepTime = (int) (retrydelay * (0.8 + 0.4 * Math.random()));
           Thread.sleep(sleepTime);
         } catch (InterruptedException e) {
           break;
         }
-
       } else {
         System.err.println("Error updating, not retrying any more. number of attempts: " + numOfRetries +
             "Update Retry Limit: " + maxretry);
@@ -499,8 +483,10 @@ public class SyncGatewayClient extends DB {
       return insertUser(table, key, values);
     }
     assignRandomUserToCurrentIteration();
-    if (deltaSync || e2e) {
+    if (deltaSync) {
       return deltaSyncInsertDocument(table, key, values);
+    } else if (e2e) {
+      return e2eInsertDocument(table, key, values);
     } else {
       return defaultInsertDocument(table, key, values);
     }
@@ -557,6 +543,26 @@ public class SyncGatewayClient extends DB {
       responseCode = handleExceptions(e, fullUrl, "POST");
     }
     Status result = getStatus(responseCode);
+    return result;
+  }
+
+  private Status e2eInsertDocument(String table, String key, HashMap<String, ByteIterator> values) {
+    String port = (useAuth) ? portPublic : portAdmin;
+    String requestBody = null;
+    String fullUrl;
+    requestBody = buildDocumentFromMap(key, values);
+    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
+    HttpPost httpPostRequest = new HttpPost(fullUrl);
+    int responseCode;
+    try {
+      responseCode = httpExecute(httpPostRequest, requestBody);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "POST");
+    }
+    Status result = getStatus(responseCode);
+    if (result == Status.OK) {
+      incrementLocalSequenceForUser();
+    }
     return result;
   }
 
@@ -1587,6 +1593,8 @@ public class SyncGatewayClient extends DB {
     } catch (JsonProcessingException e) {
       e.printStackTrace();
     } catch (IOException e) {
+      e.printStackTrace();
+    } catch (NullPointerException e) {
       e.printStackTrace();
     }
     ObjectNode root = factory.objectNode();
