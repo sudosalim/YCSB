@@ -117,6 +117,8 @@ public class SyncGatewayClient extends DB {
   private static final String SG_DOC_DEPTH = "syncgateway.docdepth";
   private static final String SG_DELTA_SYNC = "syncgateway.deltasync";
   private static final String SG_E2E = "syncgateway.e2e";
+  private static final String SG_MAX_RETRY = "syncgateway.maxretry";
+  private static final String SG_RETRY_DELAY = "syncgateway.retrydelay";
   private String portAdmin;
   private String portPublic;
   private boolean useAuth;
@@ -159,6 +161,8 @@ public class SyncGatewayClient extends DB {
   private int updatefieldcount;
   private int docdepth;
   private String doctype;
+  private int maxretry;
+  private int retrydelay;
 
   @Override
   public void init() throws DBException {
@@ -225,6 +229,8 @@ public class SyncGatewayClient extends DB {
     doctype = props.getProperty(SG_DOCTYPE, "simple");
     docdepth = Integer.valueOf(props.getProperty(SG_DOC_DEPTH, "1"));
     restClient = createRestClient();
+    maxretry = Integer.parseInt(props.getProperty(SG_MAX_RETRY, "5"));
+    retrydelay = Integer.parseInt(props.getProperty(SG_RETRY_DELAY, "500"));
     try {
       memcachedClient = createMemcachedClient(memcachedHost, Integer.parseInt(memcachedPort));
     } catch (Exception e) {
@@ -342,8 +348,10 @@ public class SyncGatewayClient extends DB {
 
   @Override
   public Status update(String table, String key, HashMap<String, ByteIterator> values) {
-    if (deltaSync || e2e) {
+    if (deltaSync) {
       return deltaSyncUpdate(table, key, values);
+    } else if (e2e) {
+      return e2eUpdate(table, key, values);
     } else {
       return defaultUpdate(table, key, values);
     }
@@ -387,6 +395,65 @@ public class SyncGatewayClient extends DB {
         }
       }
     }
+    return result;
+  }
+
+  private Status e2eUpdate(String table, String key, HashMap<String, ByteIterator> values) {
+    int responseCode;
+    String responsebodymap = null;
+    String requestBody = null;
+    String port = (useAuth) ? portPublic : portAdmin;
+    assignRandomUserToCurrentIteration();
+    String docRevision = getRevision(key);
+    if (docRevision == null) {
+      System.err.println("Revision for document " + key + " not found in local");
+      return Status.UNEXPECTED_STATE;
+    }
+
+    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
+    try {
+      responsebodymap = getResponseBody(fullUrl);
+    } catch (IOException e1) {
+      e1.printStackTrace();
+    }
+    if (doctype.equals("simple")) {
+      requestBody = buildUpdateDocument(key, responsebodymap, values);
+    } else if (doctype.equals("nested")) {
+      requestBody = buildUpdateNestedDoc(key, responsebodymap, values);
+    }
+
+    HttpPut httpPutRequest = new HttpPut(fullUrl);
+    Status result;
+    int numOfRetries = 0;
+
+    do {
+      try {
+        responseCode = httpExecute(httpPutRequest, requestBody);
+      } catch (Exception e) {
+        responseCode = handleExceptions(e, fullUrl, "PUT");
+      }
+      result = getStatus(responseCode);
+      if (null != result && result.isOk()) {
+        incrementLocalSequenceForUser();
+        break;
+      }
+      if (++numOfRetries <= maxretry) {
+        System.err.println("Retrying update, retry count: " + numOfRetries);
+        try {
+          // Sleep for a random number between [0.8, 1.2)*insertionRetryInterval.
+          int sleepTime = (int) (retrydelay * (0.8 + 0.4 * Math.random()));
+          Thread.sleep(sleepTime);
+        } catch (InterruptedException e) {
+          break;
+        }
+
+      } else {
+        System.err.println("Error updating, not retrying any more. number of attempts: " + numOfRetries +
+            "Update Retry Limit: " + maxretry);
+        break;
+
+      }
+    } while (true);
     return result;
   }
 

@@ -308,18 +308,6 @@ public class CoreWorkload extends Workload {
   public static final String INSERTION_RETRY_INTERVAL = "core_workload_insertion_retry_interval";
   public static final String INSERTION_RETRY_INTERVAL_DEFAULT = "3";
 
-  /**
-   * How many times to retry when an operation of a single item to a DB fails.
-   */
-  public static final String OP_RETRY_LIMIT = "core_workload_op_retry_limit";
-  public static final String OP_RETRY_LIMIT_DEFAULT = "0";
-
-  /**
-   * On average, how long to wait between the operation retries, in seconds.
-   */
-  public static final String OP_RETRY_INTERVAL = "core_workload_op_retry_interval";
-  public static final String OP_RETRY_INTERVAL_DEFAULT = "3";
-
   protected NumberGenerator keysequence;
   protected DiscreteGenerator operationchooser;
   protected NumberGenerator keychooser;
@@ -331,8 +319,6 @@ public class CoreWorkload extends Workload {
   protected int zeropadding;
   protected int insertionRetryLimit;
   protected int insertionRetryInterval;
-  protected int opRetryLimit;
-  protected int opRetryInterval;
   protected int sgInserstart = 0;
 
   private Measurements measurements = Measurements.getMeasurements();
@@ -498,11 +484,6 @@ public class CoreWorkload extends Workload {
         INSERTION_RETRY_LIMIT, INSERTION_RETRY_LIMIT_DEFAULT));
     insertionRetryInterval = Integer.parseInt(p.getProperty(
         INSERTION_RETRY_INTERVAL, INSERTION_RETRY_INTERVAL_DEFAULT));
-
-    opRetryLimit = Integer.parseInt(p.getProperty(
-        OP_RETRY_LIMIT, OP_RETRY_LIMIT_DEFAULT));
-    opRetryInterval = Integer.parseInt(p.getProperty(
-        OP_RETRY_INTERVAL, OP_RETRY_INTERVAL_DEFAULT));
   }
 
   protected String buildKeyName(long keynum) {
@@ -719,7 +700,6 @@ public class CoreWorkload extends Workload {
 
   public void doTransactionReadModifyWrite(DB db) {
     // choose a random key
-    System.out.println("Doing read modify write");
     int keynum = nextKeynum();
 
     String keyname = buildKeyName(keynum);
@@ -803,33 +783,7 @@ public class CoreWorkload extends Workload {
       values = buildSingleValue(keyname);
     }
 
-    Status status;
-    int numOfRetries = 0;
-    do {
-      status = db.update(table, keyname, values);
-      if (null != status && status.isOk()) {
-        break;
-      }
-      // Retry if configured. Without retrying, the load process will fail
-      // even if one single op fails. User can optionally configure
-      // an op retry limit (default is 0) to enable retry.
-      if (++numOfRetries <= opRetryLimit) {
-        System.err.println("Retrying update, retry count: " + numOfRetries);
-        try {
-          // Sleep for a random number between [0.8, 1.2)*insertionRetryInterval.
-          int sleepTime = (int) (1000 * opRetryInterval * (0.8 + 0.4 * Math.random()));
-          Thread.sleep(sleepTime);
-        } catch (InterruptedException e) {
-          break;
-        }
-
-      } else {
-        System.err.println("Error updating, not retrying any more. number of attempts: " + numOfRetries +
-            "Update Retry Limit: " + opRetryLimit);
-        break;
-
-      }
-    } while (true);
+    db.update(table, keyname, values);
   }
 
   public void doTransactionInsert(DB db) {
