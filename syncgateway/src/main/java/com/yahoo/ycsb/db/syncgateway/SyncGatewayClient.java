@@ -421,9 +421,9 @@ public class SyncGatewayClient extends DB {
       result = getStatus(responseCode);
       if (null != result && result.isOk()) {
         incrementLocalSequenceForUser();
-        System.out.println("result code: "+responseCode+" result status: "+result.toString());
         break;
       }
+      System.out.println("result code: "+responseCode+" result status: "+result.toString());
       if (++numOfRetries <= maxretry) {
         try {
           int sleepTime = (int) (retrydelay * (0.8 + 0.4 * Math.random()));
