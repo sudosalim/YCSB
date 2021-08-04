@@ -403,6 +403,7 @@ public class SyncGatewayClient extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     assignRandomUserToCurrentIteration();
     String requestBody = buildDocumentFromMap(key, values);
+    System.out.println("updating key: "+key+" with doc: "+requestBody);
     String docRevision = getRevision(key);
     if (docRevision == null) {
       System.err.println("Revision for document " + key + " not found in local");
@@ -423,7 +424,7 @@ public class SyncGatewayClient extends DB {
         incrementLocalSequenceForUser();
         break;
       }
-      System.out.println("result code: "+responseCode+" result status: "+result.toString());
+      System.out.println("initial result code: "+responseCode+" result status: "+result.toString());
       if (++numOfRetries <= maxretry) {
         try {
           int sleepTime = (int) (retrydelay * (0.8 + 0.4 * Math.random()));
@@ -433,12 +434,13 @@ public class SyncGatewayClient extends DB {
           break;
         }
       } else {
-        System.err.println("Error updating, not retrying any more. number of attempts: " + numOfRetries +
+        System.out.println("Error updating, not retrying any more. number of attempts: " + numOfRetries +
             "Update Retry Limit: " + maxretry);
-        System.out.println("result code: "+responseCode+" result status: "+result.toString());
+        System.out.println("last break result code: "+responseCode+" result status: "+result.toString());
         break;
       }
     } while (true);
+    System.out.println("final result code: "+responseCode+" result status: "+result.toString());
     return result;
   }
 
@@ -552,6 +554,7 @@ public class SyncGatewayClient extends DB {
     String requestBody = null;
     String fullUrl;
     requestBody = buildDocumentFromMap(key, values);
+    System.out.println("inserting key: "+key+" with doc: "+requestBody);
     fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
