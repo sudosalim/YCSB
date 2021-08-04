@@ -424,7 +424,6 @@ public class SyncGatewayClient extends DB {
         break;
       }
       if (++numOfRetries <= maxretry) {
-        System.err.println("Retrying update, retry count: " + numOfRetries);
         try {
           int sleepTime = (int) (retrydelay * (0.8 + 0.4 * Math.random()));
           Thread.sleep(sleepTime);
