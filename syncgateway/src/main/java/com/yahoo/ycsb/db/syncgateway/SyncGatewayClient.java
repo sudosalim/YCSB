@@ -421,6 +421,7 @@ public class SyncGatewayClient extends DB {
       result = getStatus(responseCode);
       if (null != result && result.isOk()) {
         incrementLocalSequenceForUser();
+        System.out.println("result code: "+responseCode+" result status: "+result.toString());
         break;
       }
       if (++numOfRetries <= maxretry) {
@@ -428,13 +429,14 @@ public class SyncGatewayClient extends DB {
           int sleepTime = (int) (retrydelay * (0.8 + 0.4 * Math.random()));
           Thread.sleep(sleepTime);
         } catch (InterruptedException e) {
+          System.out.println("Thread interrupted...result code: "+responseCode+" result status: "+result.toString());
           break;
         }
       } else {
         System.err.println("Error updating, not retrying any more. number of attempts: " + numOfRetries +
             "Update Retry Limit: " + maxretry);
+        System.out.println("result code: "+responseCode+" result status: "+result.toString());
         break;
-
       }
     } while (true);
     return result;
