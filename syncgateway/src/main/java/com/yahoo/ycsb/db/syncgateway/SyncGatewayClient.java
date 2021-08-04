@@ -1529,12 +1529,18 @@ public class SyncGatewayClient extends DB {
     int rc = responseCode / 100;
     if (responseCode == 400) {
       return Status.BAD_REQUEST;
+    } else if (responseCode == 200) {
+      return Status.OK;
+    } else if (responseCode == 201) {
+      return Status.OK;
     } else if (responseCode == 401) {
       return Status.LOGIN_REQUIRED;
     } else if (responseCode == 403) {
       return Status.FORBIDDEN;
     } else if (responseCode == 404) {
       return Status.NOT_FOUND;
+    } else if (responseCode == 409) {
+      return Status.ERROR;
     } else if (responseCode == 423) {
       return Status.ERROR;
     } else if (responseCode == 501) {
@@ -1544,6 +1550,7 @@ public class SyncGatewayClient extends DB {
     } else if (rc == 5) {
       return Status.ERROR;
     }
+    System.out.println("response code unhandled: "+responseCode);
     return Status.OK;
   }
 
