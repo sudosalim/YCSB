@@ -403,8 +403,8 @@ public class SyncGatewayClient extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     assignRandomUserToCurrentIteration();
     String requestBody = buildDocumentFromMap(key, values);
-    System.out.println("updating key: "+key+" with doc: "+requestBody);
     String docRevision = getRevision(key);
+    System.out.println("\n updating key: "+key+" revision: "+docRevision+" with doc: "+requestBody);
     if (docRevision == null) {
       System.err.println("Revision for document " + key + " not found in local");
       return Status.UNEXPECTED_STATE;
@@ -412,34 +412,15 @@ public class SyncGatewayClient extends DB {
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
     HttpPut httpPutRequest = new HttpPut(fullUrl);
     Status result;
-    int numOfRetries = 0;
-    do {
-      try {
-        responseCode = httpExecute(httpPutRequest, requestBody);
-      } catch (Exception e) {
-        responseCode = handleExceptions(e, fullUrl, "PUT");
-      }
-      result = getStatus(responseCode);
-      if (null != result && result.isOk()) {
-        incrementLocalSequenceForUser();
-        break;
-      }
-      System.out.println("initial result code: "+responseCode+" result status: "+result.toString());
-      if (++numOfRetries <= maxretry) {
-        try {
-          int sleepTime = (int) (retrydelay * (0.8 + 0.4 * Math.random()));
-          Thread.sleep(sleepTime);
-        } catch (InterruptedException e) {
-          System.out.println("Thread interrupted...result code: "+responseCode+" result status: "+result.toString());
-          break;
-        }
-      } else {
-        System.out.println("Error updating, not retrying any more. number of attempts: " + numOfRetries +
-            "Update Retry Limit: " + maxretry);
-        System.out.println("last break result code: "+responseCode+" result status: "+result.toString());
-        break;
-      }
-    } while (true);
+    try {
+      responseCode = httpExecute(httpPutRequest, requestBody);
+    } catch (Exception e) {
+      responseCode = handleExceptions(e, fullUrl, "PUT");
+    }
+    result = getStatus(responseCode);
+    if (null != result && result.isOk()) {
+      incrementLocalSequenceForUser();
+    }
     System.out.println("final result code: "+responseCode+" result status: "+result.toString());
     return result;
   }
