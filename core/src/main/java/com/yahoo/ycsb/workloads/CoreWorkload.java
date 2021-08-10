@@ -565,11 +565,12 @@ public class CoreWorkload extends Workload {
   public boolean doInsert(DB db, Object threadstate) {
     int keynum = keysequence.nextValue().intValue();
     String dbkey = buildKeyName(keynum);
-    HashMap<String, ByteIterator> values = buildValues(dbkey);
+
 
     Status status;
     int numOfRetries = 0;
     do {
+      HashMap<String, ByteIterator> values = buildValues(dbkey);
       status = db.insert(table, dbkey, values);
       if (null != status && status.isOk()) {
         break;
