@@ -404,7 +404,6 @@ public class SyncGatewayClient extends DB {
     assignRandomUserToCurrentIteration();
     String requestBody = buildDocumentFromMap(key, values);
     String docRevision = getRevision(key);
-    System.out.println("\n updating key: "+key+" revision: "+docRevision+" with doc: "+requestBody);
     if (docRevision == null) {
       System.err.println("Revision for document " + key + " not found in local");
       return Status.UNEXPECTED_STATE;
@@ -421,7 +420,6 @@ public class SyncGatewayClient extends DB {
     if (null != result && result.isOk()) {
       incrementLocalSequenceForUser();
     }
-    System.out.println("final result code: "+responseCode+" result status: "+result.toString());
     return result;
   }
 
@@ -535,7 +533,6 @@ public class SyncGatewayClient extends DB {
     String requestBody = null;
     String fullUrl;
     requestBody = buildDocumentFromMap(key, values);
-    System.out.println("inserting key: "+key+" with doc: "+requestBody);
     fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
