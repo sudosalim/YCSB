@@ -1326,6 +1326,10 @@ public class SyncGatewayClient extends DB {
     request.setEntity(new StringEntity(data, ContentType.APPLICATION_JSON));
     CloseableHttpResponse response = restClient.execute(request);
     responseCode = response.getStatusLine().getStatusCode();
+    if (responseCode != 200 && responseCode != 201){
+      System.out.println("Update failed for request: " + request + "\nResponse Code: " + responseCode);
+      System.out.println("Response message: " + response);
+    }
     HttpEntity responseEntity = response.getEntity();
     boolean responseGenericValidation = true;
     if (responseEntity != null) {
