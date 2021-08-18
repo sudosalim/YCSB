@@ -230,7 +230,11 @@ public class SyncGatewayClient extends DB {
     docdepth = Integer.valueOf(props.getProperty(SG_DOC_DEPTH, "1"));
     restClient = createRestClient();
     maxretry = Integer.parseInt(props.getProperty(SG_MAX_RETRY, "5"));
-    retrydelay = Integer.parseInt(props.getProperty(SG_RETRY_DELAY, "500"));
+    retrydelay = Integer.parseInt(props.getProperty(SG_RETRY_DELAY, "100"));
+    if (retrydelay < 100) {
+      retrydelay = 100;
+    }
+
     try {
       memcachedClient = createMemcachedClient(memcachedHost, Integer.parseInt(memcachedPort));
     } catch (Exception e) {
@@ -411,15 +415,33 @@ public class SyncGatewayClient extends DB {
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
     HttpPut httpPutRequest = new HttpPut(fullUrl);
     Status result;
-    try {
-      responseCode = httpExecute(httpPutRequest, requestBody);
-    } catch (Exception e) {
-      responseCode = handleExceptions(e, fullUrl, "PUT");
-    }
-    result = getStatus(responseCode);
-    if (null != result && result.isOk()) {
-      incrementLocalSequenceForUser();
-    }
+    int numOfRetries = 0;
+    do {
+      try {
+        responseCode = httpExecute(httpPutRequest, requestBody);
+      } catch (Exception e) {
+        responseCode = handleExceptions(e, fullUrl, "PUT");
+      }
+      result = getStatus(responseCode);
+      if (null != result && result.isOk()) {
+        incrementLocalSequenceForUser();
+        break;
+      }
+      if (++numOfRetries <= maxretry) {
+        try {
+          int sleepTime = (int) (retrydelay * (0.8 + 0.4 * Math.random()));
+          Thread.sleep(sleepTime);
+        } catch (InterruptedException e) {
+          System.out.println("Thread interrupted...result code: "+responseCode+" result status: "+result.toString());
+          break;
+        }
+      } else {
+        System.out.println("Error updating, not retrying any more. number of attempts: " + numOfRetries +
+            "Update Retry Limit: " + maxretry);
+        System.out.println("last break result code: "+responseCode+" result status: "+result.toString());
+        break;
+      }
+    } while (true);
     return result;
   }
 
