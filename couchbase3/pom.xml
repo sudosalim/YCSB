@@ -40,7 +40,7 @@ LICENSE file.
       <dependency>
         <groupId>com.couchbase.client</groupId>
         <artifactId>couchbase-transactions</artifactId>
-        <version>1.0.0</version>
+        <version>1.2.1</version>
       </dependency>
         <dependency>
             <groupId>com.yahoo.ycsb</groupId>
@@ -48,26 +48,6 @@ LICENSE file.
             <version>${project.version}</version>
             <scope>provided</scope>
         </dependency>
-      <dependency>
-        <groupId>io.projectreactor</groupId>
-        <artifactId>reactor-core</artifactId>
-        <version>3.2.1.RELEASE</version>
-      </dependency>
-      <dependency>
-        <groupId>io.projectreactor.addons</groupId>
-        <artifactId>reactor-extra</artifactId>
-        <version>3.2.0.RELEASE</version>
-      </dependency>
-      <dependency>
-        <groupId>io.projectreactor.addons</groupId>
-        <artifactId>reactor-adapter</artifactId>
-        <version>3.2.0.RELEASE</version>
-      </dependency>
-      <dependency>
-        <groupId>io.reactivex</groupId>
-        <artifactId>rxjava-reactive-streams</artifactId>
-        <version>1.2.1</version>
-      </dependency>
       <dependency>
         <groupId>ch.qos.logback</groupId>
         <artifactId>logback-classic</artifactId>
