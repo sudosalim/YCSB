@@ -253,6 +253,8 @@ public class Couchbase3Client extends DB {
           transactions = Transactions.create(cluster, TransactionConfigBuilder.create()
               .durabilityLevel(transDurabilityLevel)
               .numATRs(numATRS)
+              .expirationTime(Duration.ofSeconds(120))
+              .keyValueTimeout(Duration.ofSeconds(120))
               .build());
         }
       }
