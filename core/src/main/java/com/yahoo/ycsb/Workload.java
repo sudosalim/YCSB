@@ -121,5 +121,5 @@ public abstract class Workload {
   }
 
   public abstract boolean doInsertCollection(DB db, Object threadstate, String scope,
-                                             String collection, int keynum);
+                                             String collection, long keynum);
 }

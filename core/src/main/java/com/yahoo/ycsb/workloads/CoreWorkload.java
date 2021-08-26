@@ -409,7 +409,7 @@ public class CoreWorkload extends Workload {
     //System.err.println("printing INSERT_START_PROPERTY within " +
         //"Coreworkload init" + insertstart);
     long insertcount=
-        Integer.parseInt(p.getProperty(INSERT_COUNT_PROPERTY, String.valueOf(recordcount - insertstart)));
+        Long.parseLong(p.getProperty(INSERT_COUNT_PROPERTY, String.valueOf(recordcount - insertstart)));
     //System.err.println("printing INSERT_COUNT_PROPERTY within " +
         //"Coreworkload init" + insertstart);
     // Confirm valid values for insertstart and insertcount in relation to recordcount
@@ -775,7 +775,7 @@ public class CoreWorkload extends Workload {
     measurements.measureIntended("READ-MODIFY-WRITE", (int) ((en - ist) / 1000));
   }
 
-  public boolean doInsertCollection(DB db, Object threadstate, String scope, String collection, int keynum) {
+  public boolean doInsertCollection(DB db, Object threadstate, String scope, String collection, long keynum) {
     return false;
   }
 

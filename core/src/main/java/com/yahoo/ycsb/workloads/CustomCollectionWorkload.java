@@ -656,9 +656,9 @@ public class CustomCollectionWorkload extends Workload {
   }
 
 
-  public boolean doInsertCollection(DB db, Object threadstate, String scope, String collection, int key) {
+  public boolean doInsertCollection(DB db, Object threadstate, String scope, String collection, long key) {
 
-    int keynum = key;
+    long keynum = key;
 
     String dbkey = buildKeyName(keynum);
 

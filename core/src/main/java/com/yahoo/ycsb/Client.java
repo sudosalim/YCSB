@@ -367,7 +367,7 @@ class ClientThread implements Runnable {
   private DB db;
   private boolean dotransactions;
   private Workload workload;
-  private int opcount;
+  private long opcount;
   private double targetOpsPerMs;
 
   private int opsdone;
@@ -382,7 +382,7 @@ class ClientThread implements Runnable {
   private final Measurements measurements;
   private String collectionsparam;
   private String scopesparam;
-  private int insertstart;
+  private long insertstart;
 
   /**
    * Constructor.
@@ -395,10 +395,10 @@ class ClientThread implements Runnable {
    * @param targetperthreadperms target number of operations per thread per ms
    * @param completeLatch        The latch tracking the completion of all clients.
    */
-  public ClientThread(DB db, boolean dotransactions, Workload workload, Properties props, int opcount,
+  public ClientThread(DB db, boolean dotransactions, Workload workload, Properties props, long opcount,
                       boolean collectionenabled, int collectioncount, String collectionsparam,
                       int scopecount, String scopesparam,
-                      int insertstart,
+                      long insertstart,
                       double targetperthreadperms, CountDownLatch completeLatch) {
 
     this.db = db;
@@ -504,14 +504,14 @@ class ClientThread implements Runnable {
 
         if (collectionenabled) {
 
-          int insertPerCollection = opcount/(collectioncount*scopecount);
+          long insertPerCollection = opcount/(collectioncount*scopecount);
 
           for (int j=0; j<scopecount; j++) {
 
             for (int i=0; i<collectioncount; i++) {
 
               opsdone = 0;
-              int insertkey=insertstart;
+              long insertkey=insertstart;
 
               while (((insertPerCollection == 0) || (opsdone < insertPerCollection)) && !workload.isStopRequested()) {
 
@@ -572,8 +572,8 @@ class ClientThread implements Runnable {
   /**
    * The total amount of work this thread is still expected to do.
    */
-  int getOpsTodo() {
-    int todo = opcount - opsdone;
+  long getOpsTodo() {
+    long todo = opcount - opsdone;
     return todo < 0 ? 0 : todo;
   }
 }
@@ -972,7 +972,7 @@ public final class Client {
                                            String collectionsparam,
                                            int scopecount,
                                            String scopesparam,
-                                           int insertstart,
+                                           long insertstart,
                                            Workload workload, Tracer tracer,
                                            CountDownLatch completeLatch) {
     boolean initFailed = false;
@@ -983,14 +983,14 @@ public final class Client {
 
 
     try (final TraceScope span = tracer.newScope(CLIENT_INIT_SPAN)) {
-      int opcount;
+      long opcount;
       if (dotransactions) {
-        opcount = Integer.parseInt(props.getProperty(OPERATION_COUNT_PROPERTY, "0"));
+        opcount = Long.parseLong(props.getProperty(OPERATION_COUNT_PROPERTY, "0"));
       } else {
         if (props.containsKey(INSERT_COUNT_PROPERTY)) {
-          opcount = Integer.parseInt(props.getProperty(INSERT_COUNT_PROPERTY, "0"));
+          opcount = Long.parseLong(props.getProperty(INSERT_COUNT_PROPERTY, "0"));
         } else {
-          opcount = Integer.parseInt(props.getProperty(RECORD_COUNT_PROPERTY, DEFAULT_RECORD_COUNT));
+          opcount = Long.parseLong(props.getProperty(RECORD_COUNT_PROPERTY, DEFAULT_RECORD_COUNT));
         }
       }
 
@@ -1004,7 +1004,7 @@ public final class Client {
           break;
         }
 
-        int threadopcount = opcount / threadcount;
+        long threadopcount = opcount / threadcount;
 
         // ensure correct number of operations, in case opcount is not a multiple of threadcount
         if (threadid < opcount % threadcount) {
