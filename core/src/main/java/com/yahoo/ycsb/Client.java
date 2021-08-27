@@ -370,7 +370,7 @@ class ClientThread implements Runnable {
   private long opcount;
   private double targetOpsPerMs;
 
-  private int opsdone;
+  private long opsdone;
   private int collectioncount;
   private int scopecount;
   private boolean collectionenabled;
@@ -430,7 +430,7 @@ class ClientThread implements Runnable {
     threadcount = threadCount;
   }
   
-  public int getOpsDone() {
+  public long getOpsDone() {
     return opsdone;
   }
 
@@ -759,7 +759,7 @@ public final class Client {
    *
    * @throws IOException Either failed to write to output stream or failed to close it.
    */
-  private static void exportMeasurements(Properties props, int opcount, long runtime)
+  private static void exportMeasurements(Properties props, long opcount, long runtime)
       throws IOException {
     MeasurementsExporter exporter = null;
     try {
@@ -870,7 +870,7 @@ public final class Client {
     String collectionsparam = props.getProperty(COLLECTIONS_PARAM, COLLECTIONS_PARAM_DEFAULT);
     String scopesparam = props.getProperty(SCOPES_PARAM, SCOPES_PARAM_DEFAULT);
 
-    int insertstart = 0;
+    long insertstart = 0;
 
     final List<ClientThread> clients = initDb(dbname, props, threadcount, targetperthreadperms,
         collectionenabled, collectioncount, collectionsparam, scopecount, scopesparam,
@@ -892,7 +892,7 @@ public final class Client {
     Thread terminator = null;
     long st;
     long en;
-    int opsDone;
+    long opsDone;
 
     try (final TraceScope span = tracer.newScope(CLIENT_WORKLOAD_SPAN)) {
 
