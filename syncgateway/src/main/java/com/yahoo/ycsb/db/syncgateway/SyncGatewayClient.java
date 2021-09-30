@@ -250,6 +250,17 @@ public class SyncGatewayClient extends DB {
   }
 
   @Override
+  public void cleanup() throws DBException {
+    if (e2e) {
+      try {
+        restClient.close();
+      } catch (IOException e) {
+        System.out.println(e.toString());
+      }
+    }
+  }
+
+  @Override
   public Status read(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result) {
     assignRandomUserToCurrentIteration();
     if (readMode == SG_READ_MODE_CHANGES) {
@@ -1377,7 +1388,7 @@ public class SyncGatewayClient extends DB {
     }
     EntityUtils.consumeQuietly(responseEntity);
     response.close();
-    restClient.close();
+    //restClient.close();
 
     if (!responseGenericValidation) {
       return 500;
