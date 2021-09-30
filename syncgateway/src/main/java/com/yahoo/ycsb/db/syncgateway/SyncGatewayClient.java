@@ -40,6 +40,8 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
+import org.apache.http.config.SocketConfig;
+import org.apache.http.impl.client.DefaultConnectionKeepAliveStrategy;
 import org.apache.http.impl.DefaultConnectionReuseStrategy;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -1932,11 +1934,16 @@ public class SyncGatewayClient extends DB {
     requestBuilder = requestBuilder.setConnectTimeout(conTimeout);
     requestBuilder = requestBuilder.setConnectionRequestTimeout(readTimeout);
     requestBuilder = requestBuilder.setSocketTimeout(readTimeout);
-    HttpClientBuilder clientBuilder = HttpClientBuilder.create().setDefaultRequestConfig(requestBuilder.build());
+    SocketConfig socketConfig = SocketConfig.custom().setSoKeepAlive(true).setSoTimeout(readTimeout).build();
+    HttpClientBuilder clientBuilder = HttpClientBuilder
+        .create()
+        .setDefaultRequestConfig(requestBuilder.build())
+        .setDefaultSocketConfig(socketConfig);
     return clientBuilder
         .setConnectionManagerShared(true)
         .setConnectionReuseStrategy(new DefaultConnectionReuseStrategy())
         .setConnectionManager(new PoolingHttpClientConnectionManager())
+        .setKeepAliveStrategy(new DefaultConnectionKeepAliveStrategy())
         .build();
   }
 
