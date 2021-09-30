@@ -39,6 +39,8 @@ import org.apache.http.entity.InputStreamEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
+import org.apache.http.impl.DefaultConnectionReuseStrategy;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.Charset;
@@ -1931,7 +1933,11 @@ public class SyncGatewayClient extends DB {
     requestBuilder = requestBuilder.setConnectionRequestTimeout(readTimeout);
     requestBuilder = requestBuilder.setSocketTimeout(readTimeout);
     HttpClientBuilder clientBuilder = HttpClientBuilder.create().setDefaultRequestConfig(requestBuilder.build());
-    return clientBuilder.setConnectionManagerShared(true).build();
+    return clientBuilder
+        .setConnectionManagerShared(true)
+        .setConnectionReuseStrategy(new DefaultConnectionReuseStrategy())
+        .setConnectionManager(new PoolingHttpClientConnectionManager())
+        .build();
   }
 
   private net.spy.memcached.MemcachedClient createMemcachedClient(String memHost, int memPort)
