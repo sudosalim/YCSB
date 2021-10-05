@@ -39,10 +39,6 @@ import org.apache.http.entity.InputStreamEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
-import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
-import org.apache.http.config.SocketConfig;
-import org.apache.http.impl.client.DefaultConnectionKeepAliveStrategy;
-import org.apache.http.impl.DefaultConnectionReuseStrategy;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.Charset;
@@ -250,17 +246,6 @@ public class SyncGatewayClient extends DB {
     }
     if (grantAccessToAllUsers) {
       grantAccessToAllUsers();
-    }
-  }
-
-  @Override
-  public void cleanup() throws DBException {
-    if (e2e) {
-      try {
-        restClient.close();
-      } catch (IOException e) {
-        System.out.println(e.toString());
-      }
     }
   }
 
@@ -1392,7 +1377,7 @@ public class SyncGatewayClient extends DB {
     }
     EntityUtils.consumeQuietly(responseEntity);
     response.close();
-    //restClient.close();
+    restClient.close();
 
     if (!responseGenericValidation) {
       return 500;
@@ -1934,17 +1919,8 @@ public class SyncGatewayClient extends DB {
     requestBuilder = requestBuilder.setConnectTimeout(conTimeout);
     requestBuilder = requestBuilder.setConnectionRequestTimeout(readTimeout);
     requestBuilder = requestBuilder.setSocketTimeout(readTimeout);
-    SocketConfig socketConfig = SocketConfig.custom().setSoKeepAlive(true).setSoTimeout(readTimeout).build();
-    HttpClientBuilder clientBuilder = HttpClientBuilder
-        .create()
-        .setDefaultRequestConfig(requestBuilder.build())
-        .setDefaultSocketConfig(socketConfig);
-    return clientBuilder
-        .setConnectionManagerShared(true)
-        .setConnectionReuseStrategy(new DefaultConnectionReuseStrategy())
-        .setConnectionManager(new PoolingHttpClientConnectionManager())
-        .setKeepAliveStrategy(new DefaultConnectionKeepAliveStrategy())
-        .build();
+    HttpClientBuilder clientBuilder = HttpClientBuilder.create().setDefaultRequestConfig(requestBuilder.build());
+    return clientBuilder.setConnectionManagerShared(true).build();
   }
 
   private net.spy.memcached.MemcachedClient createMemcachedClient(String memHost, int memPort)
