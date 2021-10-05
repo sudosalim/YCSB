@@ -909,8 +909,6 @@ public class Couchbase2Client extends DB {
 
     for(int i = 0; i < tries; i++) {
       try {
-        String doc = encodeSgw(docId, values);
-        System.out.println(doc);
         waitForMutationResponse(bucket.async().insert(
             RawJsonDocument.create(docId, documentExpiry, encodeSgw(docId, values)),
             persistTo,
