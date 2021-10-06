@@ -332,7 +332,9 @@ public class Couchbase2Client extends DB {
 
     try {
       String docId = formatId(table, key);
-      if (kv) {
+      if (sgw) {
+        return updateSgwKv(docId, values);
+      } else if (kv) {
         return updateKv(docId, values);
       } else {
         return updateN1ql(docId, values);
@@ -481,7 +483,9 @@ public class Couchbase2Client extends DB {
   private Status upsert(final String table, final String key, final HashMap<String, ByteIterator> values) {
     try {
       String docId = formatId(table, key);
-      if (kv) {
+      if (sgw) {
+        return upsertSgwKv(docId, values);
+      } else if (kv) {
         return upsertKv(docId, values);
       } else {
         return upsertN1ql(docId, values);
@@ -926,6 +930,24 @@ public class Couchbase2Client extends DB {
 
     throw new RuntimeException("Still receiving TMPFAIL from the server after trying " + tries + " times. " +
         "Check your server.");
+  }
+
+  private Status upsertSgwKv(final String docId, final HashMap<String, ByteIterator> values) {
+    waitForMutationResponse(bucket.async().upsert(
+        RawJsonDocument.create(docId, documentExpiry, encodeSgw(docId, values)),
+        persistTo,
+        replicateTo
+    ));
+    return Status.OK;
+  }
+
+  private Status updateSgwKv(final String docId, final HashMap<String, ByteIterator> values) {
+    waitForMutationResponse(bucket.async().replace(
+        RawJsonDocument.create(docId, documentExpiry, encodeSgw(docId, values)),
+        persistTo,
+        replicateTo
+    ));
+    return Status.OK;
   }
 
   private String encodeSgw(final String docId, final HashMap<String, ByteIterator> source) {
