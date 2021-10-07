@@ -119,6 +119,8 @@ public class SyncGatewayClient extends DB {
   private static final String SG_E2E = "syncgateway.e2e";
   private static final String SG_MAX_RETRY = "syncgateway.maxretry";
   private static final String SG_RETRY_DELAY = "syncgateway.retrydelay";
+  private static final String SG_E2E_CHANNEL_LIST = "syncgateway.channellist";
+  private static final String SG_E2E_USER = "syncgateway.user";
   private String portAdmin;
   private String portPublic;
   private boolean useAuth;
@@ -131,6 +133,8 @@ public class SyncGatewayClient extends DB {
   private int channelsPerUser;
   private int channelsPerDocument;
   private String[] hosts;
+  private String[] e2echannelList;
+  private String e2euser;
   private String host;
   private int insertMode;
   private String sequencestart;
@@ -170,6 +174,9 @@ public class SyncGatewayClient extends DB {
     String hostParam = props.getProperty(SG_HOST, "127.0.0.1");
     hosts = hostParam.split(",");
     host = hosts[rand.nextInt(hosts.length)];
+    e2euser = props.getProperty(SG_E2E_USER, "sg-user-0");
+    String channelListParam = props.getProperty(SG_E2E_CHANNEL_LIST, "channel-0");
+    e2echannelList = channelListParam.split(",");
     String db = props.getProperty(SG_DB, "db");
     portAdmin = props.getProperty(SG_PORT_ADMIN, "4985");
     portPublic = props.getProperty(SG_PORT_PUBLIC, "4984");
@@ -405,8 +412,9 @@ public class SyncGatewayClient extends DB {
   private Status e2eUpdate(String table, String key, HashMap<String, ByteIterator> values) {
     int responseCode;
     String port = (useAuth) ? portPublic : portAdmin;
-    assignRandomUserToCurrentIteration();
-    String requestBody = buildDocumentFromMap(key, values);
+    //assignRandomUserToCurrentIteration();
+    currentIterationUser = e2euser;
+    String requestBody = e2eBuildDocumentFromMap(key, values);
     String docRevision = getRevision(key);
     if (docRevision == null) {
       System.err.println("Revision for document " + key + " not found in local");
@@ -554,7 +562,8 @@ public class SyncGatewayClient extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String requestBody = null;
     String fullUrl;
-    requestBody = buildDocumentFromMap(key, values);
+    currentIterationUser = e2euser;
+    requestBody = e2eBuildDocumentFromMap(key, values);
     fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
@@ -1734,6 +1743,21 @@ public class SyncGatewayClient extends DB {
       channelsNode.add(getChannelNameByKey(key));
     } else {
       channelsNode.add(getChannelForUser());
+    }
+    root.set("channels", channelsNode);
+    values.forEach((k, v) -> {
+        root.put(k, v.toString());
+      });
+    return root.toString();
+  }
+
+  private String e2eBuildDocumentFromMap(String key, HashMap<String, ByteIterator> values) {
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    ArrayNode channelsNode = factory.arrayNode();
+    root.put("_id", key);
+    for (int i = 0; i < e2echannelList.length; i++) {
+      channelsNode.add(e2echannelList[i]);
     }
     root.set("channels", channelsNode);
     values.forEach((k, v) -> {
