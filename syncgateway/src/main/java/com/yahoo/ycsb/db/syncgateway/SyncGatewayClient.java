@@ -1761,13 +1761,7 @@ public class SyncGatewayClient extends DB {
     }
     root.set("channels", channelsNode);
     values.forEach((k, v) -> {
-        root.put(k, "channelschannelschannelschannelschannelschannelschannelschannelschannelschannel" +
-            "schannelschannelschannelschannelscchannelschannelschannelschannelschannelschannelschannelsc" +
-            "channchannelschannelschannelschannelschannelschannelschannelschannelschannelschannelschannel" +
-            "schannelselschannelschannelschannelshannelschannelshannelschannelschannelschannelschachannel" +
-            "channelschannelschannelschannelschannelschannelschannelschannelschannelschannelschannelschann" +
-            "channelschannelschannelschannelschannelschannelschannelschannelschannelschannelschannelschannels" +
-            "elschannelsschannelschannelsnnelschannels");
+        root.put(k, v.toString());
       });
     return root.toString();
   }
