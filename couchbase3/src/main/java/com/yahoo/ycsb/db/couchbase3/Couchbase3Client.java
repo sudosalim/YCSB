@@ -402,9 +402,17 @@ public class Couchbase3Client extends DB {
       Collection collection = bucket.defaultCollection();
 
       if (useDurabilityLevels) {
-        collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
+        if (upsert) {
+          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
+        } else {
+          collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
+        }
       } else {
-        collection.replace(formatId(table, key), encode(values), replaceOptions().durability(persistTo, replicateTo));
+        if (upsert) {
+          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
+        } else {
+          collection.replace(formatId(table, key), encode(values), replaceOptions().durability(persistTo, replicateTo));
+        }
       }
       return Status.OK;
     } catch (Throwable t) {
@@ -422,9 +430,17 @@ public class Couchbase3Client extends DB {
       Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
 
       if (useDurabilityLevels) {
-        collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
+        if (upsert) {
+          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
+        } else {
+          collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
+        }
       } else {
-        collection.replace(formatId(table, key), encode(values), replaceOptions().durability(persistTo, replicateTo));
+        if (upsert) {
+          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
+        } else {
+          collection.replace(formatId(table, key), encode(values), replaceOptions().durability(persistTo, replicateTo));
+        }
       }
       return Status.OK;
     } catch (Throwable t) {
