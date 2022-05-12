@@ -216,6 +216,15 @@ public class Couchbase3Client extends DB {
               .securityConfig(SecurityConfig.enableTls(true)
                   .trustCertificate(Paths.get(certificateFile)))
               .build();
+        } else if (sslMode.equals("capella")) {
+          environment = ClusterEnvironment
+              .builder()
+              .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
+              .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints)
+                      .enableDnsSrv(true))
+              .securityConfig(SecurityConfig.enableTls(true)
+                      .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
+              .build();
         } else if (sslMode.equals("auth")) {
           environment = ClusterEnvironment
               .builder()
