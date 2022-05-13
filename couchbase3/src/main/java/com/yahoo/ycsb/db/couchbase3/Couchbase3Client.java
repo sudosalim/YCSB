@@ -19,6 +19,7 @@ package com.yahoo.ycsb.db.couchbase3;
 
 
 import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.JsonNode;
+import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import com.couchbase.client.core.env.IoConfig;
 import com.couchbase.client.core.env.SeedNode;
 import com.couchbase.client.core.env.SecurityConfig;
@@ -215,6 +216,15 @@ public class Couchbase3Client extends DB {
               .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints))
               .securityConfig(SecurityConfig.enableTls(true)
                   .trustCertificate(Paths.get(certificateFile)))
+              .build();
+        } else if (sslMode.equals("capella")) {
+          environment = ClusterEnvironment
+              .builder()
+              .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
+              .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints)
+                      .enableDnsSrv(true))
+              .securityConfig(SecurityConfig.enableTls(true)
+                      .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
               .build();
         } else if (sslMode.equals("auth")) {
           environment = ClusterEnvironment
