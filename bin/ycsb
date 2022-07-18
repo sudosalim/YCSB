@@ -119,7 +119,6 @@ OPTIONS = {
     "-threads n"     : "Number of client threads (default: 1)",
     "-cp path"       : "Additional Java classpath entries",
     "-jvm-args args" : "Additional arguments to the JVM",
-    "-build-only"    : "Only build, don't run YCSB",
     "-force-rebuild" : "Force a clean rebuild"
 }
 
