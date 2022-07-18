@@ -48,6 +48,11 @@ COMMANDS = {
         "description" : "Execute the transaction phase",
         "main"        : "com.yahoo.ycsb.Client",
     },
+    "build" : {
+        "command"     : "",
+        "description" : "Build YCSB without executing (source checkout only)",
+        "main"        : ""
+    }
 }
 
 DATABASES = {
@@ -258,8 +263,6 @@ def main():
                    help="""Command to run.""")
     p.add_argument("database", choices=sorted(DATABASES),
                    help="""Database to test.""")
-    p.add_argument("-build-only", dest="build_only", action="store_true",
-                   help="""Only build, don't run YCSB""")
     p.add_argument("-force-rebuild", dest="force_rebuild", action="store_true",
                    help="""Force a clean rebuild""")
     args, remaining = p.parse_known_args()
@@ -330,12 +333,18 @@ def main():
         db_location = "core" if (binding == "basic" or binding == "basicts") else binding
         project = "core" if (binding == "basic" or binding == "basicts") else binding + "-binding"
         db_dir = os.path.join(ycsb_home, db_location)
-        # goes first so we can rely on side-effect of 
+
+        if args.command == "build":
+            get_classpath_from_maven(project, binding, CP_FILE)
+            return 0
+
+        # goes first so we can rely on side-effect of package
         cp_is_cached = os.path.isfile(CP_FILE)
         if args.force_rebuild or not cp_is_cached:
             maven_says = get_classpath_from_maven(project, binding, CP_FILE)
         elif cp_is_cached:
             maven_says = get_classpath_from_file(binding, CP_FILE)
+
         # TODO when we have a version property, skip the glob
         cp = find_jars(os.path.join(db_dir, "target"),
                        project + "*.jar")
@@ -353,9 +362,7 @@ def main():
         ycsb_command.append(command)
     print >> sys.stderr, " ".join(ycsb_command)
     try:
-        if not args.build_only:
-            return subprocess.call(ycsb_command)
-        return 0
+        return subprocess.call(ycsb_command)
     except OSError as e:
         if e.errno == errno.ENOENT:
             error('Command failed. Is java installed and on your PATH?')
