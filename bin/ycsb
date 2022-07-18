@@ -114,7 +114,11 @@ OPTIONS = {
     "-threads n"     : "Number of client threads (default: 1)",
     "-cp path"       : "Additional Java classpath entries",
     "-jvm-args args" : "Additional arguments to the JVM",
+    "-build-only"    : "Only build, don't run YCSB",
+    "-force-rebuild" : "Force a clean rebuild"
 }
+
+CP_FILE = 'cp.txt'
 
 def usage():
     output = io.BytesIO()
@@ -203,24 +207,34 @@ def is_distribution():
     # If there's a top level pom, we're a source checkout. otherwise a dist artifact
     return "pom.xml" not in os.listdir(get_ycsb_home())
 
+def get_classpath_from_file(binding, filename):
+    if not os.path.isfile(filename):
+        error("Attempting to read classpath from file failed. File ./"
+             + binding + "/" + filename + " does not exist.")
+        sys.exit(1)
+
+    f = open(binding + "/" + filename, 'r')
+    cp_str = f.read()
+    f.close()
+
+    return cp_str[len("classpath="):]
+
 # Run the maven dependency plugin to get the local jar paths.
 # presumes maven can run, so should only be run on source checkouts
 # will invoke the 'package' goal for the given binding in order to resolve intra-project deps
 # presumes maven properly handles system-specific path separators
 # Given module is full module name eg. 'core' or 'couchbase-binding'
-def get_classpath_from_maven(module):
+def get_classpath_from_maven(module, binding, outputfile):
     try:
         debug("Running 'mvn -pl com.yahoo.ycsb:" + module + " -am package -DskipTests "
               "dependency:build-classpath -DincludeScope=compile -Dmdep.outputFilterFile=true'")
-        mvn_output = check_output(["mvn", "-pl", "com.yahoo.ycsb:" + module,
-                                   "-am", "package", "-DskipTests",
-                                   "dependency:build-classpath",
-                                   "-DincludeScope=compile",
-                                   "-Dmdep.outputFilterFile=true"])
-        # the above outputs a "classpath=/path/tojar:/path/to/other/jar" for each module
-        # the last module will be the datastore binding
-        line = [x for x in mvn_output.splitlines() if x.startswith("classpath=")][-1:]
-        return line[0][len("classpath="):]
+        check_output(["mvn", "-pl", "com.yahoo.ycsb:" + module,
+                      "-am", "package", "-DskipTests",
+                      "dependency:build-classpath",
+                      "-DincludeScope=compile",
+                      "-Dmdep.outputFilterFile=true",
+                      "-Dmdep.outputFile=" + outputfile])
+        return get_classpath_from_file(binding, outputfile)
     except subprocess.CalledProcessError, err:
         error("Attempting to generate a classpath from Maven failed "
               "with return code '" + str(err.returncode) + "'. The output from "
@@ -244,6 +258,10 @@ def main():
                    help="""Command to run.""")
     p.add_argument("database", choices=sorted(DATABASES),
                    help="""Database to test.""")
+    p.add_argument("-build-only", dest="build_only", action="store_true",
+                   help="""Only build, don't run YCSB""")
+    p.add_argument("-force-rebuild", dest="force_rebuild", action="store_true",
+                   help="""Force a clean rebuild""")
     args, remaining = p.parse_known_args()
     ycsb_home = get_ycsb_home()
 
@@ -312,8 +330,12 @@ def main():
         db_location = "core" if (binding == "basic" or binding == "basicts") else binding
         project = "core" if (binding == "basic" or binding == "basicts") else binding + "-binding"
         db_dir = os.path.join(ycsb_home, db_location)
-        # goes first so we can rely on side-effect of package
-        maven_says = get_classpath_from_maven(project)
+        # goes first so we can rely on side-effect of 
+        cp_is_cached = os.path.isfile(CP_FILE)
+        if args.force_rebuild or not cp_is_cached:
+            maven_says = get_classpath_from_maven(project, binding, CP_FILE)
+        elif cp_is_cached:
+            maven_says = get_classpath_from_file(binding, CP_FILE)
         # TODO when we have a version property, skip the glob
         cp = find_jars(os.path.join(db_dir, "target"),
                        project + "*.jar")
@@ -331,7 +353,9 @@ def main():
         ycsb_command.append(command)
     print >> sys.stderr, " ".join(ycsb_command)
     try:
-        return subprocess.call(ycsb_command)
+        if not args.build_only:
+            return subprocess.call(ycsb_command)
+        return 0
     except OSError as e:
         if e.errno == errno.ENOENT:
             error('Command failed. Is java installed and on your PATH?')
