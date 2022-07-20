@@ -327,7 +327,7 @@ def main():
         cp.extend(find_jars(os.path.join(db_dir, "lib")))
     else:
         warn("Running against a source checkout. In order to get our runtime "
-             "dependencies we'll have to invoke Maven. Depending on the state "
+             "dependencies we may have to invoke Maven. Depending on the state "
              "of your system, this may take ~30-45 seconds")
         db_location = "core" if (binding == "basic" or binding == "basicts") else binding
         project = "core" if (binding == "basic" or binding == "basicts") else binding + "-binding"
@@ -338,10 +338,11 @@ def main():
             return 0
 
         # goes first so we can rely on side-effect of package
-        cp_is_cached = os.path.isfile(CP_FILE)
+        cp_is_cached = os.path.isfile(binding + "/" + CP_FILE)
         if args.force_rebuild or not cp_is_cached:
             maven_says = get_classpath_from_maven(project, binding, CP_FILE)
         elif cp_is_cached:
+            debug("Cached runtime dependencies found. Skipping running Maven.")
             maven_says = get_classpath_from_file(binding, CP_FILE)
 
         # TODO when we have a version property, skip the glob
