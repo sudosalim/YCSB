@@ -196,12 +196,13 @@ def is_distribution():
     return "pom.xml" not in os.listdir(get_ycsb_home())
 
 def get_classpath_from_file(binding, filename):
-    if not os.path.isfile(filename):
+    classpath_file = binding + "/" + filename
+    if not os.path.isfile(classpath_file):
         error("Attempting to read classpath from file failed. File ./"
-             + binding + "/" + filename + " does not exist.")
+             + classpath_file + " does not exist.")
         sys.exit(1)
 
-    f = open(binding + "/" + filename, 'r')
+    f = open(classpath_file, 'r')
     cp_str = f.read()
     f.close()
 
