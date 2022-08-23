@@ -341,6 +341,7 @@ public class CoreWorkload extends Workload {
   protected int zeropadding;
   protected int insertionRetryLimit;
   protected int insertionRetryInterval;
+  protected long sgInserstart = 0;
 
   private Measurements measurements = Measurements.getMeasurements();
 
@@ -408,6 +409,11 @@ public class CoreWorkload extends Workload {
         Long.parseLong(p.getProperty(INSERT_START_PROPERTY, INSERT_START_PROPERTY_DEFAULT));
     //System.err.println("printing INSERT_START_PROPERTY within " +
         //"Coreworkload init" + insertstart);
+    sgInserstart = insertstart;
+
+    int insertcountset =
+        Integer.parseInt(p.getProperty(INSERT_COUNT_PROPERTY, "0"));
+
     long insertcount=
         Long.parseLong(p.getProperty(INSERT_COUNT_PROPERTY, String.valueOf(recordcount - insertstart)));
     //System.err.println("printing INSERT_COUNT_PROPERTY within " +
@@ -456,7 +462,12 @@ public class CoreWorkload extends Workload {
 
     transactioninsertkeysequence = new AcknowledgedCounterGenerator(recordcount);
     if (requestdistrib.compareTo("uniform") == 0) {
-      keychooser = new UniformLongGenerator(insertstart, insertstart + insertcount - 1);
+      // keychooser = new UniformLongGenerator(insertstart, insertstart + insertcount - 1);
+      if (insertcountset > 0) {
+        keychooser = new UniformLongGenerator(insertstart, insertstart + insertcount - 1);
+      } else {
+        keychooser = new UniformLongGenerator(0, recordcount);
+      }
     } else if (requestdistrib.compareTo("sequential") == 0) {
       keychooser = new SequentialGenerator(insertstart, insertstart + insertcount - 1);
     } else if (requestdistrib.compareTo("zipfian") == 0) {
@@ -474,7 +485,8 @@ public class CoreWorkload extends Workload {
       long opcount = Long.parseLong(p.getProperty(Client.OPERATION_COUNT_PROPERTY));
       long expectednewkeys = (long) ((opcount) * insertproportion * 2.0); // 2 is fudge factor
 
-      keychooser = new ScrambledZipfianGenerator(insertstart, insertstart + insertcount + expectednewkeys);
+      // keychooser = new ScrambledZipfianGenerator(insertstart, insertstart + insertcount + expectednewkeys);
+      keychooser = new ScrambledZipfianGenerator(0, recordcount);
     } else if (requestdistrib.compareTo("latest") == 0) {
       keychooser = new SkewedLatestGenerator(transactioninsertkeysequence);
     } else if (requestdistrib.equals("hotspot")) {
@@ -587,11 +599,10 @@ public class CoreWorkload extends Workload {
 
     //System.err.println("keyname/dbkey value" + dbkey);
 
-    HashMap<String, ByteIterator> values = buildValues(dbkey);
-
     Status status;
     int numOfRetries = 0;
     do {
+      HashMap<String, ByteIterator> values = buildValues(dbkey);
       status = db.insert(table, dbkey, values);
       if (null != status && status.isOk()) {
         break;
@@ -823,7 +834,7 @@ public class CoreWorkload extends Workload {
 
   public void doTransactionInsert(DB db) {
     // choose the next key
-    long keynum = transactioninsertkeysequence.nextValue();
+    long keynum = transactioninsertkeysequence.nextValue() + sgInserstart;
 
     try {
       String dbkey = buildKeyName(keynum);

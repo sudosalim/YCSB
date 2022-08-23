@@ -29,6 +29,7 @@ import com.couchbase.client.deps.com.fasterxml.jackson.core.JsonFactory;
 import com.couchbase.client.deps.com.fasterxml.jackson.core.JsonGenerator;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.JsonNode;
 import com.couchbase.client.deps.com.fasterxml.jackson.databind.node.ObjectNode;
+import com.couchbase.client.deps.com.fasterxml.jackson.databind.node.ArrayNode;
 import com.couchbase.client.deps.io.netty.channel.DefaultSelectStrategyFactory;
 import com.couchbase.client.deps.io.netty.channel.EventLoopGroup;
 import com.couchbase.client.deps.io.netty.channel.SelectStrategy;
@@ -124,6 +125,8 @@ public class Couchbase2Client extends DB {
   private long kvTimeout;
   private boolean adhoc;
   private boolean kv;
+  private boolean sgw;
+  private int sgwChannels;
   private int maxParallelism;
   private String host;
   private int kvEndpoints;
@@ -148,6 +151,8 @@ public class Couchbase2Client extends DB {
     syncMutResponse = props.getProperty("couchbase.syncMutationResponse", "true").equals("true");
     adhoc = props.getProperty("couchbase.adhoc", "false").equals("true");
     kv = props.getProperty("couchbase.kv", "true").equals("true");
+    sgw = props.getProperty("couchbase.sgw", "false").equals("true");
+    sgwChannels = Integer.parseInt(props.getProperty("couchbase.sgwChannels", "0"));
     maxParallelism = Integer.parseInt(props.getProperty("couchbase.maxParallelism", "1"));
     kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
     queryEndpoints = Integer.parseInt(props.getProperty("couchbase.queryEndpoints", "1"));
@@ -330,7 +335,9 @@ public class Couchbase2Client extends DB {
 
     try {
       String docId = formatId(table, key);
-      if (kv) {
+      if (sgw) {
+        return updateSgwKv(docId, values);
+      } else if (kv) {
         return updateKv(docId, values);
       } else {
         return updateN1ql(docId, values);
@@ -392,7 +399,9 @@ public class Couchbase2Client extends DB {
 
     try {
       String docId = formatId(table, key);
-      if (kv) {
+      if (sgw) {
+        return insertSgwKv(docId, values);
+      } else if (kv) {
         return insertKv(docId, values);
       } else {
         return insertN1ql(docId, values);
@@ -477,7 +486,9 @@ public class Couchbase2Client extends DB {
   private Status upsert(final String table, final String key, final Map<String, ByteIterator> values) {
     try {
       String docId = formatId(table, key);
-      if (kv) {
+      if (sgw) {
+        return upsertSgwKv(docId, values);
+      } else if (kv) {
         return upsertKv(docId, values);
       } else {
         return upsertN1ql(docId, values);
@@ -898,6 +909,74 @@ public class Couchbase2Client extends DB {
       throw new RuntimeException("Could not encode JSON value");
     }
     return writer.toString();
+  }
+
+  private Status insertSgwKv(final String docId, final Map<String, ByteIterator> values) {
+    int tries = 60; // roughly 60 seconds with the 1 second sleep, not 100% accurate.
+
+    for(int i = 0; i < tries; i++) {
+      try {
+        waitForMutationResponse(bucket.async().insert(
+            RawJsonDocument.create(docId, documentExpiry, encodeSgw(docId, values)),
+            persistTo,
+            replicateTo
+        ));
+        return Status.OK;
+      } catch (TemporaryFailureException ex) {
+        try {
+          Thread.sleep(1000);
+        } catch (InterruptedException e) {
+          throw new RuntimeException("Interrupted while sleeping on TMPFAIL backoff.", ex);
+        }
+      }
+    }
+
+    throw new RuntimeException("Still receiving TMPFAIL from the server after trying " + tries + " times. " +
+        "Check your server.");
+  }
+
+  private Status upsertSgwKv(final String docId, final Map<String, ByteIterator> values) {
+    waitForMutationResponse(bucket.async().upsert(
+        RawJsonDocument.create(docId, documentExpiry, encodeSgw(docId, values)),
+        persistTo,
+        replicateTo
+    ));
+    return Status.OK;
+  }
+
+  private Status updateSgwKv(final String docId, final Map<String, ByteIterator> values) {
+    waitForMutationResponse(bucket.async().replace(
+        RawJsonDocument.create(docId, documentExpiry, encodeSgw(docId, values)),
+        persistTo,
+        replicateTo
+    ));
+    return Status.OK;
+  }
+
+  private String encodeSgw(final String docId, final Map<String, ByteIterator> source) {
+    Map<String, String> stringMap = StringByteIterator.getStringMap(source);
+    ObjectNode node = JacksonTransformers.MAPPER.createObjectNode();
+    for (Map.Entry<String, String> pair : stringMap.entrySet()) {
+      node.put(pair.getKey(), pair.getValue());
+    }
+    node.put("_id", docId);
+    ArrayNode channelsNode = JacksonTransformers.MAPPER.createArrayNode();
+    channelsNode.add(getChannelNameByKey(docId));
+    node.set("channels", channelsNode);
+    JsonFactory jsonFactory = new JsonFactory();
+    Writer writer = new StringWriter();
+    try {
+      JsonGenerator jsonGenerator = jsonFactory.createGenerator(writer);
+      JacksonTransformers.MAPPER.writeTree(jsonGenerator, node);
+    } catch (Exception e) {
+      throw new RuntimeException("Could not encode JSON value");
+    }
+    return writer.toString();
+  }
+
+  private String getChannelNameByKey(String key) {
+    int channelId = Math.abs(key.hashCode() % sgwChannels);
+    return "channel-" + channelId;
   }
 }
 

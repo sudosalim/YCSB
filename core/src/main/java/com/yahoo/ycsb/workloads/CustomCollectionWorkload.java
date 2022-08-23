@@ -346,6 +346,7 @@ public class CustomCollectionWorkload extends Workload {
   protected int zeropadding;
   protected int insertionRetryLimit;
   protected int insertionRetryInterval;
+  protected long sgInserstart = 0;
   protected boolean collectionenabled;
   protected long collectioncount;
   protected long recordspercollection;
@@ -431,6 +432,11 @@ public class CustomCollectionWorkload extends Workload {
         Long.parseLong(p.getProperty(INSERT_START_PROPERTY, INSERT_START_PROPERTY_DEFAULT));
     System.err.println("printing INSERT_START_PROPERTY within " +
         "Coreworkload init" + insertstart);
+    sgInserstart = insertstart;
+
+    int insertcountset =
+        Integer.parseInt(p.getProperty(INSERT_COUNT_PROPERTY, "0"));
+    
     long insertcount=
         Integer.parseInt(p.getProperty(INSERT_COUNT_PROPERTY, String.valueOf(recordcount - insertstart)));
     System.err.println("printing INSERT_COUNT_PROPERTY within " +
@@ -487,7 +493,12 @@ public class CustomCollectionWorkload extends Workload {
     //transactioninsertkeysequenceskewed = new AcknowledgedCounterGenerator(recordcount);
 
     if (requestdistrib.compareTo("uniform") == 0) {
-      keychooser = new UniformLongGenerator(insertstart, insertstart + insertcount - 1);
+      // keychooser = new UniformLongGenerator(insertstart, insertstart + insertcount - 1);
+      if (insertcountset > 0) {
+        keychooser = new UniformLongGenerator(insertstart, insertstart + insertcount - 1);
+      } else {
+        keychooser = new UniformLongGenerator(0, recordcount);
+      }
     } else if (requestdistrib.compareTo("sequential") == 0) {
       keychooser = new SequentialGenerator(insertstart, insertstart + insertcount - 1);
     } else if (requestdistrib.compareTo("zipfian") == 0) {
@@ -505,7 +516,8 @@ public class CustomCollectionWorkload extends Workload {
       int opcount = Integer.parseInt(p.getProperty(Client.OPERATION_COUNT_PROPERTY));
       int expectednewkeys = (int) ((opcount) * insertproportion * 2.0); // 2 is fudge factor
 
-      keychooser = new ScrambledZipfianGenerator(insertstart, insertstart + insertcount + expectednewkeys);
+      // keychooser = new ScrambledZipfianGenerator(insertstart, insertstart + insertcount + expectednewkeys);
+      keychooser = new ScrambledZipfianGenerator(0, recordcount);
     } else if (requestdistrib.compareTo("latest") == 0) {
       keychooser = new SkewedLatestGenerator(transactioninsertkeysequence);
     } else if (requestdistrib.equals("hotspot")) {
@@ -621,12 +633,11 @@ public class CustomCollectionWorkload extends Workload {
     String dbkey = buildKeyName(keynum);
 
     //System.err.println("keyname/dbkey value" + dbkey);
-
-    HashMap<String, ByteIterator> values = buildValues(dbkey);
-
+   
     Status status;
     int numOfRetries = 0;
     do {
+      HashMap<String, ByteIterator> values = buildValues(dbkey);
       status = db.insert(table, dbkey, values);
       if (null != status && status.isOk()) {
         break;
@@ -661,12 +672,11 @@ public class CustomCollectionWorkload extends Workload {
     long keynum = key;
 
     String dbkey = buildKeyName(keynum);
-
-    HashMap<String, ByteIterator> values = buildValues(dbkey);
-
+    
     Status status;
     int numOfRetries = 0;
     do {
+      HashMap<String, ByteIterator> values = buildValues(dbkey);
 
       status = db.insert(table, dbkey, values, scope, collection);
       if (null != status && status.isOk()) {
@@ -959,12 +969,12 @@ public class CustomCollectionWorkload extends Workload {
 
   public void doTransactionInsert(DB db) {
     // choose the next key
-    long keynum = transactioninsertkeysequence.nextValue();
+    long keynum = transactioninsertkeysequence.nextValue() + sgInserstart;
 
-    int collnum = (int) nextcollectionNum();
+    int collnum = (int) nextcollectionNum() + (int)sgInserstart;
     String collname = collections[collnum];
 
-    int scopenum = (int) nextscopeNum();
+    int scopenum = (int) nextscopeNum() + (int)sgInserstart;
     String scopename = scopes[scopenum];
 
     try {

@@ -161,6 +161,8 @@ LICENSE file.
     <module>s3</module>
     <module>solr</module>
     <module>solr6</module>
+    <module>syncgateway</module>
+    <module>syncgateway3</module>
     <module>tarantool</module>
     <!--<module>voldemort</module>-->
   </modules>
