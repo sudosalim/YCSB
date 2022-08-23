@@ -479,19 +479,12 @@ public class CustomCollectionWorkload extends Workload {
     keysequence = new CounterGenerator(insertstart);
     operationchooser = createOperationGenerator(p);
 
-    /** sequentially generation of collections
-     * */
-
     transactioninsertcollectionsequence = new AcknowledgedCounterGenerator(collectioncount);
     transactioninsertscopesequence = new AcknowledgedCounterGenerator(scopes.length);
 
     collectionchooser = new SequentialGenerator(insertstart, insertstart+collectioncount -1);
     scopechooser = new SequentialGenerator(insertstart, insertstart+scopes.length -1);
-
-
     transactioninsertkeysequence = new AcknowledgedCounterGenerator(recordcount);
-    //transactioninsertkeysequenceskewed = new AcknowledgedCounterGenerator(recordcount);
-
     if (requestdistrib.compareTo("uniform") == 0) {
       // keychooser = new UniformLongGenerator(insertstart, insertstart + insertcount - 1);
       if (insertcountset > 0) {
@@ -516,7 +509,6 @@ public class CustomCollectionWorkload extends Workload {
       int opcount = Integer.parseInt(p.getProperty(Client.OPERATION_COUNT_PROPERTY));
       int expectednewkeys = (int) ((opcount) * insertproportion * 2.0); // 2 is fudge factor
 
-      // keychooser = new ScrambledZipfianGenerator(insertstart, insertstart + insertcount + expectednewkeys);
       keychooser = new ScrambledZipfianGenerator(0, recordcount);
     } else if (requestdistrib.compareTo("latest") == 0) {
       keychooser = new SkewedLatestGenerator(transactioninsertkeysequence);
@@ -532,7 +524,6 @@ public class CustomCollectionWorkload extends Workload {
     }
 
     fieldchooser = new UniformLongGenerator(0, fieldcount - 1);
-
     if (scanlengthdistrib.compareTo("uniform") == 0) {
       scanlength = new UniformLongGenerator(minscanlength, maxscanlength);
     } else if (scanlengthdistrib.compareTo("zipfian") == 0) {

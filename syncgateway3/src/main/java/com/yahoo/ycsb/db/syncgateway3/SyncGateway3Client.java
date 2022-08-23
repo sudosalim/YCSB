@@ -289,7 +289,7 @@ public class SyncGateway3Client extends DB {
   private Status readChanges(String key, String scope, String coll) {
     try {
       String seq = getLocalSequenceForUser(currentIterationUser, scope, coll);
-      checkForChanges(seq, getChannelNameByKey(key));
+      checkForChanges(seq, getChannelNameByKey(key), scope, coll);
     } catch (Exception e) {
       return Status.ERROR;
     }
@@ -303,10 +303,10 @@ public class SyncGateway3Client extends DB {
       if (deltaSync || e2e) {
         seq = getLocalSequenceForUser(currentIterationUser, scope, coll);
       } else {
-        seq = getLastSequenceGlobal();
+        seq = getLastSequenceGlobal(scope, coll);
       }
       seq = String.valueOf(Integer.parseInt(seq) - 200);
-      checkForChanges(seq, getChannelNameByKey(key));
+      checkForChanges(seq, getChannelNameByKey(key), scope, coll);
     } catch (Exception e) {
       return Status.ERROR;
     }
@@ -316,7 +316,7 @@ public class SyncGateway3Client extends DB {
 
   private Status readAllChanges(String key, String scope, String coll) {
     try {
-      checkForChanges("0", getChannelNameByKey(key));
+      checkForChanges("0", getChannelNameByKey(key), scope, coll);
     } catch (Exception e) {
       return Status.ERROR;
     }
@@ -325,7 +325,7 @@ public class SyncGateway3Client extends DB {
 
   private Status readChangesWithLimit() {
     try {
-      checkForChangesWithLimit("0", readLimit);
+      checkForChangesWithLimit("0", readLimit, scope, coll);
     } catch (Exception e) {
       return Status.ERROR;
     }
@@ -369,7 +369,7 @@ public class SyncGateway3Client extends DB {
                      String scope, String coll) {
     assignRandomUserToCurrentIteration();
     if (grantAccessInScanOperation) {
-      insertAccessGrant(currentIterationUser);
+      insertAccessGrant(currentIterationUser, scope, coll);
     }
     return authRandomUser();
   }
@@ -518,7 +518,7 @@ public class SyncGateway3Client extends DB {
     System.out.println("The scope is: " + scope)
     System.out.println("The collection is: " + coll)
     if (loadMode == SG_LOAD_MODE_USERS) {
-      return insertUser(table, key, values);
+      return insertUser(table, key, values, scope, coll);
     }
     assignRandomUserToCurrentIteration();
     if (deltaSync) {
@@ -563,7 +563,7 @@ public class SyncGateway3Client extends DB {
     return result;
   }
 
-  private Status deltaSyncInsertDocument(String table, String key, HashMap<String, ByteIterator> values,
+  private Status deltaSyncInsertDocumedocumentEndpointnt(String table, String key, HashMap<String, ByteIterator> values,
                                          String scope, String coll) {
     String port = (useAuth) ? portPublic : portAdmin;
 
@@ -625,7 +625,7 @@ public class SyncGateway3Client extends DB {
       fullUrl += "?replicator2=true";
     }
     String currentSequence = getLocalSequenceGlobal();
-    String lastSequence = getLastSequenceGlobal();
+    String lastSequence = getLastSequenceGlobal(scope, coll);
     String lastseq = null;
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
@@ -645,9 +645,9 @@ public class SyncGateway3Client extends DB {
         try {
 
           if (feedMode.equals("longpoll")){
-            lastseq = waitForDocInChangeFeed5(lastSequence, channel, key);
+            lastseq = waitForDocInChangeFeed5(lastSequence, channel, key, scope, coll);
           } else {
-            lastseq = waitForDocInChangeFeed3(lastSequence, channel, key);
+            lastseq = waitForDocInChangeFeed3(lastSequence, channel, key, scope, coll);
           }
           incrementLocalSequenceGlobal();
           setLastSequenceGlobally(lastseq);
@@ -794,16 +794,18 @@ public class SyncGateway3Client extends DB {
     restClient.close();
   }
 
-  private String waitForDocInChangeFeed2(String sequenceSince, String key) throws IOException {
+  private String waitForDocInChangeFeed2(String sequenceSince, String key,
+                                         String scope, String coll) throws IOException {
     if (deltaSync || e2e) {
-      deltaSyncWaitForDocInChangeFeed2(sequenceSince, key);
+      deltaSyncWaitForDocInChangeFeed2(sequenceSince, key, scope, coll);
       return null;
     } else {
-      return defaultWaitForDocInChangeFeed2(sequenceSince, key);
+      return defaultWaitForDocInChangeFeed2(sequenceSince, key, scope, coll);
     }
   }
 
-  private String defaultWaitForDocInChangeFeed2(String sequenceSince, String key) throws IOException {
+  private String defaultWaitForDocInChangeFeed2(String sequenceSince, String key,
+                                                String scope, String coll) throws IOException {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
@@ -1120,7 +1122,7 @@ public class SyncGateway3Client extends DB {
       response.close();
     }
     if(!docFound){
-      lastseq = waitForDocInChangeFeed5(lastseq, channel, key);
+      lastseq = waitForDocInChangeFeed5(lastseq, channel, key, scope, coll);
     }
     restClient.close();
     return lastseq;
@@ -1885,12 +1887,12 @@ public class SyncGateway3Client extends DB {
     memcachedClient.set("_lastseq_" + channel, 0, seq);
   }
 
-  private String getLastSequenceGlobal() {
+  private String getLastSequenceGlobal(String scope, String coll) {
     Object localSegObj = memcachedClient.get("_lastsequenceCounterGlobal");
     String lastseq = null;
     if (localSegObj == null) {
       try {
-        lastseq = getlastSequenceFromSG();
+        lastseq = getlastSequenceFromSG(scope, coll);
       } catch (Exception e) {
         System.err.println(e);
       }
@@ -1905,7 +1907,7 @@ public class SyncGateway3Client extends DB {
     String lastseq = null;
     if (localSegObj == null) {
       try {
-        lastseq = getlastSequenceFromSG();
+        lastseq = getlastSequenceFromSG(scope, coll);
       } catch (Exception e) {
         System.err.println(e);
       }
@@ -1915,7 +1917,7 @@ public class SyncGateway3Client extends DB {
     return localSegObj.toString();
   }
 
-  private String getlastSequenceFromSG() throws IOException {
+  private String getlastSequenceFromSG(String scope, String coll) throws IOException {
     String port = portAdmin;
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
     requestTimedout.setIsSatisfied(false);
@@ -2088,7 +2090,7 @@ public class SyncGateway3Client extends DB {
       userId = sgAccessPool.nextValue() + insertUsersStart;
       if (userId < (totalUsers + insertUsersStart)) {
         String userName = DEFAULT_USERNAME_PREFIX + userId;
-        insertAccessGrant(userName);
+        insertAccessGrant(userName, scope, coll);
       }
     }
   }
