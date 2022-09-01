@@ -685,7 +685,7 @@ public class SyncGateway3Client extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     String agKey = "accessgrant_" + userName;
-    root.put("_id", agKey);
+    root.put("FileID", agKey);
     String accessFieldName = "access";
     String accessToFieldName = "accessTo";
     root.put(accessToFieldName, userName);
@@ -1744,7 +1744,7 @@ public class SyncGateway3Client extends DB {
       }
       finalValNode = valNode[i];
     }
-    finalValNode.put("_id", key);
+    finalValNode.put("FileID", key);
     return finalValNode.toString();
   }
 
@@ -1778,7 +1778,7 @@ public class SyncGateway3Client extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
-    root.put("_id", key);
+    root.put("FileID", key);
     if (insertMode == SG_INSERT_MODE_BYKEY) {
       channelsNode.add(getChannelNameByKey(key));
     } else {
@@ -1795,7 +1795,7 @@ public class SyncGateway3Client extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
-    root.put("_id", key);
+    root.put("FileID", key);
     for (int i = 0; i < e2echannelList.length; i++) {
       channelsNode.add(e2echannelList[i]);
     }
@@ -1810,7 +1810,7 @@ public class SyncGateway3Client extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
-    root.put("_id", key);
+    root.put("FileID", key);
     channelsNode.add(channel);
     root.set("channels", channelsNode);
     values.forEach((k, v) -> {
