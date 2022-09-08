@@ -257,7 +257,7 @@ public class SyncGatewayClient extends DB {
   }
 
   @Override
-  public Status read(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result) {
+  public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result) {
     assignRandomUserToCurrentIteration();
     if (readMode == SG_READ_MODE_CHANGES) {
       return readChanges(key);
@@ -317,7 +317,7 @@ public class SyncGatewayClient extends DB {
     return Status.OK;
   }
 
-  private Status readSingle(String key, HashMap<String, ByteIterator> result) {
+  private Status readSingle(String key, Map<String, ByteIterator> result) {
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
     if (readMode == SG_READ_MODE_DOCUMENTS_WITH_REV && !isSgReplicator2) {
@@ -349,7 +349,7 @@ public class SyncGatewayClient extends DB {
 
   @Override
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
-                     Vector<HashMap<String, ByteIterator>> result) {
+                     Vector<Map<String, ByteIterator>> result) {
     assignRandomUserToCurrentIteration();
     if (grantAccessInScanOperation) {
       insertAccessGrant(currentIterationUser);
@@ -358,7 +358,7 @@ public class SyncGatewayClient extends DB {
   }
 
   @Override
-  public Status update(String table, String key, HashMap<String, ByteIterator> values) {
+  public Status update(String table, String key, Map<String, ByteIterator> values) {
     if (deltaSync) {
       return deltaSyncUpdate(table, key, values);
     } else if (e2e) {
@@ -368,7 +368,7 @@ public class SyncGatewayClient extends DB {
     }
   }
 
-  private Status defaultUpdate(String table, String key, HashMap<String, ByteIterator> values) {
+  private Status defaultUpdate(String table, String key, Map<String, ByteIterator> values) {
     assignRandomUserToCurrentIteration();
     String requestBody = buildDocumentFromMap(key, values);
     String docRevision = getRevision(key);
@@ -409,7 +409,7 @@ public class SyncGatewayClient extends DB {
     return result;
   }
 
-  private Status e2eUpdate(String table, String key, HashMap<String, ByteIterator> values) {
+  private Status e2eUpdate(String table, String key, Map<String, ByteIterator> values) {
     int responseCode;
     String port = (useAuth) ? portPublic : portAdmin;
     //assignRandomUserToCurrentIteration();
@@ -453,7 +453,7 @@ public class SyncGatewayClient extends DB {
     return result;
   }
 
-  private Status deltaSyncUpdate(String table, String key, HashMap<String, ByteIterator> values) {
+  private Status deltaSyncUpdate(String table, String key, Map<String, ByteIterator> values) {
     String docRevision = getRevision(key);
     if (docRevision == null) {
       System.err.println("Revision for document " + key + " not found in local");
@@ -490,7 +490,7 @@ public class SyncGatewayClient extends DB {
   }
 
   @Override
-  public Status insert(String table, String key, HashMap<String, ByteIterator> values) {
+  public Status insert(String table, String key, Map<String, ByteIterator> values) {
     if (loadMode == SG_LOAD_MODE_USERS) {
       return insertUser(table, key, values);
     }
@@ -519,7 +519,7 @@ public class SyncGatewayClient extends DB {
     return Status.OK;
   }
 
-  private Status insertUser(String table, String key, HashMap<String, ByteIterator> values) {
+  private Status insertUser(String table, String key, Map<String, ByteIterator> values) {
     String requestBody = buildUserDef();
     String fullUrl = "http://" + getRandomHost() + ":" + portAdmin + createUserEndpoint;
     HttpPost httpPostRequest = new HttpPost(fullUrl);
@@ -536,7 +536,7 @@ public class SyncGatewayClient extends DB {
     return result;
   }
 
-  private Status deltaSyncInsertDocument(String table, String key, HashMap<String, ByteIterator> values) {
+  private Status deltaSyncInsertDocument(String table, String key, Map<String, ByteIterator> values) {
     String port = (useAuth) ? portPublic : portAdmin;
 
     String requestBody = null;
@@ -558,7 +558,7 @@ public class SyncGatewayClient extends DB {
     return result;
   }
 
-  private Status e2eInsertDocument(String table, String key, HashMap<String, ByteIterator> values) {
+  private Status e2eInsertDocument(String table, String key, Map<String, ByteIterator> values) {
     String port = (useAuth) ? portPublic : portAdmin;
     String requestBody = null;
     String fullUrl;
@@ -579,7 +579,7 @@ public class SyncGatewayClient extends DB {
     return result;
   }
 
-  private Status defaultInsertDocument(String table, String key, HashMap<String, ByteIterator> values) {
+  private Status defaultInsertDocument(String table, String key, Map<String, ByteIterator> values) {
     String port = (useAuth) ? portPublic : portAdmin;
     String requestBody;
     String fullUrl;
@@ -1394,7 +1394,7 @@ public class SyncGatewayClient extends DB {
     return responseCode;
   }
 
-  private int httpGet(String endpoint, HashMap<String, ByteIterator> result) throws IOException {
+  private int httpGet(String endpoint, Map<String, ByteIterator> result) throws IOException {
     if (deltaSync || e2e) {
       return deltaSyncHttpGet(endpoint, result);
     } else {
@@ -1402,7 +1402,7 @@ public class SyncGatewayClient extends DB {
     }
   }
 
-  private int defaultHttpGet(String endpoint, HashMap<String, ByteIterator> result) throws IOException {
+  private int defaultHttpGet(String endpoint, Map<String, ByteIterator> result) throws IOException {
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -1448,7 +1448,7 @@ public class SyncGatewayClient extends DB {
     return responseCode;
   }
 
-  private int deltaSyncHttpGet(String endpoint, HashMap<String, ByteIterator> result) throws IOException {
+  private int deltaSyncHttpGet(String endpoint, Map<String, ByteIterator> result) throws IOException {
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -1587,7 +1587,7 @@ public class SyncGatewayClient extends DB {
       request.setHeader("Cookie", "SyncGatewaySession=" +
           getSessionCookieByUser(currentIterationUser));
     }
-    HashMap<String, Object> resultmap = new HashMap<String, Object>();
+    Map<String, Object> resultmap = new Map<String, Object>();
     CloseableHttpResponse response = restClient.execute(request);
     responseCode = response.getStatusLine().getStatusCode();
     HttpEntity responseEntity = response.getEntity();
@@ -1608,7 +1608,7 @@ public class SyncGatewayClient extends DB {
     return responsestring;
   }
 
-  private String buildUpdateDocument(String key, String responsestring, HashMap<String, ByteIterator> values) {
+  private String buildUpdateDocument(String key, String responsestring, Map<String, ByteIterator> values) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectMapper mapper = new ObjectMapper();
     JsonNode actualObj = null;
@@ -1636,7 +1636,7 @@ public class SyncGatewayClient extends DB {
     return ((ObjectNode)actualObj).toString();
   }
 
-  private String buildUpdateNestedDoc(String key, String responsestring, HashMap<String, ByteIterator> values) {
+  private String buildUpdateNestedDoc(String key, String responsestring, Map<String, ByteIterator> values) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectMapper mapper = new ObjectMapper();
     JsonNode actualObj = null;
@@ -1682,7 +1682,7 @@ public class SyncGatewayClient extends DB {
   }
 
   @SuppressWarnings("deprecation")
-  private String buildnestedDocFromMap(String key, HashMap<String, ByteIterator> values) {
+  private String buildnestedDocFromMap(String key, Map<String, ByteIterator> values) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
@@ -1709,7 +1709,7 @@ public class SyncGatewayClient extends DB {
   }
 
   private String buildUserDef() {
-    int id = sgUserInsertCounter.nextValue();
+    long id = (long)sgUserInsertCounter.nextValue();
     String userName = DEFAULT_USERNAME_PREFIX + id;
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
@@ -1734,7 +1734,7 @@ public class SyncGatewayClient extends DB {
     return root.toString();
   }
 
-  private String buildDocumentFromMap(String key, HashMap<String, ByteIterator> values) {
+  private String buildDocumentFromMap(String key, Map<String, ByteIterator> values) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
@@ -1751,7 +1751,7 @@ public class SyncGatewayClient extends DB {
     return root.toString();
   }
 
-  private String e2eBuildDocumentFromMap(String key, HashMap<String, ByteIterator> values) {
+  private String e2eBuildDocumentFromMap(String key, Map<String, ByteIterator> values) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
@@ -2019,9 +2019,9 @@ public class SyncGatewayClient extends DB {
   }
 
   private void initAllUsers() {
-    int userId = 0;
+    long userId = 0;
     while (userId < (totalUsers + insertUsersStart)) {
-      userId = sgUsersPool.nextValue() + insertUsersStart;
+      userId = (long)sgUsersPool.nextValue() + insertUsersStart;
       if (userId < (totalUsers + insertUsersStart)) {
         String userName = DEFAULT_USERNAME_PREFIX + userId;
         Object storedSession = memcachedClient.get(userName);
@@ -2044,10 +2044,10 @@ public class SyncGatewayClient extends DB {
   }
 
   private void grantAccessToAllUsers(){
-    int userId = 0;
+    long userId = 0;
     assignRandomUserToCurrentIteration();
     while (userId < (totalUsers + insertUsersStart)) {
-      userId = sgAccessPool.nextValue() + insertUsersStart;
+      userId = (long)sgAccessPool.nextValue() + insertUsersStart;
       if (userId < (totalUsers + insertUsersStart)) {
         String userName = DEFAULT_USERNAME_PREFIX + userId;
         insertAccessGrant(userName);

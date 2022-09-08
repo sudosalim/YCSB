@@ -269,7 +269,7 @@ public class SyncGateway3Client extends DB {
   }
 
   @Override
-  public Status read(String table, String key, Set<String> fields, HashMap<String, ByteIterator> result,
+  public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result,
                      String scope, String coll) {
     assignRandomUserToCurrentIteration();
     System.out.println("The scope is: " + scope)
@@ -332,7 +332,7 @@ public class SyncGateway3Client extends DB {
     return Status.OK;
   }
 
-  private Status readSingle(String key, HashMap<String, ByteIterator> result,
+  private Status readSingle(String key, Map<String, ByteIterator> result,
                             String scope, String coll) {
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
@@ -365,7 +365,7 @@ public class SyncGateway3Client extends DB {
 
   @Override
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
-                     Vector<HashMap<String, ByteIterator>> result,
+                     Vector<Map<String, ByteIterator>> result,
                      String scope, String coll) {
     assignRandomUserToCurrentIteration();
     if (grantAccessInScanOperation) {
@@ -375,7 +375,7 @@ public class SyncGateway3Client extends DB {
   }
 
   @Override
-  public Status update(String table, String key, HashMap<String, ByteIterator> values,
+  public Status update(String table, String key, Map<String, ByteIterator> values,
                        String scope, String coll) {
     System.out.println("The scope is: " + scope)
     System.out.println("The collection is: " + coll)
@@ -388,7 +388,7 @@ public class SyncGateway3Client extends DB {
     }
   }
 
-  private Status defaultUpdate(String table, String key, HashMap<String, ByteIterator> values,
+  private Status defaultUpdate(String table, String key, Map<String, ByteIterator> values,
                                String scope, String coll) {
     assignRandomUserToCurrentIteration();
     String requestBody = buildDocumentFromMap(key, values);
@@ -430,7 +430,7 @@ public class SyncGateway3Client extends DB {
     return result;
   }
 
-  private Status e2eUpdate(String table, String key, HashMap<String, ByteIterator> values,
+  private Status e2eUpdate(String table, String key, Map<String, ByteIterator> values,
                            String scope, String coll) {
     int responseCode;
     String port = (useAuth) ? portPublic : portAdmin;
@@ -475,7 +475,7 @@ public class SyncGateway3Client extends DB {
     return result;
   }
 
-  private Status deltaSyncUpdate(String table, String key, HashMap<String, ByteIterator> values,
+  private Status deltaSyncUpdate(String table, String key, Map<String, ByteIterator> values,
                                  String scope, String coll) {
     String docRevision = getRevision(key);
     if (docRevision == null) {
@@ -513,7 +513,7 @@ public class SyncGateway3Client extends DB {
   }
 
   @Override
-  public Status insert(String table, String key, HashMap<String, ByteIterator> values,
+  public Status insert(String table, String key, Map<String, ByteIterator> values,
                        String scope, String coll) {
     System.out.println("The scope is: " + scope)
     System.out.println("The collection is: " + coll)
@@ -545,7 +545,7 @@ public class SyncGateway3Client extends DB {
     return Status.OK;
   }
 
-  private Status insertUser(String table, String key, HashMap<String, ByteIterator> values,
+  private Status insertUser(String table, String key, Map<String, ByteIterator> values,
                             String scope, String coll) {
     String requestBody = buildUserDef();
     String fullUrl = "http://" + getRandomHost() + ":" + portAdmin + createUserEndpoint;
@@ -563,7 +563,7 @@ public class SyncGateway3Client extends DB {
     return result;
   }
 
-  private Status deltaSyncInsertDocumedocumentEndpointnt(String table, String key, HashMap<String, ByteIterator> values,
+  private Status deltaSyncInsertDocumedocumentEndpointnt(String table, String key, Map<String, ByteIterator> values,
                                          String scope, String coll) {
     String port = (useAuth) ? portPublic : portAdmin;
 
@@ -586,7 +586,7 @@ public class SyncGateway3Client extends DB {
     return result;
   }
 
-  private Status e2eInsertDocument(String table, String key, HashMap<String, ByteIterator> values,
+  private Status e2eInsertDocument(String table, String key, Map<String, ByteIterator> values,
                                    String scope, String coll) {
     String port = (useAuth) ? portPublic : portAdmin;
     String requestBody = null;
@@ -608,7 +608,7 @@ public class SyncGateway3Client extends DB {
     return result;
   }
 
-  private Status defaultInsertDocument(String table, String key, HashMap<String, ByteIterator> values,
+  private Status defaultInsertDocument(String table, String key, Map<String, ByteIterator> values,
                                        String scope, String coll) {
     String port = (useAuth) ? portPublic : portAdmin;
     String requestBody;
@@ -1434,7 +1434,7 @@ public class SyncGateway3Client extends DB {
     return responseCode;
   }
 
-  private int httpGet(String endpoint, HashMap<String, ByteIterator> result) throws IOException {
+  private int httpGet(String endpoint, Map<String, ByteIterator> result) throws IOException {
     if (deltaSync || e2e) {
       return deltaSyncHttpGet(endpoint, result);
     } else {
@@ -1442,7 +1442,7 @@ public class SyncGateway3Client extends DB {
     }
   }
 
-  private int defaultHttpGet(String endpoint, HashMap<String, ByteIterator> result) throws IOException {
+  private int defaultHttpGet(String endpoint, Map<String, ByteIterator> result) throws IOException {
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -1488,7 +1488,7 @@ public class SyncGateway3Client extends DB {
     return responseCode;
   }
 
-  private int deltaSyncHttpGet(String endpoint, HashMap<String, ByteIterator> result) throws IOException {
+  private int deltaSyncHttpGet(String endpoint, Map<String, ByteIterator> result) throws IOException {
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -1627,7 +1627,7 @@ public class SyncGateway3Client extends DB {
       request.setHeader("Cookie", "SyncGatewaySession=" +
           getSessionCookieByUser(currentIterationUser));
     }
-    HashMap<String, Object> resultmap = new HashMap<String, Object>();
+    Map<String, Object> resultmap = new Map<String, Object>();
     CloseableHttpResponse response = restClient.execute(request);
     responseCode = response.getStatusLine().getStatusCode();
     HttpEntity responseEntity = response.getEntity();
@@ -1648,7 +1648,7 @@ public class SyncGateway3Client extends DB {
     return responsestring;
   }
 
-  private String buildUpdateDocument(String key, String responsestring, HashMap<String, ByteIterator> values) {
+  private String buildUpdateDocument(String key, String responsestring, Map<String, ByteIterator> values) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectMapper mapper = new ObjectMapper();
     JsonNode actualObj = null;
@@ -1676,7 +1676,7 @@ public class SyncGateway3Client extends DB {
     return ((ObjectNode)actualObj).toString();
   }
 
-  private String buildUpdateNestedDoc(String key, String responsestring, HashMap<String, ByteIterator> values) {
+  private String buildUpdateNestedDoc(String key, String responsestring, Map<String, ByteIterator> values) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectMapper mapper = new ObjectMapper();
     JsonNode actualObj = null;
@@ -1722,7 +1722,7 @@ public class SyncGateway3Client extends DB {
   }
 
   @SuppressWarnings("deprecation")
-  private String buildnestedDocFromMap(String key, HashMap<String, ByteIterator> values) {
+  private String buildnestedDocFromMap(String key, Map<String, ByteIterator> values) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
@@ -1774,7 +1774,7 @@ public class SyncGateway3Client extends DB {
     return root.toString();
   }
 
-  private String buildDocumentFromMap(String key, HashMap<String, ByteIterator> values) {
+  private String buildDocumentFromMap(String key, Map<String, ByteIterator> values) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
@@ -1791,7 +1791,7 @@ public class SyncGateway3Client extends DB {
     return root.toString();
   }
 
-  private String e2eBuildDocumentFromMap(String key, HashMap<String, ByteIterator> values) {
+  private String e2eBuildDocumentFromMap(String key, Map<String, ByteIterator> values) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
@@ -1806,7 +1806,7 @@ public class SyncGateway3Client extends DB {
     return root.toString();
   }
 
-  private String buildDocumentWithChannel(String key, HashMap<String, ByteIterator> values, String channel) {
+  private String buildDocumentWithChannel(String key, Map<String, ByteIterator> values, String channel) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
