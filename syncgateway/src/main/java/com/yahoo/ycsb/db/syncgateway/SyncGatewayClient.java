@@ -94,7 +94,8 @@ public class SyncGatewayClient extends DB {
   private static final String MEMCACHED_PORT = "memcached.port";
   private static final String DEFAULT_USERNAME_PREFIX = "sg-user-";
   private static final String DEFAULT_CHANNEL_PREFIX = "channel-";
-  private static final String DEFAULT_USER_PASSWORD = "password";
+  private static final String DEFAULT_USER_PASSWORD = "syncgateway.password";
+  private static final String USE_CAPELLA = "syncgateway.usecapella";
   private static final int SG_LOAD_MODE_USERS = 0;
   private static final int SG_LOAD_MODE_DOCUMENTS = 1;
   private static final int SG_INSERT_MODE_BYKEY = 0;
@@ -136,6 +137,8 @@ public class SyncGatewayClient extends DB {
   private String[] e2echannelList;
   private String e2euser;
   private String host;
+  private String password;
+  private String http;
   private int insertMode;
   private String sequencestart;
   private boolean initUsers;
@@ -144,6 +147,7 @@ public class SyncGatewayClient extends DB {
   private boolean includeDocWhenReadingFeed;
   private boolean starChannel;
   private int channelsPerGrant;
+  private boolean useCapella;
   private boolean grantAccessToAllUsers;
   private boolean grantAccessInScanOperation;
   private boolean isSgReplicator2;
@@ -174,6 +178,7 @@ public class SyncGatewayClient extends DB {
     String hostParam = props.getProperty(SG_HOST, "127.0.0.1");
     hosts = hostParam.split(",");
     host = hosts[rand.nextInt(hosts.length)];
+    password = props.getProperty(DEFAULT_USER_PASSWORD, "password");
     e2euser = props.getProperty(SG_E2E_USER, "sg-user-0");
     String channelListParam = props.getProperty(SG_E2E_CHANNEL_LIST, "channel-0");
     e2echannelList = channelListParam.split(",");
@@ -200,6 +205,12 @@ public class SyncGatewayClient extends DB {
       readMode = SG_READ_MODE_WITH_LIMIT;
     } else {
       readMode = SG_READ_MODE_DOCUMENTS_WITH_REV;
+    }
+    useCapella = props.getProperty(USE_CAPELLA, "false").equals("true");
+    if (useCapella) {
+      http = "https://";
+    } else {
+      http = "http://";
     }
     totalUsers = Integer.valueOf(props.getProperty(SG_TOTAL_USERS, "1000"));
     totalChannels = Integer.valueOf(props.getProperty(SG_TOTAL_CHANNELS, "100"));
@@ -319,7 +330,7 @@ public class SyncGatewayClient extends DB {
 
   private Status readSingle(String key, Map<String, ByteIterator> result) {
     String port = (useAuth) ? portPublic : portAdmin;
-    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + key;
     if (readMode == SG_READ_MODE_DOCUMENTS_WITH_REV && !isSgReplicator2) {
       String revisionID = getRevision(key);
       if (revisionID == null){
@@ -349,7 +360,7 @@ public class SyncGatewayClient extends DB {
 
   @Override
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
-                     Vector<Map<String, ByteIterator>> result) {
+                     Vector<HashMap<String, ByteIterator>> result) {
     assignRandomUserToCurrentIteration();
     if (grantAccessInScanOperation) {
       insertAccessGrant(currentIterationUser);
@@ -380,7 +391,7 @@ public class SyncGatewayClient extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl;
     int responseCode;
-    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
+    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
     if(isSgReplicator2){
       fullUrl += "&replicator2=true";
     }
@@ -420,7 +431,7 @@ public class SyncGatewayClient extends DB {
       System.err.println("Revision for document " + key + " not found in local");
       return Status.UNEXPECTED_STATE;
     }
-    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
     HttpPut httpPutRequest = new HttpPut(fullUrl);
     Status result;
     int numOfRetries = 0;
@@ -466,7 +477,7 @@ public class SyncGatewayClient extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl;
     int responseCode;
-    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
+    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
     String responsebodymap = null;
     String requestBody = null;
     try {
@@ -521,7 +532,7 @@ public class SyncGatewayClient extends DB {
 
   private Status insertUser(String table, String key, Map<String, ByteIterator> values) {
     String requestBody = buildUserDef();
-    String fullUrl = "http://" + getRandomHost() + ":" + portAdmin + createUserEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + portAdmin + createUserEndpoint;
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
     try {
@@ -546,7 +557,7 @@ public class SyncGatewayClient extends DB {
     } else if(doctype.equals("nested")) {
       requestBody = buildnestedDocFromMap(key, values);
     }
-    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
+    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint;
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
     try {
@@ -564,7 +575,7 @@ public class SyncGatewayClient extends DB {
     String fullUrl;
     currentIterationUser = e2euser;
     requestBody = e2eBuildDocumentFromMap(key, values);
-    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
+    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint;
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
     try {
@@ -590,7 +601,7 @@ public class SyncGatewayClient extends DB {
       channel = getChannelForUser();
     }
     requestBody = buildDocumentWithChannel(key, values, channel);
-    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
+    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint;
     if(isSgReplicator2){
       fullUrl += "?replicator2=true";
     }
@@ -638,7 +649,7 @@ public class SyncGatewayClient extends DB {
     String requestBody;
     String fullUrl;
     requestBody = buildAccessGrantDocument(userName);
-    fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
+    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint;
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
     try {
@@ -678,7 +689,7 @@ public class SyncGatewayClient extends DB {
       includeDocsParam = "include_docs=true";
     }
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=normal&" + includeDocsParam;
-    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -724,7 +735,7 @@ public class SyncGatewayClient extends DB {
     }
     String changesFeedEndpoint = "_changes?since=" + sequenceSince +"&limit=" + limit + "&feed=normal&"
         + includeDocsParam;
-    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -775,7 +786,7 @@ public class SyncGatewayClient extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
-    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -850,7 +861,7 @@ public class SyncGatewayClient extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
-    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -920,7 +931,7 @@ public class SyncGatewayClient extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + channel;
-    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -932,7 +943,7 @@ public class SyncGatewayClient extends DB {
       request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
     }
     if (basicAuth) {
-      String auth = currentIterationUser + ":" + DEFAULT_USER_PASSWORD;
+      String auth = currentIterationUser + ":" + password;
       byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
       String authHeader = "Basic " + new String(encodedAuth);
       request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
@@ -1001,7 +1012,7 @@ public class SyncGatewayClient extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + channel;
-    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -1013,7 +1024,7 @@ public class SyncGatewayClient extends DB {
       request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
     }
     if (basicAuth) {
-      String auth = currentIterationUser + ":" + DEFAULT_USER_PASSWORD;
+      String auth = currentIterationUser + ":" + password;
       byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
       String authHeader = "Basic " + new String(encodedAuth);
       request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
@@ -1103,7 +1114,7 @@ public class SyncGatewayClient extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
-    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -1115,7 +1126,7 @@ public class SyncGatewayClient extends DB {
       request.setHeader("Cookie", "SyncGatewaySession=" + getSessionCookieByUser(currentIterationUser));
     }
     if (basicAuth) {
-      String auth = currentIterationUser + ":" + DEFAULT_USER_PASSWORD;
+      String auth = currentIterationUser + ":" + password;
       byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
       String authHeader = "Basic " + new String(encodedAuth);
       request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
@@ -1164,7 +1175,7 @@ public class SyncGatewayClient extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
-    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -1227,7 +1238,7 @@ public class SyncGatewayClient extends DB {
 
   private int defaultHttpExecute(HttpEntityEnclosingRequestBase request, String data) throws IOException {
     if (basicAuth) {
-      String auth = currentIterationUser + ":" + DEFAULT_USER_PASSWORD;
+      String auth = currentIterationUser + ":" + password;
       byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
       String authHeader = "Basic " + new String(encodedAuth);
       request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
@@ -1411,7 +1422,7 @@ public class SyncGatewayClient extends DB {
       request.setHeader(headers[i], headers[i + 1]);
     }
     if (basicAuth) {
-      String auth = currentIterationUser + ":" + DEFAULT_USER_PASSWORD;
+      String auth = currentIterationUser + ":" + password;
       byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
       String authHeader = "Basic " + new String(encodedAuth);
       request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
@@ -1490,7 +1501,7 @@ public class SyncGatewayClient extends DB {
   }
 
   private String httpAuthWithSessionCookie(String data) throws IOException {
-    String fullUrl = "http://" + getRandomHost() + ":" + portAdmin + createSessionEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + portAdmin + createSessionEndpoint;
     HttpPost request = new HttpPost(fullUrl);
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
@@ -1587,7 +1598,7 @@ public class SyncGatewayClient extends DB {
       request.setHeader("Cookie", "SyncGatewaySession=" +
           getSessionCookieByUser(currentIterationUser));
     }
-    Map<String, Object> resultmap = new Map<String, Object>();
+    Map<String, Object> resultmap = new HashMap<String, Object>();
     CloseableHttpResponse response = restClient.execute(request);
     responseCode = response.getStatusLine().getStatusCode();
     HttpEntity responseEntity = response.getEntity();
@@ -1714,7 +1725,7 @@ public class SyncGatewayClient extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     root.put("name", userName);
-    root.put("password", DEFAULT_USER_PASSWORD);
+    root.put("password", password);
     ArrayNode channels = factory.arrayNode();
     if (starChannel) {
       channels.add("*");
@@ -1724,7 +1735,7 @@ public class SyncGatewayClient extends DB {
       channels.add(channelName);
       saveChannelForUser(userName, channelName);
     } else {
-      String[] channelsSet = getSetOfRandomChannels();
+      String[] channelsSet = getSetOfRandomChannels(channelsPerUser);
       for (int i = 0; i < channelsPerUser; i++) {
         channels.add(channelsSet[i]);
       }
@@ -1766,12 +1777,18 @@ public class SyncGatewayClient extends DB {
     return root.toString();
   }
 
-  private String buildDocumentWithChannel(String key, HashMap<String, ByteIterator> values, String channel) {
+  private String buildDocumentWithChannel(String key, Map<String, ByteIterator> values, String channel) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
     root.put("FileID", key);
     channelsNode.add(channel);
+    if (channelsPerDocument != 1){
+      String[] channelsSet = getSetOfRandomChannels(channelsPerDocument);
+      for (int i = 1; i < channelsPerDocument; i++) {
+        channelsNode.add(channelsSet[i]);
+      }
+    }
     root.set("channels", channelsNode);
     values.forEach((k, v) -> {
         root.put(k, v.toString());
@@ -1789,14 +1806,14 @@ public class SyncGatewayClient extends DB {
     return DEFAULT_CHANNEL_PREFIX + channelId;
   }
 
-  private String[] getSetOfRandomChannels() {
-    String[] channels = new String[channelsPerUser];
+  private String[] getSetOfRandomChannels(int noChannels) {
+    String[] channels = new String[noChannels];
     int[] allChannels = new int[totalChannels];
     for (int i = 0; i < totalChannels; i++) {
       allChannels[i] = i;
     }
     shuffleArray(allChannels);
-    for (int i = 0; i < channelsPerUser; i++) {
+    for (int i = 0; i < noChannels; i++) {
       channels[i] = DEFAULT_CHANNEL_PREFIX + allChannels[i];
     }
     return channels;
@@ -1879,7 +1896,7 @@ public class SyncGatewayClient extends DB {
 
   private String getlastSequenceFromSG() throws IOException {
     String port = portAdmin;
-    String fullUrl = "http://" + getRandomHost() + ":" + port + documentEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -2013,7 +2030,7 @@ public class SyncGatewayClient extends DB {
     ObjectNode root = factory.objectNode();
     root.put("name", name);
     if (deltaSync || e2e) {
-      root.put("password", DEFAULT_USER_PASSWORD);
+      root.put("password", password);
     }
     return root.toString();
   }
@@ -2059,7 +2076,7 @@ public class SyncGatewayClient extends DB {
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
-    HttpGet request = new HttpGet("http://" + getRandomHost() + ":" + portAdmin + documentEndpoint);
+    HttpGet request = new HttpGet(http + getRandomHost() + ":" + portAdmin + documentEndpoint);
     for (int i = 0; i < headers.length; i = i + 2) {
       request.setHeader(headers[i], headers[i + 1]);
     }
