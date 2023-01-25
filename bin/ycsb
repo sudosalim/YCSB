@@ -108,7 +108,7 @@ DATABASES = {
     "s3"           : "com.yahoo.ycsb.db.S3Client",
     "solr"         : "com.yahoo.ycsb.db.solr.SolrClient",
     "syncgateway"  : "com.yahoo.ycsb.db.syncgateway.SyncGatewayClient",
-    "syncgateway3"  : "com.yahoo.ycsb.db.syncgateway.SyncGatewayClient3",
+    "syncgateway3": "com.yahoo.ycsb.db.syncgateway3.SyncGateway3Client",
     "solr6"        : "com.yahoo.ycsb.db.solr6.SolrClient",
     "tarantool"    : "com.yahoo.ycsb.db.TarantoolClient",
 }

@@ -17,13 +17,6 @@
 
 package com.yahoo.ycsb.db.syncgateway3;
 
-import com.couchbase.client.java.Bucket;
-import com.couchbase.client.java.Cluster;
-import com.couchbase.client.java.ReactiveCluster;
-import com.couchbase.client.java.Collection;
-import com.couchbase.client.java.ReactiveCollection;
-import com.couchbase.client.java.env.ClusterEnvironment;
-import com.couchbase.client.java.json.JacksonTransformers;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -55,22 +48,8 @@ import java.util.regex.Pattern;
 import java.io.*;
 import java.util.*;
 
-/**
- TODO: Summary
- * <p> The following options can be passed when using this database restClient to override the defaults.
- *
- * <ul>
- * <li><b>syncgateway.host=127.0.0.1</b> The hostname from one server.</li>
- * <li><b>syncgateway.db=db</b> Sync Gateway database name</li>
- * <li><b>syngateway.port.admin=4985</b> The admin port.</li>
- * <li><b>syngateway.port.public=4984</b> The public port.</li>
- * <li><b>syngateway.auth=false</b> If set to true YCSB will hit public port with user-level authorization.</li>
- * <li><b>syngateway.createusers=false</b> Create users instead od loading documents in 'loadl' phase</li>
- *
- * </ul>
- */
-
 public class SyncGateway3Client extends DB {
+  private static final String _DEFAULT = "_default";
   private static CounterGenerator sgUserInsertCounter = new CounterGenerator(0);
   private static CounterGenerator sgUsersPool = new CounterGenerator(0);
   private static CounterGenerator sgAccessPool = new CounterGenerator(0);
@@ -168,6 +147,7 @@ public class SyncGateway3Client extends DB {
   private CloseableHttpClient restClient;
   private MemcachedClient memcachedClient;
   private String createUserEndpoint;
+  private String dbEndpoint; // Seperate document and db endpoints for multicollection
   private String documentEndpoint;
   private String createSessionEndpoint;
   private String currentIterationUser = null;
@@ -179,7 +159,7 @@ public class SyncGateway3Client extends DB {
   private String doctype;
   private int maxretry;
   private int retrydelay;
-  private static boolean collectionenabled;
+  private String database;
 
   @Override
   public void init() throws DBException {
@@ -191,7 +171,7 @@ public class SyncGateway3Client extends DB {
     e2euser = props.getProperty(SG_E2E_USER, "sg-user-0");
     String channelListParam = props.getProperty(SG_E2E_CHANNEL_LIST, "channel-0");
     e2echannelList = channelListParam.split(",");
-    String db = props.getProperty(SG_DB, "db");
+    this.database = props.getProperty(SG_DB, "db");
     portAdmin = props.getProperty(SG_PORT_ADMIN, "4985");
     portPublic = props.getProperty(SG_PORT_PUBLIC, "4984");
     useAuth = props.getProperty(SG_AUTH, "false").equals("true");
@@ -247,9 +227,12 @@ public class SyncGateway3Client extends DB {
     grantAccessToAllUsers = props.getProperty(SG_GRANT_ACCESS_TO_ALL_USERS, "false").equals("true");
     grantAccessInScanOperation = props.getProperty(SG_GRANT_ACCESS_IN_SCAN, "false").equals("true");
     readLimit = props.getProperty(SG_READ_LIMIT, "200");
-    createUserEndpoint = "/" + db + ".scope-1.collection1/_user/";
-    documentEndpoint = "/" + db + ".scope-1.collection1/";
-    createSessionEndpoint = "/" + db + "/_session";
+    dbEndpoint = "/" + this.database + "/";
+    //Channels specified on this endpoint must be fully qualified with a scope and collection
+    //if the channel is not in the default collection.
+    createUserEndpoint = this.dbEndpoint + "_user/"; 
+    createSessionEndpoint = this.dbEndpoint + "_session";
+    documentEndpoint = "/"; // Generate {keyspace}/ when using this endpoint
     deltaSync = props.getProperty(SG_DELTA_SYNC, "false").equals("true");
     e2e = props.getProperty(SG_E2E, "false").equals("true");
     updatefieldcount = Integer.valueOf(props.getProperty(SG_UPDATEFIELDCOUNT, "1"));
@@ -262,9 +245,6 @@ public class SyncGateway3Client extends DB {
       retrydelay = 100;
     }
 
-    collectionenabled = props.getProperty(Client.COLLECTION_ENABLED_PROPERTY,
-        Client.COLLECTION_ENABLED_DEFAULT).equals("true");
-
     try {
       memcachedClient = createMemcachedClient(memcachedHost, Integer.parseInt(memcachedPort));
     } catch (Exception e) {
@@ -274,17 +254,15 @@ public class SyncGateway3Client extends DB {
     if ((loadMode != SG_LOAD_MODE_USERS) && (useAuth) && (initUsers)) {
       initAllUsers();
     }
-    //if (grantAccessToAllUsers) {
-    //  grantAccessToAllUsers(String scope, String coll);
-    // }
+    if (grantAccessToAllUsers) {
+     grantAccessToAllUsers();
+    }
   }
 
   @Override
   public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result,
                      String scope, String coll) {
     assignRandomUserToCurrentIteration();
-    System.out.println("The scope is: " + scope);
-    System.out.println("The collection is: " + coll);
     if (readMode == SG_READ_MODE_CHANGES) {
       return readChanges(key, scope, coll);
     } else if (readMode == SG_READ_MODE_ALLCHANGES) {
@@ -299,12 +277,12 @@ public class SyncGateway3Client extends DB {
 
   private Status readChanges(String key, String scope, String coll) {
     try {
-      String seq = getLocalSequenceForUser(currentIterationUser, scope, coll);
+      String seq = getLocalSequenceForUser(currentIterationUser);
       checkForChanges(seq, getChannelNameByKey(key), scope, coll);
     } catch (Exception e) {
       return Status.ERROR;
     }
-    syncronizeSequencesForUser(currentIterationUser, scope, coll);
+    syncronizeSequencesForUser(currentIterationUser);
     return Status.OK;
   }
 
@@ -312,7 +290,7 @@ public class SyncGateway3Client extends DB {
     try {
       String seq;
       if (deltaSync || e2e) {
-        seq = getLocalSequenceForUser(currentIterationUser, scope, coll);
+        seq = getLocalSequenceForUser(currentIterationUser);
       } else {
         seq = getLastSequenceGlobal(scope, coll);
       }
@@ -321,7 +299,7 @@ public class SyncGateway3Client extends DB {
     } catch (Exception e) {
       return Status.ERROR;
     }
-    syncronizeSequencesForUser(currentIterationUser, scope, coll);
+    syncronizeSequencesForUser(currentIterationUser);
     return Status.OK;
   }
 
@@ -346,7 +324,7 @@ public class SyncGateway3Client extends DB {
   private Status readSingle(String key, Map<String, ByteIterator> result,
                             String scope, String coll) {
     String port = (useAuth) ? portPublic : portAdmin;
-    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + key;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + key;
     if (readMode == SG_READ_MODE_DOCUMENTS_WITH_REV && !isSgReplicator2) {
       String revisionID = getRevision(key);
       if (revisionID == null){
@@ -388,8 +366,6 @@ public class SyncGateway3Client extends DB {
   @Override
   public Status update(String table, String key, Map<String, ByteIterator> values,
                        String scope, String coll) {
-    System.out.println("The scope is: " + scope);
-    System.out.println("The collection is: " + coll);
     if (deltaSync) {
       return deltaSyncUpdate(table, key, values, scope, coll);
     } else if (e2e) {
@@ -408,11 +384,11 @@ public class SyncGateway3Client extends DB {
       System.err.println("Revision for document " + key + " not found in local");
       return Status.UNEXPECTED_STATE;
     }
-    String currentSequence = getLocalSequenceForUser(currentIterationUser, scope, coll);
+    String currentSequence = getLocalSequenceForUser(currentIterationUser);
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl;
     int responseCode;
-    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
+    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + key + "?rev=" + docRevision;
     if(isSgReplicator2){
       fullUrl += "&replicator2=true";
     }
@@ -433,7 +409,7 @@ public class SyncGateway3Client extends DB {
         try {
           waitForDocInChangeFeed(currentSequence, key, scope, coll);
         } catch (Exception e) {
-          syncronizeSequencesForUser(currentIterationUser, scope, coll);
+          syncronizeSequencesForUser(currentIterationUser);
           return Status.UNEXPECTED_STATE;
         }
       }
@@ -453,7 +429,7 @@ public class SyncGateway3Client extends DB {
       System.err.println("Revision for document " + key + " not found in local");
       return Status.UNEXPECTED_STATE;
     }
-    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + key + "?rev=" + docRevision;
     HttpPut httpPutRequest = new HttpPut(fullUrl);
     Status result;
     int numOfRetries = 0;
@@ -500,7 +476,7 @@ public class SyncGateway3Client extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String fullUrl;
     int responseCode;
-    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + key + "?rev=" + docRevision;
+    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + key + "?rev=" + docRevision;
     String responsebodymap = null;
     String requestBody = null;
     try {
@@ -526,8 +502,6 @@ public class SyncGateway3Client extends DB {
   @Override
   public Status insert(String table, String key, Map<String, ByteIterator> values,
                        String scope, String coll) {
-    System.out.println("The scope is: " + scope);
-    System.out.println("The collection is: " + coll);
     if (loadMode == SG_LOAD_MODE_USERS) {
       return insertUser(table, key, values, scope, coll);
     }
@@ -585,7 +559,7 @@ public class SyncGateway3Client extends DB {
     } else if(doctype.equals("nested")) {
       requestBody = buildnestedDocFromMap(key, values);
     }
-    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint;
+    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/";
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
     try {
@@ -631,7 +605,7 @@ public class SyncGateway3Client extends DB {
       channel = getChannelForUser();
     }
     requestBody = buildDocumentWithChannel(key, values, channel);
-    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint;
+    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/";
     if(isSgReplicator2){
       fullUrl += "?replicator2=true";
     }
@@ -666,7 +640,7 @@ public class SyncGateway3Client extends DB {
           System.err.println("Failed to sync lastSeq value  | lastseq : "
               + lastseq + " | fullUrl : " + fullUrl + " | lastSequence :"
               + lastSequence + " | key: " + key + " | channel" + channel);
-          syncronizeSequencesForUser(currentIterationUser, scope, coll);
+          syncronizeSequencesForUser(currentIterationUser);
           return Status.UNEXPECTED_STATE;
         }
       }
@@ -679,7 +653,7 @@ public class SyncGateway3Client extends DB {
     String requestBody;
     String fullUrl;
     requestBody = buildAccessGrantDocument(userName, scope, coll);
-    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint;
+    fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/";
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
     try {
@@ -696,7 +670,7 @@ public class SyncGateway3Client extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     String agKey = "accessgrant_" + userName;
-    root.put("FileID", agKey);
+    root.put("_id", agKey);
     String accessFieldName = "access";
     String accessToFieldName = "accessTo";
     root.put(accessToFieldName, userName);
@@ -720,7 +694,7 @@ public class SyncGateway3Client extends DB {
       includeDocsParam = "include_docs=true";
     }
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=normal&" + includeDocsParam;
-    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -767,7 +741,7 @@ public class SyncGateway3Client extends DB {
     }
     String changesFeedEndpoint = "_changes?since=" + sequenceSince +"&limit=" + limit + "&feed=normal&"
         + includeDocsParam;
-    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -820,7 +794,7 @@ public class SyncGateway3Client extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
-    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -896,7 +870,7 @@ public class SyncGateway3Client extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
-    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -967,7 +941,7 @@ public class SyncGateway3Client extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + channel;
-    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -1049,7 +1023,7 @@ public class SyncGateway3Client extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + channel;
-    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -1153,7 +1127,7 @@ public class SyncGateway3Client extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
-    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -1215,7 +1189,7 @@ public class SyncGateway3Client extends DB {
     String port = (useAuth) ? portPublic : portAdmin;
     String changesFeedEndpoint = "_changes?since=" + sequenceSince + "&feed=" + feedMode +
         "&filter=sync_gateway/bychannel&channels=" + getChannelForUser();
-    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + changesFeedEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + changesFeedEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
@@ -1755,11 +1729,12 @@ public class SyncGateway3Client extends DB {
       }
       finalValNode = valNode[i];
     }
-    finalValNode.put("FileID", key);
+    finalValNode.put("_id", key);
     return finalValNode.toString();
   }
 
-  private String buildUserDef() {
+
+  private String buildUserDef() { 
     long id = (long)sgUserInsertCounter.nextValue();
     String userName = DEFAULT_USERNAME_PREFIX + id;
     JsonNodeFactory factory = JsonNodeFactory.instance;
@@ -1767,20 +1742,21 @@ public class SyncGateway3Client extends DB {
     root.put("name", userName);
     root.put("password", password);
     ArrayNode channels = factory.arrayNode();
+    String channelName;
     if (starChannel) {
-      channels.add("*");
-      saveChannelForUser(userName, "*");
-    } else if ((totalChannels == totalUsers) && (channelsPerUser == 1)){
-      String channelName = DEFAULT_CHANNEL_PREFIX + id;
+      channelName = "*";
       channels.add(channelName);
-      saveChannelForUser(userName, channelName);
+    } else if ((totalChannels == totalUsers) && (channelsPerUser == 1)){
+      channelName = DEFAULT_CHANNEL_PREFIX + id;
+      channels.add(channelName);
     } else {
       String[] channelsSet = getSetOfRandomChannels(channelsPerUser);
       for (int i = 0; i < channelsPerUser; i++) {
         channels.add(channelsSet[i]);
       }
-      saveChannelForUser(userName, channelsSet[0]);
+      channelName = channelsSet[0];
     }
+    saveChannelForUser(userName, channelName);
     root.set("admin_channels", channels);
     return root.toString();
   }
@@ -1789,7 +1765,7 @@ public class SyncGateway3Client extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
-    root.put("FileID", key);
+    root.put("_id", key);
     if (insertMode == SG_INSERT_MODE_BYKEY) {
       channelsNode.add(getChannelNameByKey(key));
     } else {
@@ -1806,7 +1782,7 @@ public class SyncGateway3Client extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
-    root.put("FileID", key);
+    root.put("FileID", key); //TODO: confirm the e2e use-case if we can use _id
     for (int i = 0; i < e2echannelList.length; i++) {
       channelsNode.add(e2echannelList[i]);
     }
@@ -1821,7 +1797,7 @@ public class SyncGateway3Client extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
-    root.put("FileID", key);
+    root.put("_id", key);
     if (channelsPerDocument != 1){
       String[] channelsSet = getSetOfRandomChannels(channelsPerDocument);
       for (int i = 1; i < channelsPerDocument; i++) {
@@ -1909,7 +1885,7 @@ public class SyncGateway3Client extends DB {
     String lastseq = null;
     if (localSegObj == null) {
       try {
-        lastseq = getlastSequenceFromSG(scope, coll);
+        lastseq = getlastSequenceFromSG();
       } catch (Exception e) {
         System.err.println(e);
       }
@@ -1924,7 +1900,7 @@ public class SyncGateway3Client extends DB {
     String lastseq = null;
     if (localSegObj == null) {
       try {
-        lastseq = getlastSequenceFromSG(scope, coll);
+        lastseq = getlastSequenceFromSG();
       } catch (Exception e) {
         System.err.println(e);
       }
@@ -1934,15 +1910,15 @@ public class SyncGateway3Client extends DB {
     return localSegObj.toString();
   }
 
-  private String getlastSequenceFromSG(String scope, String coll) throws IOException {
+  private String getlastSequenceFromSG() throws IOException {
     String port = portAdmin;
-    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint;
+    String fullUrl = http + getRandomHost() + ":" + port + dbEndpoint;
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
     HttpGet request = new HttpGet(fullUrl);
     String lastsequence = null;
-    int counter = 10;
+    int counter = 10; // TODO: remove if not used
     CloseableHttpResponse response = restClient.execute(request);
     HttpEntity responseEntity = response.getEntity();
     if (responseEntity != null) {
@@ -1974,7 +1950,6 @@ public class SyncGateway3Client extends DB {
     EntityUtils.consumeQuietly(responseEntity);
     response.close();
     restClient.close();
-
     return lastsequence;
   }
 
@@ -1982,10 +1957,10 @@ public class SyncGateway3Client extends DB {
     memcachedClient.incr("_sequenceCounterGlobal", 1);
   }
 
-  private String getLocalSequenceForUser(String userName, String scope, String coll) {
+  private String getLocalSequenceForUser(String userName) {
     Object localSegObj = memcachedClient.get("_sequenceCounter_" + userName);
     if (localSegObj == null) {
-      syncronizeSequencesForUser(currentIterationUser, scope, coll);
+      syncronizeSequencesForUser(currentIterationUser);
       return memcachedClient.get("_sequenceCounter_" + userName).toString();
     }
     return localSegObj.toString();
@@ -2075,7 +2050,20 @@ public class SyncGateway3Client extends DB {
     return root.toString();
   }
 
-  private void initAllUsers() {
+  /**
+   * The next two methods need to be refactored to be aware of scope/collection.
+   * This can be easily done during creating user, but we need to remember which
+   * scope/collection a user id was associated with. Since these stages are happing as
+   * different tasks. We have two design options to consider:
+   *  1. Refactor the code and do user creation + intialisation + grant access as a single phase.
+   *     This require changes to both ycsb and how we send these tasks from perfrunner.
+   *  2. Control init user and grant access by a CounterGenerator for collections, 
+   *     limiting the number of threads that can be utilized to <= scope*collections.  
+   * TODO: 
+   * - init users for scopes/collections
+   * - grantAccess users for each scope/collection
+   */
+  private void initAllUsers() { 
     long userId = 0;
     while (userId < (totalUsers + insertUsersStart)) {
       userId = (long)sgUsersPool.nextValue() + insertUsersStart;
@@ -2100,23 +2088,23 @@ public class SyncGateway3Client extends DB {
     setLocalSequenceGlobally(sequencestart);
   }
 
-  /* private void grantAccessToAllUsers(String scope, String coll){
+  private void grantAccessToAllUsers(){ 
     long userId = 0;
     assignRandomUserToCurrentIteration();
     while (userId < (totalUsers + insertUsersStart)) {
       userId = (long)sgAccessPool.nextValue() + insertUsersStart;
       if (userId < (totalUsers + insertUsersStart)) {
         String userName = DEFAULT_USERNAME_PREFIX + userId;
-        insertAccessGrant(userName, scope, coll);
+        insertAccessGrant(userName, _DEFAULT, _DEFAULT);
       }
     }
-  } */
+  }
 
   private void syncLocalSequenceWithSyncGatewayForUserAndGlobally(String userName) throws IOException{
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
-    HttpGet request = new HttpGet(http + getRandomHost() + ":" + portAdmin + documentEndpoint);
+    HttpGet request = new HttpGet(http + getRandomHost() + ":" + portAdmin + dbEndpoint);
     for (int i = 0; i < headers.length; i = i + 2) {
       request.setHeader(headers[i], headers[i + 1]);
     }
@@ -2152,7 +2140,7 @@ public class SyncGateway3Client extends DB {
     restClient.close();
   }
 
-  private void syncronizeSequencesForUser(String userName, String scope, String coll){
+  private void syncronizeSequencesForUser(String userName){
     try {
       syncLocalSequenceWithSyncGatewayForUserAndGlobally(userName);
     } catch (Exception e) {
@@ -2170,6 +2158,18 @@ public class SyncGateway3Client extends DB {
       throw new IOException("No session cookie stored for user + " + userName);
     }
     return sessionCookie;
+  }
+
+  /**
+   * Returns a {keyspace} in the form of db.scope.collection. The keyspace replaces 
+   * {db} for some endpoints in a multi-collection context.
+   * 
+   * @param scope
+   * @param coll
+   * @return
+   */
+  private String getKeyspace(String scope, String coll){
+    return this.database + "." + scope + "." + coll;
   }
 
   private boolean validateHttpResponse(String response){
@@ -2224,5 +2224,26 @@ public class SyncGateway3Client extends DB {
     public TimeoutException() {
       super("HTTP Request exceeded execution time limit.");
     }
+  }
+
+  @Override
+  public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result) {
+    return this.read(table, key, fields, result, _DEFAULT, _DEFAULT);
+  }
+
+  @Override
+  public Status scan(String table, String startkey, int recordcount, Set<String> fields,
+      Vector<HashMap<String, ByteIterator>> result) {
+    return this.scan(table, startkey, recordcount, fields, result, _DEFAULT, _DEFAULT);
+  }
+
+  @Override
+  public Status update(String table, String key, Map<String, ByteIterator> values) {
+    return this.update(table, key, values, _DEFAULT, _DEFAULT);
+  }
+
+  @Override
+  public Status insert(String table, String key, Map<String, ByteIterator> values) {
+    return this.insert(table, key, values, _DEFAULT, _DEFAULT);
   }
 }
