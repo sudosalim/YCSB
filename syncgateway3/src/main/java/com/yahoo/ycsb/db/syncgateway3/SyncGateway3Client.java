@@ -160,6 +160,8 @@ public class SyncGateway3Client extends DB {
   private int maxretry;
   private int retrydelay;
   private String database;
+  protected String[] collections;
+  protected String[] scopes;
 
   @Override
   public void init() throws DBException {
@@ -251,6 +253,10 @@ public class SyncGateway3Client extends DB {
       System.err.println("Memcached init error" + e.getMessage());
       System.exit(1);
     }
+
+    collections = props.getProperty(Client.COLLECTIONS_PARAM, Client.COLLECTIONS_PARAM_DEFAULT).split(",");
+    scopes = props.getProperty(Client.SCOPES_PARAM, Client.SCOPES_PARAM_DEFAULT).split(",");
+
     if ((loadMode != SG_LOAD_MODE_USERS) && (useAuth) && (initUsers)) {
       initAllUsers();
     }
@@ -1758,8 +1764,27 @@ public class SyncGateway3Client extends DB {
     }
     saveChannelForUser(userName, channelName);
     root.set("admin_channels", channels);
+    root.set("collection_access",getPerCollectionAccess(channels));
     return root.toString();
   }
+
+  // We need to set channels per collection when creating users.
+  // This is the naive solutions that works for now
+  private ObjectNode getPerCollectionAccess(ArrayNode channels){
+    JsonNodeFactory factory = JsonNodeFactory.instance;
+    ObjectNode root = factory.objectNode();
+    ObjectNode access = factory.objectNode();
+    access.set("admin_channels", channels);
+    for (String scope : scopes){
+      ObjectNode colls = factory.objectNode();
+      for (String collection : collections){
+        colls.set(collection, access);
+      }
+      root.set(scope, colls);
+    }
+    return root;
+  }
+
 
   private String buildDocumentFromMap(String key, Map<String, ByteIterator> values) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
@@ -1782,7 +1807,7 @@ public class SyncGateway3Client extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
-    root.put("FileID", key); //TODO: confirm the e2e use-case if we can use _id
+    root.put("_id", key); 
     for (int i = 0; i < e2echannelList.length; i++) {
       channelsNode.add(e2echannelList[i]);
     }
@@ -2050,19 +2075,6 @@ public class SyncGateway3Client extends DB {
     return root.toString();
   }
 
-  /**
-   * The next two methods need to be refactored to be aware of scope/collection.
-   * This can be easily done during creating user, but we need to remember which
-   * scope/collection a user id was associated with. Since these stages are happing as
-   * different tasks. We have two design options to consider:
-   *  1. Refactor the code and do user creation + intialisation + grant access as a single phase.
-   *     This require changes to both ycsb and how we send these tasks from perfrunner.
-   *  2. Control init user and grant access by a CounterGenerator for collections, 
-   *     limiting the number of threads that can be utilized to <= scope*collections.  
-   * TODO: 
-   * - init users for scopes/collections
-   * - grantAccess users for each scope/collection
-   */
   private void initAllUsers() { 
     long userId = 0;
     while (userId < (totalUsers + insertUsersStart)) {
