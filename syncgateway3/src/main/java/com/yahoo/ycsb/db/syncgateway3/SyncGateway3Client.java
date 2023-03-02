@@ -330,18 +330,19 @@ public class SyncGateway3Client extends DB {
   private Status readSingle(String key, Map<String, ByteIterator> result,
                             String scope, String coll) {
     String port = (useAuth) ? portPublic : portAdmin;
-    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + key;
+    String keyspace = getKeyspace(scope, coll);
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + keyspace + "/" + key;
     if (readMode == SG_READ_MODE_DOCUMENTS_WITH_REV && !isSgReplicator2) {
-      String revisionID = getRevision(key);
+      String revisionID = getRevision(getRevisonIdForKeyspace(keyspace, key));
       if (revisionID == null){
-        System.out.println("RevisionID not found for key :" + key);
+        System.out.println("RevisionID not found for key: " + getRevisonIdForKeyspace(keyspace, key));
       }
       fullUrl += "?rev=" + revisionID;
     }
     if(isSgReplicator2 && readMode == SG_READ_MODE_DOCUMENTS_WITH_REV){
-      String revisionID = getRevision(key);
+      String revisionID = getRevision(getRevisonIdForKeyspace(keyspace, key));
       if (revisionID == null){
-        System.out.println("RevisionID not found for key :" + key);
+        System.out.println("RevisionID not found for key: " + getRevisonIdForKeyspace(keyspace, key));
       }
       fullUrl += "?rev=" + revisionID;
       fullUrl += "&replicator2=true";
@@ -385,7 +386,7 @@ public class SyncGateway3Client extends DB {
                                String scope, String coll) {
     assignRandomUserToCurrentIteration();
     String requestBody = buildDocumentFromMap(key, values);
-    String docRevision = getRevision(key);
+    String docRevision = getRevision(getRevisonIdForKeyspace(getKeyspace(scope, coll), key));
     if (docRevision == null) {
       System.err.println("Revision for document " + key + " not found in local");
       return Status.UNEXPECTED_STATE;
@@ -430,7 +431,7 @@ public class SyncGateway3Client extends DB {
     //assignRandomUserToCurrentIteration();
     currentIterationUser = e2euser;
     String requestBody = e2eBuildDocumentFromMap(key, values);
-    String docRevision = getRevision(key);
+    String docRevision = getRevision(getRevisonIdForKeyspace(getKeyspace(scope, coll), key));
     if (docRevision == null) {
       System.err.println("Revision for document " + key + " not found in local");
       return Status.UNEXPECTED_STATE;
@@ -470,7 +471,7 @@ public class SyncGateway3Client extends DB {
 
   private Status deltaSyncUpdate(String table, String key, Map<String, ByteIterator> values,
                                  String scope, String coll) {
-    String docRevision = getRevision(key);
+    String docRevision = getRevision(getRevisonIdForKeyspace(getKeyspace(scope, coll), key));
     if (docRevision == null) {
       System.err.println("Revision for document " + key + " not found in local");
       return Status.UNEXPECTED_STATE;
@@ -1291,8 +1292,9 @@ public class SyncGateway3Client extends DB {
       BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
       StringBuffer responseContent = new StringBuffer();
       String line = "";
+      String keyspace = request.getURI().getPath();
       while ((line = reader.readLine()) != null) {
-        storeRevisions(line, currentIterationUser);
+        storeRevisions(line, keyspace);
         responseGenericValidation = validateHttpResponse(line);
         if (requestTimedout.isSatisfied()) {
           long timetaken = endTime - startTime;
@@ -1345,8 +1347,9 @@ public class SyncGateway3Client extends DB {
       BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
       StringBuffer responseContent = new StringBuffer();
       String line = "";
+      String keyspace = request.getURI().getPath();
       while ((line = reader.readLine()) != null) {
-        storeRevisions(line, currentIterationUser);
+        storeRevisions(line, keyspace);
         responseGenericValidation = validateHttpResponse(line);
         if (requestTimedout.isSatisfied()) {
           reader.close();
@@ -1398,9 +1401,10 @@ public class SyncGateway3Client extends DB {
       InputStream stream = responseEntity.getContent();
       BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
       StringBuffer responseContent = new StringBuffer();
-      String line = "";
+      String line = "";      
+      String keyspace = request.getURI().getPath();
       while ((line = reader.readLine()) != null) {
-        storeRevisions(line, currentIterationUser);
+        storeRevisions(line, keyspace);
         responseGenericValidation = validateHttpResponse(line);
         if (requestTimedout.isSatisfied()) {
           reader.close();
@@ -2012,12 +2016,18 @@ public class SyncGateway3Client extends DB {
         net.spy.memcached.AddrUtil.getAddresses(address));
   }
 
-  private void storeRevisions(String responseWithRevision, String userName) {
+  private void storeRevisions(String responseWithRevision, String keyspace) {
     Pattern pattern = Pattern.compile("\\\"id\\\".\\\"([^\\\"]*).*\\\"rev\\\".\\\"([^\\\"]*)");
     Matcher matcher = pattern.matcher(responseWithRevision);
     while (matcher.find()) {
-      memcachedClient.set(matcher.group(1), 0, matcher.group(2));
+      String revId = getRevisonIdForKeyspace(keyspace, matcher.group(1));
+      memcachedClient.set(revId, 0, matcher.group(2));
     }
+  }
+
+  private String getRevisonIdForKeyspace(String keyspace, String id){
+    keyspace = keyspace.replace("/", "").trim();
+    return keyspace + "." + id;
   }
 
   private String readSessionCookie(String responseWithSession) {
