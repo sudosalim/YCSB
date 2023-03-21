@@ -365,7 +365,7 @@ public class SyncGateway3Client extends DB {
       String scope, String coll) {
     assignRandomUserToCurrentIteration();
     if (grantAccessInScanOperation) {
-      insertAccessGrant(currentIterationUser, scope, coll);
+      insertAccessGrantForCollection(currentIterationUser, scope, coll);
     }
     return authRandomUser();
   }
@@ -659,11 +659,20 @@ public class SyncGateway3Client extends DB {
     return result;
   }
 
-  private Status insertAccessGrant(String userName, String scope, String coll) {
+  private Status insertAccessGrantToAllCollections(String userName) {
+    String requestBody = buildAccessGrantDocument(userName);
+    Status result = Status.ERROR;
+    for (String scope : this.scopes) {
+      for (String coll : this.collections) {
+        result = insertAccessGrantDoc(requestBody, scope, coll);
+      }
+    }
+    return result;
+  }
+
+  private Status insertAccessGrantDoc(String requestBody, String scope, String coll) {
     String port = (useAuth) ? portPublic : portAdmin;
-    String requestBody;
     String fullUrl;
-    requestBody = buildAccessGrantDocument(userName, scope, coll);
     fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/";
     HttpPost httpPostRequest = new HttpPost(fullUrl);
     int responseCode;
@@ -672,12 +681,15 @@ public class SyncGateway3Client extends DB {
     } catch (Exception e) {
       responseCode = handleExceptions(e, fullUrl, "POST");
     }
-    Status result = getStatus(responseCode);
-
-    return result;
+    return getStatus(responseCode);
   }
 
-  private String buildAccessGrantDocument(String userName, String scope, String coll) {
+  private Status insertAccessGrantForCollection(String userName, String scope, String coll) {
+    String requestBody = buildAccessGrantDocument(userName);
+    return insertAccessGrantDoc(requestBody, scope, coll);
+  }
+
+  private String buildAccessGrantDocument(String userName) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     String agKey = "accessgrant_" + userName;
@@ -2126,7 +2138,7 @@ public class SyncGateway3Client extends DB {
       userId = (long) sgAccessPool.nextValue() + insertUsersStart;
       if (userId < (totalUsers + insertUsersStart)) {
         String userName = DEFAULT_USERNAME_PREFIX + userId;
-        insertAccessGrant(userName, _DEFAULT, _DEFAULT);
+        insertAccessGrantToAllCollections(userName);
       }
     }
   }
