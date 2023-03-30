@@ -117,6 +117,7 @@ public class SyncGateway3Client extends DB {
   private int loadMode;
   private int readMode;
   private int totalUsers;
+  private int usersPerCollection;
   private int totalChannels;
   private int channelsPerUser;
   private int channelsPerDocument;
@@ -162,6 +163,7 @@ public class SyncGateway3Client extends DB {
   private String database;
   protected String[] collections;
   protected String[] scopes;
+  private Map<String, Integer> collectionUsers = new HashMap<>();
 
   @Override
   public void init() throws DBException {
@@ -256,7 +258,14 @@ public class SyncGateway3Client extends DB {
 
     collections = props.getProperty(Client.COLLECTIONS_PARAM, Client.COLLECTIONS_PARAM_DEFAULT).split(",");
     scopes = props.getProperty(Client.SCOPES_PARAM, Client.SCOPES_PARAM_DEFAULT).split(",");
+    usersPerCollection = totalUsers / (collections.length * scopes.length);
 
+    int count = 0;
+    for (String coll : collections) {
+      collectionUsers.put(coll, count * usersPerCollection);
+      ++count;
+    }
+    collectionUsers.put(_DEFAULT, 0);
     if ((loadMode != SG_LOAD_MODE_USERS) && (useAuth) && (initUsers)) {
       initAllUsers();
     }
@@ -268,7 +277,7 @@ public class SyncGateway3Client extends DB {
   @Override
   public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result,
       String scope, String coll) {
-    assignRandomUserToCurrentIteration();
+    assignRandomUserToCurrentIteration(coll);
     if (readMode == SG_READ_MODE_CHANGES) {
       return readChanges(key, scope, coll);
     } else if (readMode == SG_READ_MODE_ALLCHANGES) {
@@ -363,7 +372,7 @@ public class SyncGateway3Client extends DB {
   public Status scan(String table, String startkey, int recordcount, Set<String> fields,
       Vector<HashMap<String, ByteIterator>> result,
       String scope, String coll) {
-    assignRandomUserToCurrentIteration();
+    assignRandomUserToCurrentIteration(coll);
     if (grantAccessInScanOperation) {
       insertAccessGrantForCollection(currentIterationUser, scope, coll);
     }
@@ -384,7 +393,7 @@ public class SyncGateway3Client extends DB {
 
   private Status defaultUpdate(String table, String key, Map<String, ByteIterator> values,
       String scope, String coll) {
-    assignRandomUserToCurrentIteration();
+    assignRandomUserToCurrentIteration(coll);
     String requestBody = buildDocumentFromMap(key, values);
     String docRevision = getRevision(getRevisonIdForKeyspace(getKeyspace(scope, coll), key));
     if (docRevision == null) {
@@ -516,7 +525,7 @@ public class SyncGateway3Client extends DB {
     if (loadMode == SG_LOAD_MODE_USERS) {
       return insertUser(table, key, values, scope, coll);
     }
-    assignRandomUserToCurrentIteration();
+    assignRandomUserToCurrentIteration(coll);
     if (deltaSync) {
       return deltaSyncInsertDocumentEndpointnt(table, key, values, scope, coll);
     } else if (e2e) {
@@ -1789,25 +1798,23 @@ public class SyncGateway3Client extends DB {
       channelName = channelsSet[0];
     }
     saveChannelForUser(userName, channelName);
-    root.set("admin_channels", channels);
-    root.set("collection_access", getPerCollectionAccess(channels));
+    // root.set("admin_channels", channels);
+    root.set("collection_access", getPerCollectionAccess(channels, id));
     return root.toString();
   }
 
   // We need to set channels per collection when creating users.
-  // This is the naive solutions that works for now
-  private ObjectNode getPerCollectionAccess(ArrayNode channels) {
+  // This is the naive solutions that works for now.
+  //
+  private ObjectNode getPerCollectionAccess(ArrayNode channels, long id) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ObjectNode access = factory.objectNode();
     access.set("admin_channels", channels);
-    for (String scope : scopes) {
-      ObjectNode colls = factory.objectNode();
-      for (String collection : collections) {
-        colls.set(collection, access);
-      }
-      root.set(scope, colls);
-    }
+    int currCollectionId = (int) (id / usersPerCollection) + 1;
+    ObjectNode colls = factory.objectNode();
+    colls.set("collection-" + currCollectionId, access);
+    root.set(scopes[0], colls); // single named scope for now
     return root;
   }
 
@@ -2133,7 +2140,7 @@ public class SyncGateway3Client extends DB {
 
   private void grantAccessToAllUsers() {
     long userId = 0;
-    assignRandomUserToCurrentIteration();
+    assignRandomUserToCurrentIteration(_DEFAULT);
     while (userId < (totalUsers + insertUsersStart)) {
       userId = (long) sgAccessPool.nextValue() + insertUsersStart;
       if (userId < (totalUsers + insertUsersStart)) {
@@ -2191,8 +2198,11 @@ public class SyncGateway3Client extends DB {
     }
   }
 
-  private void assignRandomUserToCurrentIteration() {
-    currentIterationUser = DEFAULT_USERNAME_PREFIX + rand.nextInt(totalUsers);
+  // Temporary workaround for user poll, will need to be refactored when we
+  // support multiple named scopes
+  private void assignRandomUserToCurrentIteration(String coll) {
+    int start = collectionUsers.get(coll);
+    currentIterationUser = DEFAULT_USERNAME_PREFIX + (start + rand.nextInt(usersPerCollection));
   }
 
   private String getSessionCookieByUser(String userName) throws IOException {
