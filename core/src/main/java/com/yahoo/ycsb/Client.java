@@ -1024,7 +1024,7 @@ public final class Client {
         }
 
         if (collectionenabled) {
-          insertstart += threadopcount / (collectioncount * scopecount) * threadid;
+          insertstart = threadopcount / (collectioncount * scopecount) * threadid;
         } else {
           insertstart = threadopcount * threadid;
         }
