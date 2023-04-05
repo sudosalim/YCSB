@@ -5,6 +5,7 @@ import java.util.Properties;
 
 import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
+import com.yahoo.ycsb.Status;
 import com.yahoo.ycsb.WorkloadException;
 import com.yahoo.ycsb.generator.DiscreteGenerator;
 import com.yahoo.ycsb.generator.SequentialGenerator;
@@ -63,6 +64,46 @@ public class SyncGatewayCollectionWorkload extends CustomCollectionWorkload {
         } finally {
             this.transactioninsertkeysequence.acknowledge(keynum);
         }
+    }
+
+    @Override
+    public boolean doInsertCollection(DB db, Object threadstate, String scope, String collection, long key) {
+
+        long keynum = this.sgInserstart + key;
+
+        String dbkey = buildKeyName(keynum);
+
+        Status status;
+        int numOfRetries = 0;
+        do {
+            HashMap<String, ByteIterator> values = buildValues(dbkey);
+
+            status = db.insert(table, dbkey, values, scope, collection);
+            if (null != status && status.isOk()) {
+                break;
+            }
+            // Retry if configured. Without retrying, the load process will fail
+            // even if one single insertion fails. User can optionally configure
+            // an insertion retry limit (default is 0) to enable retry.
+            if (++numOfRetries <= insertionRetryLimit) {
+                System.err.println("Retrying insertion, retry count: " + numOfRetries);
+                try {
+                    // Sleep for a random number between [0.8, 1.2)*insertionRetryInterval.
+                    int sleepTime = (int) (1000 * insertionRetryInterval * (0.8 + 0.4 * Math.random()));
+                    Thread.sleep(sleepTime);
+                } catch (InterruptedException e) {
+                    break;
+                }
+
+            } else {
+                System.err.println("Error inserting, not retrying any more. number of attempts: " + numOfRetries +
+                        "Insertion Retry Limit: " + insertionRetryLimit);
+                break;
+
+            }
+        } while (true);
+
+        return null != status && status.isOk();
     }
 
     @Override
