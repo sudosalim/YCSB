@@ -2145,7 +2145,9 @@ public class SyncGateway3Client extends DB {
       userId = (long) sgAccessPool.nextValue() + insertUsersStart;
       if (userId < (totalUsers + insertUsersStart)) {
         String userName = DEFAULT_USERNAME_PREFIX + userId;
-        insertAccessGrantToAllCollections(userName);
+        int currCollectionId = (int) (userId / usersPerCollection) + 1;
+        String coll = "collection-" + currCollectionId;
+        insertAccessGrantForCollection(userName, scopes[0], coll);
       }
     }
   }
