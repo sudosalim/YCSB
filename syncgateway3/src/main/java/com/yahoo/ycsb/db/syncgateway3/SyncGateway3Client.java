@@ -1839,7 +1839,7 @@ public class SyncGateway3Client extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ArrayNode channelsNode = factory.arrayNode();
-    root.put("_id", key);
+    // root.put("_id", key); // CBG-2074, CBG-2120, CBG-2118
     for (int i = 0; i < e2echannelList.length; i++) {
       channelsNode.add(e2echannelList[i]);
     }
