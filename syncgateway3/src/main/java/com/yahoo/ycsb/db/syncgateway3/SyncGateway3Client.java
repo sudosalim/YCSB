@@ -26,6 +26,7 @@ import com.yahoo.ycsb.generator.CounterGenerator;
 import net.spy.memcached.FailureMode;
 import net.spy.memcached.MemcachedClient;
 import org.apache.commons.codec.binary.Base64;
+import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpHeaders;
 import org.apache.http.client.config.RequestConfig;
@@ -83,6 +84,8 @@ public class SyncGateway3Client extends DB {
   private static final String DEFAULT_CHANNEL_PREFIX = "channel-";
   private static final String DEFAULT_USER_PASSWORD = "syncgateway.password";
   private static final String USE_CAPELLA = "syncgateway.usecapella";
+  private static final String ADMIN_NAME = "syncgateway.adminname";
+  private static final String ADMIN_PASSWORD = "syncgateway.adminpassword";
   private static final int SG_LOAD_MODE_USERS = 0;
   private static final int SG_LOAD_MODE_DOCUMENTS = 1;
   private static final int SG_INSERT_MODE_BYKEY = 0;
@@ -126,6 +129,8 @@ public class SyncGateway3Client extends DB {
   private String e2euser;
   private String host;
   private String password;
+  private String adminName;
+  private String adminPassword;
   private String http;
   private int insertMode;
   private String sequencestart;
@@ -172,6 +177,8 @@ public class SyncGateway3Client extends DB {
     hosts = hostParam.split(",");
     host = hosts[rand.nextInt(hosts.length)];
     password = props.getProperty(DEFAULT_USER_PASSWORD, "password");
+    adminName = props.getProperty(ADMIN_NAME, "admin");
+    adminPassword = props.getProperty(ADMIN_PASSWORD, "Password123!");
     e2euser = props.getProperty(SG_E2E_USER, "sg-user-0");
     String channelListParam = props.getProperty(SG_E2E_CHANNEL_LIST, "channel-0");
     e2echannelList = channelListParam.split(",");
@@ -555,6 +562,12 @@ public class SyncGateway3Client extends DB {
     String requestBody = buildUserDef();
     String fullUrl = http + getRandomHost() + ":" + portAdmin + createUserEndpoint;
     HttpPost httpPostRequest = new HttpPost(fullUrl);
+    if (useCapella) {
+      String auth = adminName + ":" + adminPassword;
+      byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
+      String authHeader = "Basic " + new String(encodedAuth);
+      httpPostRequest.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
+    }
     int responseCode;
     try {
       responseCode = httpExecute(httpPostRequest, requestBody);
@@ -615,7 +628,7 @@ public class SyncGateway3Client extends DB {
 
   private Status defaultInsertDocument(String table, String key, Map<String, ByteIterator> values,
       String scope, String coll) {
-    String port = (useAuth) ? portPublic : portAdmin;
+    String port = (useAuth || useCapella) ? portPublic : portAdmin;
     String requestBody;
     String fullUrl;
     String channel = null;
@@ -633,6 +646,14 @@ public class SyncGateway3Client extends DB {
     String lastSequence = getLastSequenceGlobal(scope, coll);
     String lastseq = null;
     HttpPost httpPostRequest = new HttpPost(fullUrl);
+    if (useCapella) {
+      assignRandomUserToCurrentIteration(coll);
+      String auth = currentIterationUser + ":" + password;
+      byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
+      String authHeader = "Basic " + new String(encodedAuth);
+      httpPostRequest.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
+    }
+
     int responseCode;
     try {
       responseCode = httpExecute(httpPostRequest, requestBody);
@@ -1558,7 +1579,12 @@ public class SyncGateway3Client extends DB {
   }
 
   private String httpAuthWithSessionCookie(String data) throws IOException {
-    String fullUrl = http + getRandomHost() + ":" + portAdmin + createSessionEndpoint;
+    String fullUrl;
+    if (useCapella) {
+      fullUrl = http + getRandomHost() + ":" + portPublic + createSessionEndpoint;
+    } else {
+      fullUrl = http + getRandomHost() + ":" + portAdmin + createSessionEndpoint;
+    }
     HttpPost request = new HttpPost(fullUrl);
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
@@ -1571,27 +1597,43 @@ public class SyncGateway3Client extends DB {
         ContentType.APPLICATION_FORM_URLENCODED);
     reqEntity.setChunked(true);
     request.setEntity(reqEntity);
-    CloseableHttpResponse response = restClient.execute(request);
+    CloseableHttpResponse response = null;
+    try {
+      response = restClient.execute(request);
+    } catch (Exception e) {
+      System.err.println("Error when starting session " + e);
+    }
     HttpEntity responseEntity = response.getEntity();
-    if (responseEntity != null) {
-      InputStream stream = responseEntity.getContent();
-      BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
-      String line = "";
-      while ((line = reader.readLine()) != null) {
-        if (sessionCookie == null) {
-          sessionCookie = readSessionCookie(line);
-        }
-        if (requestTimedout.isSatisfied()) {
-          reader.close();
-          stream.close();
-          EntityUtils.consumeQuietly(responseEntity);
-          response.close();
-          restClient.close();
-          throw new TimeoutException();
+    if (useCapella) {
+      Header[] headerList = response.getAllHeaders();
+      for (Header currentHeader : headerList) {
+        if (currentHeader.getName().equals("Set-Cookie")) {
+          String[] split = currentHeader.getValue().split("=", 2);
+          String[] split2 = split[1].split(";", 2);
+          sessionCookie = split2[0];
         }
       }
-      timer.interrupt();
-      stream.close();
+    } else {
+      if (responseEntity != null) {
+        InputStream stream = responseEntity.getContent();
+        BufferedReader reader = new BufferedReader(new InputStreamReader(stream, "UTF-8"));
+        String line = "";
+        while ((line = reader.readLine()) != null) {
+          if (sessionCookie == null) {
+            sessionCookie = readSessionCookie(line);
+          }
+          if (requestTimedout.isSatisfied()) {
+            reader.close();
+            stream.close();
+            EntityUtils.consumeQuietly(responseEntity);
+            response.close();
+            restClient.close();
+            throw new TimeoutException();
+          }
+        }
+        timer.interrupt();
+        stream.close();
+      }
     }
     EntityUtils.consumeQuietly(responseEntity);
     response.close();
@@ -1968,14 +2010,24 @@ public class SyncGateway3Client extends DB {
   }
 
   private String getlastSequenceFromSG() throws IOException {
-    String port = portAdmin;
-    String fullUrl = http + getRandomHost() + ":" + port + dbEndpoint;
+    String fullUrl;
+    if (useCapella) {
+      fullUrl = http + getRandomHost() + ":" + portPublic + documentEndpoint;
+    } else {
+      fullUrl = http + getRandomHost() + ":" + portAdmin + documentEndpoint;
+    }
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
     HttpGet request = new HttpGet(fullUrl);
     String lastsequence = null;
     int counter = 10; // TODO: remove if not used
+    if (useCapella) {
+      String auth = "sg-user-0" + ":" + password;
+      byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
+      String authHeader = "Basic " + new String(encodedAuth);
+      request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
+    }
     CloseableHttpResponse response = restClient.execute(request);
     HttpEntity responseEntity = response.getEntity();
     if (responseEntity != null) {
@@ -2107,7 +2159,7 @@ public class SyncGateway3Client extends DB {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     root.put("name", name);
-    if (deltaSync || e2e) {
+    if (deltaSync || e2e || useCapella) {
       root.put("password", password);
     }
     return root.toString();
@@ -2129,7 +2181,7 @@ public class SyncGateway3Client extends DB {
             syncLocalSequenceWithSyncGatewayForUserAndGlobally(userName);
           } catch (Exception e) {
             System.err.println("Autorization failure for user " + userName + ", exiting...");
-            System.exit(1);
+            // System.exit(1);
           }
         }
         setLocalSequenceForUser(userName, sequencestart);
@@ -2156,7 +2208,18 @@ public class SyncGateway3Client extends DB {
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
     timer.start();
-    HttpGet request = new HttpGet(http + getRandomHost() + ":" + portAdmin + dbEndpoint);
+    HttpGet request;
+    if (useCapella) {
+      request = new HttpGet(http + getRandomHost() + ":" + portPublic + documentEndpoint);
+    } else {
+      request = new HttpGet(http + getRandomHost() + ":" + portAdmin + documentEndpoint);
+    }
+    if (useCapella) {
+      String auth = userName + ":" + password;
+      byte[] encodedAuth = Base64.encodeBase64(auth.getBytes(Charset.forName("US-ASCII")));
+      String authHeader = "Basic " + new String(encodedAuth);
+      request.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
+    }
     for (int i = 0; i < headers.length; i = i + 2) {
       request.setHeader(headers[i], headers[i + 1]);
     }
