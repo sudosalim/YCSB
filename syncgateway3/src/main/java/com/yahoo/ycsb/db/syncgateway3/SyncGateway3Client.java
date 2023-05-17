@@ -1847,16 +1847,27 @@ public class SyncGateway3Client extends DB {
 
   // We need to set channels per collection when creating users.
   // This is the naive solutions that works for now.
-  //
   private ObjectNode getPerCollectionAccess(ArrayNode channels, long id) {
     JsonNodeFactory factory = JsonNodeFactory.instance;
     ObjectNode root = factory.objectNode();
     ObjectNode access = factory.objectNode();
     access.set("admin_channels", channels);
-    int currCollectionId = (int) (id / usersPerCollection) + 1;
-    ObjectNode colls = factory.objectNode();
-    colls.set("collection-" + currCollectionId, access);
-    root.set(scopes[0], colls); // single named scope for now
+    if (this.e2e) {
+      // Our current e2e test only use one random user to initiate replication from
+      // cblite. As such, we need the user to have access to all collections
+      for (String scope : scopes) {
+        ObjectNode colls = factory.objectNode();
+        for (String collection : collections) {
+          colls.set(collection, access);
+        }
+        root.set(scope, colls);
+      }
+    } else {
+      int currCollectionId = (int) (id / usersPerCollection) + 1;
+      ObjectNode colls = factory.objectNode();
+      colls.set("collection-" + currCollectionId, access);
+      root.set(scopes[0], colls); // single named scope for now
+    }
     return root;
   }
 
