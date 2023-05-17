@@ -2012,9 +2012,9 @@ public class SyncGateway3Client extends DB {
   private String getlastSequenceFromSG() throws IOException {
     String fullUrl;
     if (useCapella) {
-      fullUrl = http + getRandomHost() + ":" + portPublic + documentEndpoint;
+      fullUrl = http + getRandomHost() + ":" + portPublic + dbEndpoint;
     } else {
-      fullUrl = http + getRandomHost() + ":" + portAdmin + documentEndpoint;
+      fullUrl = http + getRandomHost() + ":" + portAdmin + dbEndpoint;
     }
     requestTimedout.setIsSatisfied(false);
     Thread timer = new Thread(new Timer(execTimeout, requestTimedout));
@@ -2210,9 +2210,9 @@ public class SyncGateway3Client extends DB {
     timer.start();
     HttpGet request;
     if (useCapella) {
-      request = new HttpGet(http + getRandomHost() + ":" + portPublic + documentEndpoint);
+      request = new HttpGet(http + getRandomHost() + ":" + portPublic + dbEndpoint);
     } else {
-      request = new HttpGet(http + getRandomHost() + ":" + portAdmin + documentEndpoint);
+      request = new HttpGet(http + getRandomHost() + ":" + portAdmin + dbEndpoint);
     }
     if (useCapella) {
       String auth = userName + ":" + password;
