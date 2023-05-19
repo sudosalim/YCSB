@@ -1910,7 +1910,7 @@ public class SyncGateway3Client extends DB {
     root.put("_id", key);
     if (channelsPerDocument != 1) {
       String[] channelsSet = getSetOfRandomChannels(channelsPerDocument);
-      for (int i = 1; i < channelsPerDocument; i++) {
+      for (int i = 0; i < channelsPerDocument; i++) {
         channelsNode.add(channelsSet[i]);
       }
     }
@@ -1928,7 +1928,7 @@ public class SyncGateway3Client extends DB {
   }
 
   private String getChannelNameByTotalChannels() {
-    int channelId = (int) (Math.random() * totalChannels) + 1;
+    int channelId = (int) (Math.random() * totalChannels);
     return DEFAULT_CHANNEL_PREFIX + channelId;
   }
 
