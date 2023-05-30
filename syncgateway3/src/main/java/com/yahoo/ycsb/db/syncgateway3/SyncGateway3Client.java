@@ -402,7 +402,7 @@ public class SyncGateway3Client extends DB {
       String scope, String coll) {
     assignRandomUserToCurrentIteration(coll);
     String requestBody = buildDocumentFromMap(key, values);
-    String docRevision = getRevision(getRevisonIdForKeyspace(getKeyspace(scope, coll), key));
+    String docRevision = getLatestRevision(key, scope, coll);
     if (docRevision == null) {
       System.err.println("Revision for document " + key + " not found in local");
       return Status.UNEXPECTED_STATE;
@@ -441,6 +441,22 @@ public class SyncGateway3Client extends DB {
     return result;
   }
 
+  public String getLatestRevision(String key, String scope, String coll) {
+    String port = (useAuth) ? portPublic : portAdmin;
+    String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + key;
+
+    try {
+      String response = getResponseBody(fullUrl);
+      response = response.replace("},{", "}\n{");
+      Pattern pattern = Pattern.compile("\\\"_rev\\\".\\\"([^\\\"]*)");
+      Matcher matcher = pattern.matcher(response);
+      matcher.find();
+      return matcher.group(1);
+    } catch (Exception e) {
+      return null;
+    }
+  }
+
   private Status e2eUpdate(String table, String key, Map<String, ByteIterator> values,
       String scope, String coll) {
     int responseCode;
@@ -448,7 +464,7 @@ public class SyncGateway3Client extends DB {
     // assignRandomUserToCurrentIteration();
     currentIterationUser = e2euser;
     String requestBody = e2eBuildDocumentFromMap(key, values);
-    String docRevision = getRevision(getRevisonIdForKeyspace(getKeyspace(scope, coll), key));
+    String docRevision = getLatestRevision(key, scope, coll);
     if (docRevision == null) {
       System.err.println("Revision for document " + key + " not found in local");
       return Status.UNEXPECTED_STATE;
