@@ -404,7 +404,7 @@ public class SyncGateway3Client extends DB {
     String requestBody = buildDocumentFromMap(key, values);
     String docRevision = getLatestRevision(key, scope, coll);
     if (docRevision == null) {
-      System.err.println("Revision for document " + key + " not found in local");
+      System.err.println("Revision for document " + scope + "." + coll + "." + key + " not found locally");
       return Status.UNEXPECTED_STATE;
     }
     String currentSequence = getLocalSequenceForUser(currentIterationUser);
@@ -452,9 +452,12 @@ public class SyncGateway3Client extends DB {
       Matcher matcher = pattern.matcher(response);
       matcher.find();
       return matcher.group(1);
+    } catch (IOException e) {
+      System.err.println("READ: Getting latest revision failed for " + scope + "." + coll + "." + key);
     } catch (Exception e) {
-      return null;
     }
+    // If we cant fetch the latest revision, use one stored locally
+    return getRevision(getRevisonIdForKeyspace(getKeyspace(scope, coll), key));
   }
 
   private Status e2eUpdate(String table, String key, Map<String, ByteIterator> values,
@@ -466,7 +469,7 @@ public class SyncGateway3Client extends DB {
     String requestBody = e2eBuildDocumentFromMap(key, values);
     String docRevision = getLatestRevision(key, scope, coll);
     if (docRevision == null) {
-      System.err.println("Revision for document " + key + " not found in local");
+      System.err.println("Revision for document " + scope + "." + coll + "." + key + " not found locally");
       return Status.UNEXPECTED_STATE;
     }
     String fullUrl = http + getRandomHost() + ":" + port + documentEndpoint + getKeyspace(scope, coll) + "/" + key
@@ -506,9 +509,9 @@ public class SyncGateway3Client extends DB {
 
   private Status deltaSyncUpdate(String table, String key, Map<String, ByteIterator> values,
       String scope, String coll) {
-    String docRevision = getRevision(getRevisonIdForKeyspace(getKeyspace(scope, coll), key));
+    String docRevision = getLatestRevision(key, scope, coll);
     if (docRevision == null) {
-      System.err.println("Revision for document " + key + " not found in local");
+      System.err.println("Revision for document " + scope + "." + coll + "." + key + " not found locally");
       return Status.UNEXPECTED_STATE;
     }
     int intdocRevision = Integer.parseInt((docRevision.split("-")[0]));
