@@ -18,7 +18,6 @@
 package com.yahoo.ycsb.db.couchbase3;
 
 
-import com.couchbase.client.core.cnc.events.transaction.TransactionLogEvent;
 import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.JsonNode;
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import com.couchbase.client.core.env.IoConfig;
@@ -411,7 +410,7 @@ public class Couchbase3Client extends DB {
   private Status updateTo(final String table, final String key, final Map<String, ByteIterator> values,
       Collection collection){
     try {
-      Object content = useBinaryDocs ? encodeToByteBuf(values) : encode(values);
+      Object content = useBinaryDocs ? encodeToBytes(values) : encode(values);
 
       if (useDurabilityLevels) {
         if (upsert) {
@@ -449,7 +448,7 @@ public class Couchbase3Client extends DB {
   private Status insertTo(final String table, final String key, final Map<String, ByteIterator> values,
       Collection collection){
     try {
-      Object content = useBinaryDocs ? encodeToByteBuf(values) : encode(values);
+      Object content = useBinaryDocs ? encodeToBytes(values) : encode(values);
       if (useDurabilityLevels) {
         if (upsert) {
           collection.upsert(formatId(table, key), content, upsertOptions().durability(durabilityLevel));
@@ -521,11 +520,11 @@ public class Couchbase3Client extends DB {
           }
           break;
         case "TRUPDATE":
-          Object utContent = useBinaryDocs ? encodeToByteBuf(transationValues[i]) : encode(transationValues[i]);
+          Object utContent = useBinaryDocs ? encodeToBytes(transationValues[i]) : encode(transationValues[i]);
           collection.replace(formatId(table, transationKeys[i]), utContent);
           break;
         case "TRINSERT":
-          Object itContent = useBinaryDocs ? encodeToByteBuf(transationValues[i]) : encode(transationValues[i]);
+          Object itContent = useBinaryDocs ? encodeToBytes(transationValues[i]) : encode(transationValues[i]);
           collection.upsert(formatId(table, transationKeys[i]), itContent);
           break;
         default:
@@ -584,11 +583,10 @@ public class Couchbase3Client extends DB {
                 TransactionGetResult docToReplace = ctx.get(collection, formattedDocId,
                     TransactionGetOptions.transactionGetOptions().transcoder(RawBinaryTranscoder.INSTANCE));
                 byte[] content = docToReplace.contentAsBytes();
-                byte[] tContent = encodeToByteBuf(transationValues[i]);
-                byte[] dest = new byte[content.length + tContent.length + 1];
+                byte[] tContent = encodeToBytes(transationValues[i]);
+                byte[] dest = new byte[content.length + tContent.length];
                 System.arraycopy(content, 0, dest, 0, content.length);
-                System.arraycopy("\n".getBytes(), 0, dest, content.length, 1);
-                System.arraycopy(tContent, 0, dest, content.length + 1, tContent.length);
+                System.arraycopy(tContent, 0, dest, content.length, tContent.length);
                 ctx.replace(docToReplace, dest,
                     TransactionReplaceOptions.transactionReplaceOptions().transcoder(RawBinaryTranscoder.INSTANCE));
               }else{
@@ -602,7 +600,7 @@ public class Couchbase3Client extends DB {
               break;
             case "TRINSERT":
               if (useBinaryDocs){
-                ctx.insert(collection, formattedDocId, encodeToByteBuf(transationValues[i]),
+                ctx.insert(collection, formattedDocId, encodeToBytes(transationValues[i]),
                     TransactionInsertOptions.transactionInsertOptions().transcoder(RawBinaryTranscoder.INSTANCE));
               }else{
                 ctx.insert(collection, formattedDocId, encode(transationValues[i]));
@@ -615,12 +613,7 @@ public class Couchbase3Client extends DB {
         });
     } catch (TransactionFailedException e) {
       Logger logger = LoggerFactory.getLogger(getClass().getName() + ".bad");
-      // System.err.println("Transaction failed " + e.result().transactionId() + " " +
-      // e.result().timeTaken().toMillis() + "msecs");
-      for (TransactionLogEvent err : e.logs()) {
-        String s = err.toString();
-        logger.warn("transaction failed with exception :" + s);
-      }
+      e.logs().forEach(msg -> logger.warn(msg.toString()));
       return Status.ERROR;
     }
     return Status.OK;
@@ -639,7 +632,7 @@ public class Couchbase3Client extends DB {
     return result;
   }
 
-  private static byte[] encodeToByteBuf(final Map<String, ByteIterator> values) {
+  private static byte[] encodeToBytes(final Map<String, ByteIterator> values) {
     String result = "";
     for (Map.Entry<String, ByteIterator> value : values.entrySet()) {
       result += value.getKey() + ":" + value.getValue().toString() + "\n";
