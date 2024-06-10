@@ -48,11 +48,14 @@ import static com.couchbase.client.java.kv.ReplaceOptions.replaceOptions;
 import static com.couchbase.client.java.kv.RemoveOptions.removeOptions;
 import static com.couchbase.client.java.query.QueryOptions.queryOptions;
 
+import com.couchbase.client.java.codec.RawBinaryTranscoder;
 import com.couchbase.client.java.codec.RawJsonTranscoder;
-
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.ReplicateTo;
 import com.couchbase.client.java.transactions.TransactionGetResult;
+import com.couchbase.client.java.transactions.config.TransactionGetOptions;
+import com.couchbase.client.java.transactions.config.TransactionInsertOptions;
+import com.couchbase.client.java.transactions.config.TransactionReplaceOptions;
 import com.couchbase.client.java.transactions.config.TransactionsConfig;
 import com.couchbase.client.java.transactions.error.TransactionFailedException;
 import com.yahoo.ycsb.*;
@@ -104,6 +107,7 @@ public class Couchbase3Client extends DB {
   private String scanAllQuery;
   private String bucketName;
 
+  private static boolean useBinaryDocs;
   private static boolean collectionenabled;
   private static String username;
   private static String password;
@@ -177,6 +181,8 @@ public class Couchbase3Client extends DB {
       if (environment == null) {
 
         boolean enableMutationToken = Boolean.parseBoolean(props.getProperty("couchbase.enableMutationToken", "false"));
+        useBinaryDocs = props.getProperty("couchbase.docType", "json").equalsIgnoreCase("binary");
+
 
         kvTimeoutMillis = Integer.parseInt(props.getProperty("couchbase.kvTimeoutMillis", "60000"));
         kvEndpoints = Integer.parseInt(props.getProperty("couchbase.kvEndpoints", "1"));
@@ -262,8 +268,14 @@ public class Couchbase3Client extends DB {
           .transactionsConfig(TransactionsConfig
           .durabilityLevel(transDurabilityLevel).timeout(Duration.ofSeconds(120)));
     }
+
+    if (useBinaryDocs){
+      envBuilder = envBuilder.transcoder(RawBinaryTranscoder.INSTANCE);
+    }
+
     environment = envBuilder.build();
   }
+
   private static ReplicateTo parseReplicateTo(final String property) throws DBException {
     int value = Integer.parseInt(property);
     switch (value) {
@@ -332,32 +344,25 @@ public class Couchbase3Client extends DB {
 
   public Status read(final String table, final String key, final Set<String> fields,
                     final Map<String, ByteIterator> result) {
-
-    try {
-
-      Collection collection = bucket.defaultCollection();
-
-      GetResult document = collection.get(formatId(table, key));
-      extractFields(document.contentAsObject(), fields, result);
-      return Status.OK;
-    } catch (DocumentNotFoundException e) {
-      return Status.NOT_FOUND;
-    } catch (Throwable t) {
-      errors.add(t);
-      System.err.println("read failed with exception : " + t);
-      return Status.ERROR;
-    }
+    Collection collection = bucket.defaultCollection();
+    return readFrom(table, key, fields, result, collection);
   }
 
   public Status read(final String table, final String key, final Set<String> fields,
                     final Map<String, ByteIterator> result, String scope, String coll) {
+    Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
+    return readFrom(table, key, fields, result, collection);
+  }
 
+  private Status readFrom(final String table, final String key, final Set<String> fields,
+                    final Map<String, ByteIterator> result, Collection collection){
     try {
-
-      Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
-
       GetResult document = collection.get(formatId(table, key));
-      extractFields(document.contentAsObject(), fields, result);
+      if (useBinaryDocs){
+        processBytes(document.contentAsBytes(), fields, result);
+      }else{
+        extractFields(document.contentAsObject(), fields, result);
+      }
       return Status.OK;
     } catch (DocumentNotFoundException e) {
       return Status.NOT_FOUND;
@@ -379,51 +384,46 @@ public class Couchbase3Client extends DB {
     }
   }
 
-  public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
-
-    try {
-
-      Collection collection = bucket.defaultCollection();
-
-      if (useDurabilityLevels) {
-        if (upsert) {
-          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
-        } else {
-          collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
-        }
-      } else {
-        if (upsert) {
-          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
-        } else {
-          collection.replace(formatId(table, key), encode(values), replaceOptions().durability(persistTo, replicateTo));
-        }
+  private static void processBytes(final byte[] content, Set<String> fields,
+                                    final Map<String, ByteIterator> result) {
+    // TODO: Maybe use a standard doc format here such as protobuf
+    boolean unfiltered = (fields == null || fields.isEmpty());
+    String contentString = new String(content);
+    for (String line : contentString.split("\n")){
+      String[] splitLine = line.split(":");
+      if (unfiltered || fields.contains(splitLine[0])){
+        result.put(splitLine[0], new StringByteIterator(splitLine[1]));
       }
-      return Status.OK;
-    } catch (Throwable t) {
-      errors.add(t);
-      System.err.println("update failed with exception :" + t);
-      return Status.ERROR;
     }
+  }
+
+  public Status update(final String table, final String key, final Map<String, ByteIterator> values) {
+    Collection collection = bucket.defaultCollection();
+    return updateTo(table, key, values, collection);
   }
 
   public Status update(final String table, final String key,
                       final Map<String, ByteIterator> values, String scope, String coll) {
+    Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
+    return updateTo(table, key, values, collection);
+  }
 
+  private Status updateTo(final String table, final String key, final Map<String, ByteIterator> values,
+      Collection collection){
     try {
-
-      Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
+      Object content = useBinaryDocs ? encodeToByteBuf(values) : encode(values);
 
       if (useDurabilityLevels) {
         if (upsert) {
-          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
+          collection.upsert(formatId(table, key), content, upsertOptions().durability(durabilityLevel));
         } else {
-          collection.replace(formatId(table, key), encode(values), replaceOptions().durability(durabilityLevel));
+          collection.replace(formatId(table, key), content, replaceOptions().durability(durabilityLevel));
         }
       } else {
         if (upsert) {
-          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
+          collection.upsert(formatId(table, key), content, upsertOptions().durability(persistTo, replicateTo));
         } else {
-          collection.replace(formatId(table, key), encode(values), replaceOptions().durability(persistTo, replicateTo));
+          collection.replace(formatId(table, key), content, replaceOptions().durability(persistTo, replicateTo));
         }
       }
       return Status.OK;
@@ -436,51 +436,31 @@ public class Couchbase3Client extends DB {
 
   @Override
   public Status insert(final String table, final String key, final Map<String, ByteIterator> values) {
-
-    try {
-      Collection collection = bucket.defaultCollection();
-
-      if (useDurabilityLevels) {
-        if (upsert) {
-          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
-        } else {
-          collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
-        }
-      } else {
-        if (upsert) {
-          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
-        } else {
-          collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
-
-        }
-      }
-      return Status.OK;
-    } catch (Throwable t) {
-      errors.add(t);
-      System.err.println("insert failed with exception :" + t);
-      return Status.ERROR;
-    }
+    Collection collection = bucket.defaultCollection();
+    return insertTo(table, key, values, collection);
   }
 
-  public Status insert(final String table, final String key, final Map<String,
-      ByteIterator> values, String scope, String coll) {
+  public Status insert(final String table, final String key, final Map<String, ByteIterator> values,
+      String scope, String coll) {
+    Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
+    return insertTo(table, key, values, collection);
+  }
 
+  private Status insertTo(final String table, final String key, final Map<String, ByteIterator> values,
+      Collection collection){
     try {
-
-      Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
-
+      Object content = useBinaryDocs ? encodeToByteBuf(values) : encode(values);
       if (useDurabilityLevels) {
         if (upsert) {
-          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(durabilityLevel));
+          collection.upsert(formatId(table, key), content, upsertOptions().durability(durabilityLevel));
         } else {
-          collection.insert(formatId(table, key), encode(values), insertOptions().durability(durabilityLevel));
+          collection.insert(formatId(table, key), content, insertOptions().durability(durabilityLevel));
         }
       } else {
         if (upsert) {
-          collection.upsert(formatId(table, key), encode(values), upsertOptions().durability(persistTo, replicateTo));
+          collection.upsert(formatId(table, key), content, upsertOptions().durability(persistTo, replicateTo));
         } else {
-          collection.insert(formatId(table, key), encode(values), insertOptions().durability(persistTo, replicateTo));
-
+          collection.insert(formatId(table, key), content, insertOptions().durability(persistTo, replicateTo));
         }
       }
       return Status.OK;
@@ -489,6 +469,7 @@ public class Couchbase3Client extends DB {
       System.err.println("insert failed with exception :" + t);
       return Status.ERROR;
     }
+
   }
 
   @Override
@@ -527,7 +508,11 @@ public class Couchbase3Client extends DB {
         case "TRREAD":
           try {
             GetResult document = collection.get(formatId(table, transationKeys[i]));
-            extractFields(document.contentAsObject(), fields, result);
+            if (useBinaryDocs) {
+              processBytes(document.contentAsBytes(), fields, result);
+            } else {
+              extractFields(document.contentAsObject(), fields, result);
+            }
           } catch (DocumentNotFoundException e) {
             System.out.println("Key NOT_FOUND");
             return Status.NOT_FOUND;
@@ -536,10 +521,12 @@ public class Couchbase3Client extends DB {
           }
           break;
         case "TRUPDATE":
-          collection.replace(formatId(table, transationKeys[i]), encode(transationValues[i]));
+          Object utContent = useBinaryDocs ? encodeToByteBuf(transationValues[i]) : encode(transationValues[i]);
+          collection.replace(formatId(table, transationKeys[i]), utContent);
           break;
         case "TRINSERT":
-          collection.upsert(formatId(table, transationKeys[i]), encode(transationValues[i]));
+          Object itContent = useBinaryDocs ? encodeToByteBuf(transationValues[i]) : encode(transationValues[i]);
+          collection.upsert(formatId(table, transationKeys[i]), itContent);
           break;
         default:
           break;
@@ -556,48 +543,9 @@ public class Couchbase3Client extends DB {
                                   String[] transationOperations, Set<String> fields,
                                   Map<String, ByteIterator> result,
                                   String scope, String coll) {
-
-
     Collection collection = collectionenabled ? bucket.scope(scope).collection(coll) : bucket.defaultCollection();
-
-    try {
-
-      cluster.transactions().run((ctx) -> {
-        // Init and Start transaction here
-          for (int i = 0; i < transationKeys.length; i++) {
-            final String formattedDocId = formatId(table, transationKeys[i]);
-            switch (transationOperations[i]) {
-            case "TRREAD":
-              TransactionGetResult doc = ctx.get(collection, formattedDocId);
-              extractFields(doc.contentAs(JsonObject.class), fields, result);
-              break;
-            case "TRUPDATE":
-              TransactionGetResult docToReplace = ctx.get(collection, formattedDocId);
-              JsonObject content = docToReplace.contentAs(JsonObject.class);
-              for (Map.Entry<String, String> entry: encode(transationValues[i]).entrySet()){
-                content.put(entry.getKey(), entry.getValue());
-              }
-              ctx.replace(docToReplace, content);
-              break;
-            case "TRINSERT":
-              ctx.insert(collection, formattedDocId, encode(transationValues[i]));
-              break;
-            default:
-              break;
-            }
-          }
-        });
-    } catch (TransactionFailedException e) {
-      Logger logger = LoggerFactory.getLogger(getClass().getName() + ".bad");
-      //System.err.println("Transaction failed " + e.result().transactionId() + " " +
-          //e.result().timeTaken().toMillis() + "msecs");
-      for (TransactionLogEvent err : e.logs()) {
-        String s = err.toString();
-        logger.warn("transaction failed with exception :" + s);
-      }
-      return Status.ERROR;
-    }
-    return Status.OK;
+    return transactionContextFor(table, transationKeys, transationValues, transationOperations, fields,
+        result, collection);
   }
 
 
@@ -607,28 +555,58 @@ public class Couchbase3Client extends DB {
                                   Map<String, ByteIterator> result) {
 
     Collection collection = bucket.defaultCollection();
+    return transactionContextFor(table, transationKeys, transationValues, transationOperations, fields,
+        result, collection);
+  }
 
+  private Status transactionContextFor(String table, String[] transationKeys, Map<String,
+                                  ByteIterator>[] transationValues,
+                                  String[] transationOperations, Set<String> fields,
+                                  Map<String, ByteIterator> result, Collection collection){
     try {
-
       cluster.transactions().run((ctx) -> {
-        // Init and Start transaction here
+          // Init and Start transaction here
           for (int i = 0; i < transationKeys.length; i++) {
             final String formattedDocId = formatId(table, transationKeys[i]);
             switch (transationOperations[i]) {
             case "TRREAD":
-              TransactionGetResult doc = ctx.get(collection, formattedDocId);
-              extractFields(doc.contentAs(JsonObject.class), fields, result);
+              if (useBinaryDocs) {
+                TransactionGetResult doc = ctx.get(collection, formattedDocId,
+                    TransactionGetOptions.transactionGetOptions().transcoder(RawBinaryTranscoder.INSTANCE));
+                processBytes(doc.contentAsBytes(), fields, result);
+              } else {
+                TransactionGetResult doc = ctx.get(collection, formattedDocId);
+                extractFields(doc.contentAsObject(), fields, result);
+              }
               break;
             case "TRUPDATE":
-              TransactionGetResult docToReplace = ctx.get(collection, formattedDocId);
-              JsonObject content = docToReplace.contentAs(JsonObject.class);
-              for (Map.Entry<String, String> entry: encode(transationValues[i]).entrySet()){
-                content.put(entry.getKey(), entry.getValue());
+              if (useBinaryDocs){
+                TransactionGetResult docToReplace = ctx.get(collection, formattedDocId,
+                    TransactionGetOptions.transactionGetOptions().transcoder(RawBinaryTranscoder.INSTANCE));
+                byte[] content = docToReplace.contentAsBytes();
+                byte[] tContent = encodeToByteBuf(transationValues[i]);
+                byte[] dest = new byte[content.length + tContent.length + 1];
+                System.arraycopy(content, 0, dest, 0, content.length);
+                System.arraycopy("\n".getBytes(), 0, dest, content.length, 1);
+                System.arraycopy(tContent, 0, dest, content.length + 1, tContent.length);
+                ctx.replace(docToReplace, dest,
+                    TransactionReplaceOptions.transactionReplaceOptions().transcoder(RawBinaryTranscoder.INSTANCE));
+              }else{
+                TransactionGetResult docToReplace = ctx.get(collection, formattedDocId);
+                JsonObject content = docToReplace.contentAsObject();
+                for (Map.Entry<String, String> entry : encode(transationValues[i]).entrySet()) {
+                  content.put(entry.getKey(), entry.getValue());
+                }
+                ctx.replace(docToReplace, content);
               }
-              ctx.replace(docToReplace, content);
               break;
             case "TRINSERT":
-              ctx.insert(collection, formattedDocId, encode(transationValues[i]));
+              if (useBinaryDocs){
+                ctx.insert(collection, formattedDocId, encodeToByteBuf(transationValues[i]),
+                    TransactionInsertOptions.transactionInsertOptions().transcoder(RawBinaryTranscoder.INSTANCE));
+              }else{
+                ctx.insert(collection, formattedDocId, encode(transationValues[i]));
+              }
               break;
             default:
               break;
@@ -637,8 +615,8 @@ public class Couchbase3Client extends DB {
         });
     } catch (TransactionFailedException e) {
       Logger logger = LoggerFactory.getLogger(getClass().getName() + ".bad");
-      //System.err.println("Transaction failed " + e.result().transactionId() + " " +
-      //e.result().timeTaken().toMillis() + "msecs");
+      // System.err.println("Transaction failed " + e.result().transactionId() + " " +
+      // e.result().timeTaken().toMillis() + "msecs");
       for (TransactionLogEvent err : e.logs()) {
         String s = err.toString();
         logger.warn("transaction failed with exception :" + s);
@@ -647,7 +625,6 @@ public class Couchbase3Client extends DB {
     }
     return Status.OK;
   }
-
   /**
   * Helper method to turn the passed in iterator values into a map we can encode to json.
   *
@@ -660,6 +637,14 @@ public class Couchbase3Client extends DB {
       result.put(value.getKey(), value.getValue().toString());
     }
     return result;
+  }
+
+  private static byte[] encodeToByteBuf(final Map<String, ByteIterator> values) {
+    String result = "";
+    for (Map.Entry<String, ByteIterator> value : values.entrySet()) {
+      result += value.getKey() + ":" + value.getValue().toString() + "\n";
+    }
+    return result.getBytes();
   }
 
   @Override
