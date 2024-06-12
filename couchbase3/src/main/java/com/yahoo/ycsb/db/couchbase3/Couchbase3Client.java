@@ -582,12 +582,7 @@ public class Couchbase3Client extends DB {
               if (useBinaryDocs){
                 TransactionGetResult docToReplace = ctx.get(collection, formattedDocId,
                     TransactionGetOptions.transactionGetOptions().transcoder(RawBinaryTranscoder.INSTANCE));
-                byte[] content = docToReplace.contentAsBytes();
-                byte[] tContent = encodeToBytes(transationValues[i]);
-                byte[] dest = new byte[content.length + tContent.length];
-                System.arraycopy(content, 0, dest, 0, content.length);
-                System.arraycopy(tContent, 0, dest, content.length, tContent.length);
-                ctx.replace(docToReplace, dest,
+                ctx.replace(docToReplace, encodeToBytes(transationValues[i]),
                     TransactionReplaceOptions.transactionReplaceOptions().transcoder(RawBinaryTranscoder.INSTANCE));
               }else{
                 TransactionGetResult docToReplace = ctx.get(collection, formattedDocId);
