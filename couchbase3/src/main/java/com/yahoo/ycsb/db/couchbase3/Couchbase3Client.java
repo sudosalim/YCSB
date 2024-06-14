@@ -52,9 +52,6 @@ import com.couchbase.client.java.codec.RawJsonTranscoder;
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.ReplicateTo;
 import com.couchbase.client.java.transactions.TransactionGetResult;
-import com.couchbase.client.java.transactions.config.TransactionGetOptions;
-import com.couchbase.client.java.transactions.config.TransactionInsertOptions;
-import com.couchbase.client.java.transactions.config.TransactionReplaceOptions;
 import com.couchbase.client.java.transactions.config.TransactionsConfig;
 import com.couchbase.client.java.transactions.error.TransactionFailedException;
 import com.yahoo.ycsb.*;
@@ -569,37 +566,19 @@ public class Couchbase3Client extends DB {
             final String formattedDocId = formatId(table, transationKeys[i]);
             switch (transationOperations[i]) {
             case "TRREAD":
-              if (useBinaryDocs) {
-                TransactionGetResult doc = ctx.get(collection, formattedDocId,
-                    TransactionGetOptions.transactionGetOptions().transcoder(RawBinaryTranscoder.INSTANCE));
-                processBytes(doc.contentAsBytes(), fields, result);
-              } else {
-                TransactionGetResult doc = ctx.get(collection, formattedDocId);
-                extractFields(doc.contentAsObject(), fields, result);
-              }
+              TransactionGetResult doc = ctx.get(collection, formattedDocId);
+              extractFields(doc.contentAsObject(), fields, result);
               break;
             case "TRUPDATE":
-              if (useBinaryDocs){
-                TransactionGetResult docToReplace = ctx.get(collection, formattedDocId,
-                    TransactionGetOptions.transactionGetOptions().transcoder(RawBinaryTranscoder.INSTANCE));
-                ctx.replace(docToReplace, encodeToBytes(transationValues[i]),
-                    TransactionReplaceOptions.transactionReplaceOptions().transcoder(RawBinaryTranscoder.INSTANCE));
-              }else{
-                TransactionGetResult docToReplace = ctx.get(collection, formattedDocId);
-                JsonObject content = docToReplace.contentAsObject();
-                for (Map.Entry<String, String> entry : encode(transationValues[i]).entrySet()) {
-                  content.put(entry.getKey(), entry.getValue());
-                }
-                ctx.replace(docToReplace, content);
+              TransactionGetResult docToReplace = ctx.get(collection, formattedDocId);
+              JsonObject content = docToReplace.contentAsObject();
+              for (Map.Entry<String, String> entry : encode(transationValues[i]).entrySet()) {
+                content.put(entry.getKey(), entry.getValue());
               }
+              ctx.replace(docToReplace, content);
               break;
             case "TRINSERT":
-              if (useBinaryDocs){
-                ctx.insert(collection, formattedDocId, encodeToBytes(transationValues[i]),
-                    TransactionInsertOptions.transactionInsertOptions().transcoder(RawBinaryTranscoder.INSTANCE));
-              }else{
-                ctx.insert(collection, formattedDocId, encode(transationValues[i]));
-              }
+              ctx.insert(collection, formattedDocId, encode(transationValues[i]));
               break;
             default:
               break;
