@@ -21,6 +21,7 @@ package com.yahoo.ycsb.db.couchbase3;
 import com.couchbase.client.core.deps.com.fasterxml.jackson.databind.JsonNode;
 import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import com.couchbase.client.core.env.IoConfig;
+import com.couchbase.client.core.env.NetworkResolution;
 import com.couchbase.client.core.env.SeedNode;
 import com.couchbase.client.core.env.SecurityConfig;
 import com.couchbase.client.core.env.TimeoutConfig;
@@ -222,7 +223,8 @@ public class Couchbase3Client extends DB {
               .builder()
               .timeoutConfig(TimeoutConfig.kvTimeout(Duration.ofMillis(kvTimeoutMillis)))
               .ioConfig(IoConfig.enableMutationTokens(enableMutationToken).numKvConnections(kvEndpoints)
-                      .enableDnsSrv(true))
+                      .enableDnsSrv(true).networkResolution(
+                      NetworkResolution.EXTERNAL))
               .securityConfig(SecurityConfig.enableTls(true)
                       .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
               .build();
