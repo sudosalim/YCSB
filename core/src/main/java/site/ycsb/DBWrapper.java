@@ -52,6 +52,7 @@ public class DBWrapper extends DB {
   private final String scopeStringRead;
   private final String scopeStringScan;
   private final String scopeStringUpdate;
+  private final String scopeStringTransaction;
 
   public DBWrapper(final DB db, final Tracer tracer) {
     this.db = db;
@@ -65,6 +66,7 @@ public class DBWrapper extends DB {
     scopeStringRead = simple + "#read";
     scopeStringScan = simple + "#scan";
     scopeStringUpdate = simple + "#update";
+    scopeStringTransaction = simple + "#transaction";
   }
 
   /**
@@ -247,6 +249,20 @@ public class DBWrapper extends DB {
       long en = System.nanoTime();
       measure("DELETE", res, ist, st, en);
       measurements.reportStatus("DELETE", res);
+      return res;
+    }
+  }
+
+  @Override
+  public Status transaction(String table, String[] keys, Map<String, ByteIterator>[] values,
+                            String[] operations, Set<String> fields, Map<String, ByteIterator> result) {
+    try (final TraceScope span = tracer.newScope(scopeStringTransaction)) {
+      long ist = measurements.getIntendedStartTimeNs();
+      long st = System.nanoTime();
+      Status res = db.transaction(table, keys, values, operations, fields, result);
+      long en = System.nanoTime();
+      measure("TRANSACTION", res, ist, st, en);
+      measurements.reportStatus("TRANSACTION", res);
       return res;
     }
   }

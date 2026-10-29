@@ -121,6 +121,11 @@ bin/ycsb run mongodb -jvm-args="-Dlogback.configurationFile=/path/to/logback.xml
   - Setting to `true` uses updates, `false` uses insert operations.
   - Default value is `false`.
 
+- `mongodb.transactionReadConcern`
+  - Read concern for multi-document transactions (`workloads/workloadta`): `local`, `majority` or
+    `snapshot`. Transactions always read from the primary and commit with the URL's write concern.
+  - Default value is `majority`.
+
 - `mongodb.writeConcern`
   - **Deprecated** - Use the `w` and `journal` options on the MongoDB URI provided by the `mongodb.url`.
   - Allowed values are :

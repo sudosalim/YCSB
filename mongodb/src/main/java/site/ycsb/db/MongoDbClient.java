@@ -26,8 +26,12 @@ package site.ycsb.db;
 
 import com.mongodb.MongoClientSettings;
 import com.mongodb.ConnectionString;
+import com.mongodb.ReadConcern;
+import com.mongodb.ReadConcernLevel;
 import com.mongodb.ReadPreference;
+import com.mongodb.TransactionOptions;
 import com.mongodb.WriteConcern;
+import com.mongodb.client.ClientSession;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
@@ -112,6 +116,9 @@ public class MongoDbClient extends DB {
 
   /** If true then use updates with the upsert option for inserts. */
   private static boolean useUpsert;
+
+  /** Options for multi-document transactions: primary reads and the client's write concern. */
+  private static TransactionOptions transactionOptions;
 
   /** The bulk inserts pending for the thread. */
   private final List<Document> bulkInserts = new ArrayList<Document>();
@@ -224,6 +231,15 @@ public class MongoDbClient extends DB {
 
         mongoClient = MongoClients.create(csb.build());
         database = mongoClient.getDatabase(databaseName);
+
+        // Transactions reject readConcern=available and non-primary reads, so they don't
+        // inherit those from the URL.
+        String txnReadConcern = props.getProperty("mongodb.transactionReadConcern", "majority");
+        transactionOptions = TransactionOptions.builder()
+            .readPreference(ReadPreference.primary())
+            .readConcern(new ReadConcern(ReadConcernLevel.fromString(txnReadConcern)))
+            .writeConcern(database.getWriteConcern())
+            .build();
 
         System.out.println("mongo client connection created with " + url);
       } catch (Exception e1) {
@@ -449,6 +465,81 @@ public class MongoDbClient extends DB {
     } catch (Exception e) {
       System.err.println(e.toString());
       return Status.ERROR;
+    }
+  }
+
+  /**
+   * Run the operations in one multi-document transaction. withTransaction retries transient
+   * errors such as write conflicts.
+   */
+  @Override
+  public Status transaction(String table, String[] keys, Map<String, ByteIterator>[] values,
+      String[] operations, Set<String> fields, Map<String, ByteIterator> result) {
+    MongoCollection<Document> collection = database.getCollection(table);
+    try (ClientSession session = mongoClient.startSession()) {
+      return session.withTransaction(
+          () -> runTransaction(session, collection, keys, values, operations, fields, result),
+          transactionOptions);
+    } catch (RecordNotFoundException e) {
+      System.err.println("Transaction aborted, no record for key " + e.getMessage());
+      return Status.NOT_FOUND;
+    } catch (Exception e) {
+      System.err.println(e.toString());
+      return Status.ERROR;
+    }
+  }
+
+  private Status runTransaction(ClientSession session, MongoCollection<Document> collection,
+      String[] keys, Map<String, ByteIterator>[] values, String[] operations, Set<String> fields,
+      Map<String, ByteIterator> result) {
+    for (int i = 0; i < keys.length; i++) {
+      Document id = new Document("_id", keys[i]);
+      switch (operations[i]) {
+      case "TRREAD":
+        FindIterable<Document> find = collection.find(session, id);
+        if (fields != null) {
+          Document projection = new Document();
+          for (String field : fields) {
+            projection.put(field, INCLUDE);
+          }
+          find.projection(projection);
+        }
+        Document found = find.first();
+        if (found == null) {
+          throw new RecordNotFoundException(keys[i]);
+        }
+        fillMap(result, found);
+        break;
+      case "TRUPDATE":
+        Document update = new Document("$set", toDocument(values[i]));
+        if (collection.updateOne(session, id, update).getMatchedCount() == 0) {
+          throw new RecordNotFoundException(keys[i]);
+        }
+        break;
+      case "TRINSERT":
+        collection.insertOne(session, toDocument(values[i]).append("_id", keys[i]));
+        break;
+      default:
+        throw new IllegalArgumentException("Unknown transaction operation " + operations[i]);
+      }
+    }
+    return Status.OK;
+  }
+
+  private static Document toDocument(Map<String, ByteIterator> values) {
+    Document document = new Document();
+    for (Map.Entry<String, ByteIterator> entry : values.entrySet()) {
+      document.put(entry.getKey(), entry.getValue().toArray());
+    }
+    return document;
+  }
+
+  /** Aborts a transaction that references a missing record. */
+  private static final class RecordNotFoundException extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
+    RecordNotFoundException(String key) {
+      super(key);
     }
   }
 

@@ -132,4 +132,20 @@ public abstract class DB {
    * @return The result of the operation.
    */
   public abstract Status delete(String table, String key);
+
+  /**
+   * Run several operations on different records as one atomic transaction.
+   *
+   * @param table The name of the table
+   * @param keys The record keys, one per operation.
+   * @param values The values to write, one per operation; null for reads.
+   * @param operations The operation for each key: TRREAD, TRUPDATE or TRINSERT.
+   * @param fields The fields to read, or null for all of them.
+   * @param result A HashMap of field/value pairs for the records read.
+   * @return The result of the operation.
+   */
+  public Status transaction(String table, String[] keys, Map<String, ByteIterator>[] values,
+                            String[] operations, Set<String> fields, Map<String, ByteIterator> result) {
+    return Status.NOT_IMPLEMENTED;
+  }
 }
