@@ -35,7 +35,13 @@ except ImportError:
     exit(1)
 
 BASE_URL = "https://github.com/brianfrankcooper/YCSB/tree/master/"
+CLASSPATH_FILE = "ycsb.classpath"
 COMMANDS = {
+    "build" : {
+        "command"     : "",
+        "description" : "Build the binding and cache its classpath",
+        "main"        : "",
+    },
     "shell" : {
         "command"     : "",
         "description" : "Interactive mode",
@@ -237,6 +243,13 @@ def get_classpath_from_maven(module):
             classpath_items.append(m.groupdict()["path"])
     return ":".join(classpath_items)
 
+# Write via rename so a concurrent reader never sees a partial file
+def write_classpath_file(path, classpath):
+    tmp = "%s.%d" % (path, os.getpid())
+    with open(tmp, "w") as f:
+        f.write(classpath)
+    os.rename(tmp, path)
+
 
 def main():
     p = argparse.ArgumentParser(
@@ -296,15 +309,27 @@ def main():
         cp = [os.path.join(ycsb_home, "conf")]
         cp.extend(find_jars(os.path.join(ycsb_home, "lib")))
         cp.extend(find_jars(os.path.join(db_dir, "lib")))
+        if args.command == "build":
+            return 0
     else:
-        warn("Running against a source checkout. In order to get our runtime "
-             "dependencies we'll have to invoke Maven. Depending on the state "
-             "of your system, this may take ~30-45 seconds")
         db_location = "core" if (binding == "basic" or binding == "basicts") else binding
         project = "core" if (binding == "basic" or binding == "basicts") else binding + "-binding"
         db_dir = os.path.join(ycsb_home, db_location)
-        # goes first so we can rely on side-effect of package
-        maven_says = get_classpath_from_maven(project)
+        # Cached by 'build' so concurrent runs don't each invoke Maven on one checkout
+        cp_file = os.path.join(db_dir, "target", CLASSPATH_FILE)
+        if args.command == "build" or not os.path.isfile(cp_file):
+            warn("Running against a source checkout. In order to get our runtime "
+                 "dependencies we'll have to invoke Maven. Depending on the state "
+                 "of your system, this may take ~30-45 seconds")
+            # goes first so we can rely on side-effect of package
+            maven_says = get_classpath_from_maven(project)
+            write_classpath_file(cp_file, maven_says)
+        else:
+            debug("Using cached classpath from " + cp_file)
+            with open(cp_file) as f:
+                maven_says = f.read().strip()
+        if args.command == "build":
+            return 0
         # TODO when we have a version property, skip the glob
         cp = find_jars(os.path.join(db_dir, "target"),
                        project + "*.jar")
